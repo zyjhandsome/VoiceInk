@@ -1,0 +1,40 @@
+# Build & Distribution
+dist/
+build/
+*.spec
+
+# Docs (generated plans/specs)
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Cursor / Agent artifacts
+.cursor/
+agent-transcripts/
+agent-tools/
+mcps/
+terminals/
+
+# App data
+*.lock

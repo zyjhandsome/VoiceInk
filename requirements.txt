@@ -1,0 +1,10 @@
+PyQt6>=6.6.0
+sounddevice>=0.4.6
+pynput>=1.7.6
+httpx>=0.27.0
+pyperclip>=1.8.2
+pyautogui>=0.9.54
+pywin32>=306; sys_platform == "win32"
+numpy>=1.24.0
+sherpa-onnx>=1.10.0
+PyInstaller>=6.0.0
