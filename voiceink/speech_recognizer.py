@@ -311,14 +311,38 @@ def _create_recognizer(model_id: str, num_threads: int):
             debug=False,
         )
     elif loader == "qwen3_asr":
-        return sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
+        # Workaround: sherpa-onnx 1.12.35 from_qwen3_asr() passes unsupported
+        # 'hotwords' kwarg to C++ OfflineQwen3ASRModelConfig, causing a crash.
+        # Build the config objects manually to bypass the bug.
+        from sherpa_onnx import (
+            OfflineQwen3ASRModelConfig,
+            OfflineModelConfig,
+            OfflineRecognizerConfig,
+            FeatureExtractorConfig,
+        )
+
+        qwen3_cfg = OfflineQwen3ASRModelConfig(
             conv_frontend=str(model_dir / "conv_frontend.onnx"),
             encoder=str(model_dir / "encoder.int8.onnx"),
             decoder=str(model_dir / "decoder.int8.onnx"),
             tokenizer=str(model_dir / "tokenizer"),
+        )
+        model_cfg = OfflineModelConfig(
+            qwen3_asr=qwen3_cfg,
             num_threads=num_threads,
             debug=False,
+            provider="cpu",
         )
+        feat_cfg = FeatureExtractorConfig(sampling_rate=16000, feature_dim=128)
+        rec_cfg = OfflineRecognizerConfig(
+            feat_config=feat_cfg,
+            model_config=model_cfg,
+            decoding_method="greedy_search",
+        )
+        rec = sherpa_onnx.OfflineRecognizer.__new__(sherpa_onnx.OfflineRecognizer)
+        rec.recognizer = sherpa_onnx.lib._sherpa_onnx.OfflineRecognizer(rec_cfg)
+        rec.config = rec_cfg
+        return rec
     else:
         raise ValueError(f"不支持的 loader: {loader}")
 
