@@ -135,9 +135,9 @@ class FloatingWindow(QWidget):
         self._container.setObjectName("container")
         self._container.setStyleSheet("""
             #container {
-                background-color: rgba(30, 30, 40, 230);
+                background-color: rgba(36, 36, 44, 238);
                 border-radius: 16px;
-                border: 1px solid rgba(100, 100, 120, 60);
+                border: none;
             }
         """)
 

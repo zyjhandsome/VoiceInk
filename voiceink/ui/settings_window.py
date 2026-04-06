@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QFormLayout, QMessageBox, QFrame, QScrollArea,
     QProgressBar, QListWidget, QListWidgetItem, QStackedWidget,
-    QFileDialog,
+    QFileDialog, QGraphicsDropShadowEffect,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QSize
 from PyQt6.QtGui import QFont, QPainter, QColor, QIcon, QPixmap, QPen
@@ -50,13 +50,14 @@ WINDOW_CSS = f"""
         background: {_INPUT_BG};
         color: {_TEXT};
         border: 1px solid {_BORDER};
-        border-radius: 6px;
+        border-radius: 8px;
         padding: 8px 12px;
         font-size: 13px;
         selection-background-color: {_ACCENT};
     }}
     QLineEdit:focus {{
-        border: 1px solid {_ACCENT};
+        border: 2px solid {_ACCENT};
+        padding: 7px 11px;
     }}
     QCheckBox {{
         color: {_TEXT};
@@ -97,19 +98,20 @@ NAV_CSS = f"""
         background: {_NAV_BG};
         border: none;
         outline: none;
-        padding-top: 8px;
+        padding: 8px 8px 0 8px;
     }}
     QListWidget::item {{
         color: {_TEXT_SEC};
-        padding: 12px 16px 12px 14px;
+        padding: 10px 12px;
         border: none;
+        border-radius: 8px;
+        margin-bottom: 2px;
         font-size: 13px;
     }}
     QListWidget::item:selected {{
-        color: {_ACCENT};
-        background: {_SURFACE};
-        border-left: 3px solid {_ACCENT};
-        padding-left: 11px;
+        color: {_TEXT};
+        background: rgba(0, 0, 0, 0.06);
+        font-weight: 500;
     }}
     QListWidget::item:hover:!selected {{
         background: rgba(0, 0, 0, 0.03);
@@ -119,7 +121,7 @@ NAV_CSS = f"""
 _BTN_PRIMARY = f"""
     QPushButton {{
         background: {_ACCENT}; color: white; border: none;
-        border-radius: 6px; padding: 9px 22px; font-size: 13px;
+        border-radius: 8px; padding: 9px 22px; font-size: 13px;
     }}
     QPushButton:hover {{ background: {_ACCENT_HV}; }}
     QPushButton:disabled {{ background: {_BAR_OFF}; color: {_TEXT_DIM}; }}
@@ -128,7 +130,7 @@ _BTN_PRIMARY = f"""
 _BTN_GHOST = f"""
     QPushButton {{
         background: transparent; color: {_TEXT_SEC}; border: 1px solid {_BORDER};
-        border-radius: 6px; padding: 9px 22px; font-size: 13px;
+        border-radius: 8px; padding: 9px 22px; font-size: 13px;
     }}
     QPushButton:hover {{ background: {_INPUT_BG}; color: {_TEXT}; }}
 """
@@ -136,7 +138,7 @@ _BTN_GHOST = f"""
 _BTN_GHOST_SM = f"""
     QPushButton {{
         background: transparent; color: {_TEXT_SEC}; border: 1px solid {_BORDER};
-        border-radius: 6px; padding: 4px 14px; font-size: 12px;
+        border-radius: 8px; padding: 4px 14px; font-size: 12px;
     }}
     QPushButton:hover {{ background: {_INPUT_BG}; color: {_TEXT}; }}
 """
@@ -144,7 +146,7 @@ _BTN_GHOST_SM = f"""
 _BTN_DANGER_SM = f"""
     QPushButton {{
         background: transparent; color: {_RED}; border: 1px solid {_RED_BG};
-        border-radius: 6px; padding: 4px 14px; font-size: 12px;
+        border-radius: 8px; padding: 4px 14px; font-size: 12px;
     }}
     QPushButton:hover {{ background: {_RED_BG}; color: {_RED}; }}
 """
@@ -152,7 +154,7 @@ _BTN_DANGER_SM = f"""
 _BTN_GREEN_SM = f"""
     QPushButton {{
         background: {_GREEN_BG}; color: {_GREEN}; border: none;
-        border-radius: 6px; padding: 4px 14px; font-size: 12px; font-weight: 500;
+        border-radius: 8px; padding: 4px 14px; font-size: 12px; font-weight: 500;
     }}
     QPushButton:hover {{ background: #D0F4DC; }}
     QPushButton:disabled {{ background: {_BAR_OFF}; color: {_TEXT_DIM}; }}
@@ -161,12 +163,12 @@ _BTN_GREEN_SM = f"""
 _BTN_ACCENT_SM = f"""
     QPushButton {{
         background: {_ACCENT}; color: white; border: none;
-        border-radius: 6px; padding: 4px 14px; font-size: 12px;
+        border-radius: 8px; padding: 4px 14px; font-size: 12px;
     }}
     QPushButton:hover {{ background: {_ACCENT_HV}; }}
 """
 
-_SECTION = f"color: {_TEXT_SEC}; font-size: 11px; font-weight: 600;"
+_SECTION = f"color: {_TEXT_SEC}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
 
 
 # ── Nav Icons ────────────────────────────────────────────────────
@@ -378,17 +380,18 @@ class ModelCard(QFrame):
 
     def _setup_ui(self):
         if self._is_active:
-            border = f"2px solid {_ACCENT}"
             bg = _ACCENT_BG
-        elif self._is_downloaded:
-            border = f"1px solid {_BORDER}"
-            bg = _SURFACE
         else:
-            border = f"1px solid {_BAR_OFF}"
             bg = _SURFACE
         self.setStyleSheet(
-            f"ModelCard {{ background: {bg}; border: {border}; border-radius: 10px; }}"
+            f"ModelCard {{ background: {bg}; border: none; border-radius: 12px; }}"
         )
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setColor(QColor(0, 0, 0, 30 if not self._is_active else 45))
+        shadow.setBlurRadius(20)
+        shadow.setOffset(0, 2)
+        self.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -540,7 +543,7 @@ class SettingsWindow(QDialog):
 
         div = QFrame()
         div.setFixedWidth(1)
-        div.setStyleSheet(f"background: {_BORDER};")
+        div.setStyleSheet(f"background: {_BAR_OFF};")
         body.addWidget(div)
 
         self._pages = QStackedWidget()
@@ -557,11 +560,11 @@ class SettingsWindow(QDialog):
 
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {_BORDER};")
+        sep.setStyleSheet(f"background: {_BAR_OFF};")
         root.addWidget(sep)
 
         btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(16, 10, 16, 10)
+        btn_bar.setContentsMargins(20, 14, 20, 14)
         btn_bar.addStretch()
 
         cancel_btn = QPushButton("取消")
@@ -585,8 +588,9 @@ class SettingsWindow(QDialog):
         lay.setSpacing(20)
 
         t = QLabel("通用设置")
-        t.setFont(QFont("Microsoft YaHei", 15, QFont.Weight.DemiBold))
+        t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
         lay.addWidget(t)
+        lay.addSpacing(4)
 
         s1 = QLabel("快捷键")
         s1.setStyleSheet(_SECTION)
@@ -625,8 +629,8 @@ class SettingsWindow(QDialog):
         lay.setSpacing(0)
 
         t = QLabel("语音识别模型")
-        t.setFont(QFont("Microsoft YaHei", 15, QFont.Weight.DemiBold))
-        t.setContentsMargins(28, 0, 0, 0)
+        t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
+        t.setContentsMargins(28, 8, 0, 0)
         lay.addWidget(t)
 
         sub = QLabel("模型越大准确率越高，但需要更多存储空间")
@@ -647,7 +651,7 @@ class SettingsWindow(QDialog):
         self._dir_path_label = QLabel()
         self._dir_path_label.setStyleSheet(
             f"color: {_TEXT_SEC}; font-size: 11px; background: {_INPUT_BG};"
-            f"border: 1px solid {_BORDER}; border-radius: 4px; padding: 4px 8px;"
+            f"border: none; border-radius: 6px; padding: 5px 10px;"
         )
         self._dir_path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         dl.addWidget(self._dir_path_label, 1)
@@ -666,8 +670,8 @@ class SettingsWindow(QDialog):
 
         self._cards_container = QWidget()
         self._cards_layout = QVBoxLayout(self._cards_container)
-        self._cards_layout.setContentsMargins(24, 8, 24, 24)
-        self._cards_layout.setSpacing(8)
+        self._cards_layout.setContentsMargins(28, 12, 28, 28)
+        self._cards_layout.setSpacing(12)
         scroll.setWidget(self._cards_container)
         lay.addWidget(scroll, 1)
 
@@ -818,8 +822,9 @@ class SettingsWindow(QDialog):
         lay.setSpacing(20)
 
         t = QLabel("文字润色")
-        t.setFont(QFont("Microsoft YaHei", 15, QFont.Weight.DemiBold))
+        t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
         lay.addWidget(t)
+        lay.addSpacing(4)
 
         self._llm_enable_cb = QCheckBox("启用润色（自动去除口语词、添加标点）")
         self._llm_enable_cb.toggled.connect(self._on_llm_toggle)
@@ -845,7 +850,7 @@ class SettingsWindow(QDialog):
         self._llm_key_toggle.setCheckable(True)
         self._llm_key_toggle.setStyleSheet(f"""
             QPushButton {{ background: {_INPUT_BG}; color: {_TEXT_SEC}; border: 1px solid {_BORDER};
-                border-radius: 6px; font-size: 11px; padding: 6px; }}
+                border-radius: 8px; font-size: 11px; padding: 6px; }}
             QPushButton:checked {{ background: {_ACCENT}; color: white; border: 1px solid {_ACCENT}; }}
         """)
         self._llm_key_toggle.toggled.connect(
@@ -961,7 +966,7 @@ class SettingsWindow(QDialog):
     def _add_sep(layout: QVBoxLayout):
         s = QFrame()
         s.setFixedHeight(1)
-        s.setStyleSheet(f"background: {_BORDER};")
+        s.setStyleSheet(f"background: {_BAR_OFF};")
         layout.addWidget(s)
 
     # ── Load / Save ────────────────────────────────────

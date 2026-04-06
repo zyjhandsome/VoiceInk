@@ -138,28 +138,34 @@ def _get_models_dir() -> Path:
     return Path.home() / ".voiceink" / "models"
 
 
-def _get_bundled_model_dir(model_id: str) -> Path | None:
+def _get_portable_model_dir(model_id: str) -> Path | None:
+    """Look for models in portable locations: next to exe or project root."""
     import sys
     info = get_model_info(model_id)
     if not info:
         return None
+
+    candidates = []
     if hasattr(sys, '_MEIPASS'):
-        d = Path(sys._MEIPASS) / "models" / info["dir_name"]
-        if all((d / f).exists() for f in info["files"]):
+        candidates.append(Path(sys._MEIPASS).parent / "models" / info["dir_name"])
+    candidates.append(Path(__file__).parent.parent / "models" / info["dir_name"])
+
+    for d in candidates:
+        if d.exists() and all((d / f).exists() for f in info["files"]):
             return d
     return None
 
 
 def get_model_dir(model_id: str) -> Path:
-    bundled = _get_bundled_model_dir(model_id)
-    if bundled:
-        return bundled
+    portable = _get_portable_model_dir(model_id)
+    if portable:
+        return portable
     info = get_model_info(model_id)
     return _get_models_dir() / info["dir_name"]
 
 
 def is_model_downloaded(model_id: str) -> bool:
-    if _get_bundled_model_dir(model_id):
+    if _get_portable_model_dir(model_id):
         return True
     info = get_model_info(model_id)
     if not info:
@@ -173,7 +179,7 @@ def get_downloaded_models() -> list[str]:
 
 
 def delete_model(model_id: str) -> bool:
-    if _get_bundled_model_dir(model_id):
+    if _get_portable_model_dir(model_id):
         return False
     info = get_model_info(model_id)
     if not info:

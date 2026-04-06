@@ -1,10 +1,6 @@
-# Build & Distribution
-dist/
+# Build artifacts (keep dist/ for distribution)
 build/
 *.spec
-
-# Docs (generated plans/specs)
-docs/
 
 # Python
 __pycache__/
@@ -38,3 +34,6 @@ terminals/
 
 # App data
 *.lock
+
+# Model lock files
+models/.locks/

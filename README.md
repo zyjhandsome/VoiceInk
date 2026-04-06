@@ -18,61 +18,50 @@
 
 ---
 
-## 支持平台
+## 快速上手
 
-| 平台 | 状态 | 备注 |
-|------|------|------|
-| Windows 10/11 | 完整支持 | 无额外依赖 |
-| macOS | 支持 | 需授予辅助功能权限（pynput/pyautogui） |
-| Linux (X11) | 支持 | 需安装 `xdotool`（`sudo apt install xdotool`） |
-| Linux (Wayland) | 部分支持 | pynput 在 Wayland 下有兼容性问题 |
+仓库已包含打包好的可执行文件和预下载的 ASR 模型，**无需安装 Python、无需联网**，开箱即用。
 
----
+### 方式一：直接运行 exe（Windows，推荐）
 
-## 内置 ASR 模型
+`dist/VoiceInk/` 文件夹包含完整应用程序，模型文件已作为独立文件夹 `dist/VoiceInk/models/` 附带。
 
-| 模型 | 精度 | 速度 | 大小 | 语言 | 说明 |
-|------|:----:|:----:|-----:|------|------|
-| SenseVoice | ★★★ | ★★★★★ | 230 MB | 中/英/日/韩/粤 | 极速推理，多语种 |
-| Paraformer 中文 | ★★★★ | ★★★★ | 240 MB | 中/英 | 高精度中英文 |
-| Paraformer 三语 | ★★★★ | ★★★★ | 240 MB | 中/英/粤 | 中英粤三语 |
-| Zipformer CTC | ★★★ | ★★★★★ | 367 MB | 中 | 轻量快速，纯中文 |
-| FireRedASR2 (CTC) | ★★★★★ | ★★★ | 740 MB | 中/英/方言 | 高准确率，支持方言 |
-| FireRedASR2 AED | ★★★★★ | ★★ | 1.2 GB | 中/英/方言 | 最高准确率（较慢） |
-| Qwen3-ASR 0.6B | ★★★★★ | ★★ | 983 MB | 中/英 | 阿里最新大模型 ASR |
+```
+dist/VoiceInk/
+├── VoiceInk.exe          ← 双击运行
+├── models/               ← ASR 模型（程序自动识别）
+│   ├── sherpa-onnx-sense-voice-*/
+│   ├── sherpa-onnx-paraformer-zh-*/
+│   └── ...
+└── _internal/            ← 运行时依赖（无需关注）
+```
 
-首次运行时在设置界面选择模型并点击下载，模型自动从 HuggingFace 拉取。
+直接双击 `VoiceInk.exe` 即可使用，无网络环境也可正常运行。
 
----
+> **分发给同事**：将整个 `dist/VoiceInk/` 文件夹打包为 zip 发送，对方解压后双击 exe 即可。
 
-## 快速开始
-
-### 环境要求
-
-- Python 3.10+
-- 麦克风设备
-
-### 1. 安装依赖
+### 方式二：从源码运行
 
 ```bash
 cd Speech-to-text-software-development
 pip install -r requirements.txt
-```
-
-### 2. 运行
-
-```bash
 python run.py
 ```
 
-### 3. 首次使用
+从源码运行时，程序会按以下顺序查找模型：
+1. 项目根目录的 `models/` 文件夹（仓库已预置）
+2. 用户目录 `~/.voiceink/models/`
+
+仓库自带的 `models/` 目录已包含 5 个常用模型，从源码运行可直接使用，无需额外操作。
+
+### 首次使用
 
 1. 启动后系统托盘区出现 VoiceInk 图标，单击打开设置界面
-2. 进入 **模型** 页面，选择一个 ASR 模型并点击 **下载**
-3. 下载完成后模型自动加载，托盘提示"已就绪"
+2. 进入 **模型** 页面，确认有可用模型（仓库预置的模型会自动识别）
+3. 模型加载就绪后，托盘提示"已就绪"
 4. 按住 **Ctrl+Space** 说话，松开后自动识别并粘贴
 
-### 4. 操作指南
+### 操作指南
 
 | 操作 | 说明 |
 |------|------|
@@ -81,6 +70,42 @@ python run.py
 | **按 Esc** | 取消当前录音 |
 | **单击托盘图标** | 打开设置界面 |
 | **右键托盘图标** | 切换模型 / 打开设置 / 退出 |
+
+---
+
+## 仓库内置模型
+
+`models/` 目录包含以下预下载的 ASR 模型，方便离线环境直接使用：
+
+| 模型 | 精度 | 速度 | 大小 | 语言 | 目录名 |
+|------|:----:|:----:|-----:|------|--------|
+| SenseVoice | ★★★ | ★★★★★ | 228 MB | 中/英/日/韩/粤 | `sherpa-onnx-sense-voice-*` |
+| Paraformer 中文 | ★★★★ | ★★★★ | 217 MB | 中/英 | `sherpa-onnx-paraformer-zh-*` |
+| Paraformer 三语 | ★★★★ | ★★★★ | 233 MB | 中/英/粤 | `sherpa-onnx-paraformer-trilingual-*` |
+| FireRedASR2 (CTC) | ★★★★★ | ★★★ | 740 MB | 中/英/方言 | `sherpa-onnx-fire-red-asr2-ctc-*` |
+| Qwen3-ASR 0.6B | ★★★★★ | ★★ | 942 MB | 中/英 | `sherpa-onnx-qwen3-asr-*` |
+
+> **注意**：模型文件较大（共约 2.4 GB），仓库使用 **Git LFS** 存储。克隆时请确保已安装 Git LFS：
+>
+> ```bash
+> git lfs install
+> git clone https://github.com/zyjhandsome/VoiceInk.git
+> ```
+>
+> 如果克隆时未安装 LFS，模型文件会显示为指针文件。可事后拉取：`git lfs pull`
+
+另有 2 款模型（Zipformer CTC、FireRedASR2 AED）可在设置界面在线下载。
+
+---
+
+## 支持平台
+
+| 平台 | 状态 | 备注 |
+|------|------|------|
+| Windows 10/11 | 完整支持 | 无额外依赖 |
+| macOS | 支持 | 需授予辅助功能权限（pynput/pyautogui） |
+| Linux (X11) | 支持 | 需安装 `xdotool`（`sudo apt install xdotool`） |
+| Linux (Wayland) | 部分支持 | pynput 在 Wayland 下有兼容性问题 |
 
 ---
 
@@ -119,32 +144,47 @@ pip install -r requirements.txt
 python build.py
 ```
 
-打包完成后 `dist/VoiceInk/` 文件夹包含完整应用，可压缩分发。无需安装 Python。
+打包脚本会：
+1. 使用 PyInstaller 构建 `dist/VoiceInk/VoiceInk.exe`
+2. 自动将 `models/` 或 `~/.voiceink/models/` 中已下载的模型复制到 `dist/VoiceInk/models/`
+
+打包完成后，将整个 `dist/VoiceInk/` 文件夹压缩分发即可。接收方无需安装 Python。
 
 ---
 
 ## 项目结构
 
 ```
-voiceink/
-├── main.py                 # 应用入口
-├── app.py                  # 核心协调器
-├── config.py               # 配置管理（~/.voiceink/config.json）
-├── audio_recorder.py       # 麦克风录制（sounddevice）
-├── speech_recognizer.py    # 语音识别（sherpa-onnx，多模型管理与下载）
-├── text_polisher.py        # LLM 润色（httpx，OpenAI Chat Completions 格式）
-├── text_paster.py          # 文字粘贴（跨平台：pyperclip + pyautogui）
-├── hotkey_manager.py       # 全局快捷键（pynput，支持暂停/恢复）
-├── sound_manager.py        # 提示音（numpy 生成）
-└── ui/
-    ├── floating_window.py  # 悬浮窗（状态指示灯动画）
-    ├── settings_window.py  # 设置窗口（通用/模型/润色/关于）
-    └── tray_icon.py        # 系统托盘（模型切换子菜单）
+VoiceInk/
+├── voiceink/                   # 源代码
+│   ├── main.py                 # 应用入口
+│   ├── app.py                  # 核心协调器
+│   ├── config.py               # 配置管理（~/.voiceink/config.json）
+│   ├── audio_recorder.py       # 麦克风录制（sounddevice）
+│   ├── speech_recognizer.py    # 语音识别（sherpa-onnx，多模型管理与下载）
+│   ├── text_polisher.py        # LLM 润色（httpx，OpenAI Chat Completions 格式）
+│   ├── text_paster.py          # 文字粘贴（跨平台：pyperclip + pyautogui）
+│   ├── hotkey_manager.py       # 全局快捷键（pynput，支持暂停/恢复）
+│   ├── sound_manager.py        # 提示音（numpy 生成）
+│   └── ui/
+│       ├── floating_window.py  # 悬浮窗（状态指示灯动画）
+│       ├── settings_window.py  # 设置窗口（通用/模型/润色/关于）
+│       └── tray_icon.py        # 系统托盘（模型切换子菜单）
+├── models/                     # 预下载的 ASR 模型（Git LFS）
+├── dist/VoiceInk/              # 打包好的可执行文件
+├── docs/                       # 设计文档
+├── build.py                    # PyInstaller 打包脚本
+├── run.py                      # 源码启动入口
+├── requirements.txt            # Python 依赖
+└── README.md
 ```
 
 ---
 
 ## 常见问题
+
+**Q: 克隆后模型文件很小（只有几 KB）？**
+A: 模型通过 Git LFS 存储。请先安装 Git LFS（`git lfs install`），然后执行 `git lfs pull` 拉取实际文件。
 
 **Q: 识别准确率不高？**
 A: 尝试切换到 FireRedASR2 或 Qwen3-ASR 模型，它们的中文识别准确率最高。SenseVoice 速度最快但精度稍低。
