@@ -1,8 +1,11 @@
 import json
+import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
+log = logging.getLogger("VoiceInk")
 
 VERSION = "1.1.0"
 
@@ -30,7 +33,8 @@ DEFAULT_CONFIG = {
         "enabled": False,
         "api_url": "",
         "api_key": "",
-        "model_name": ""
+        "model_name": "",
+        "prompt": ""
     }
 }
 
@@ -40,7 +44,8 @@ class Config:
         self._config_dir = Path.home() / ".voiceink"
         self._config_file = self._config_dir / "config.json"
         self._models_dir = self._config_dir / "models"
-        self._config = {}
+        self._config: dict = {}
+        self._extra_keys: dict = {}
         self._ensure_dirs()
         self._load()
 
@@ -49,13 +54,16 @@ class Config:
         self._models_dir.mkdir(parents=True, exist_ok=True)
 
     def _load(self):
+        raw: dict = {}
         if self._config_file.exists():
             try:
                 with open(self._config_file, "r", encoding="utf-8") as f:
-                    self._config = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                self._config = {}
-        self._config = self._merge_defaults(DEFAULT_CONFIG, self._config)
+                    raw = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                log.warning("配置文件读取失败，使用默认配置: %s", e)
+                raw = {}
+        self._extra_keys = {k: v for k, v in raw.items() if k not in DEFAULT_CONFIG}
+        self._config = self._merge_defaults(DEFAULT_CONFIG, raw)
 
     def _merge_defaults(self, defaults: dict, current: dict) -> dict:
         result = {}
@@ -70,8 +78,21 @@ class Config:
         return result
 
     def save(self):
-        with open(self._config_file, "w", encoding="utf-8") as f:
-            json.dump(self._config, f, indent=2, ensure_ascii=False)
+        """Atomic write: write to temp file then rename to prevent corruption."""
+        data = {**self._config, **self._extra_keys}
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._config_dir), suffix=".tmp", prefix="config_"
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, str(self._config_file))
+        except OSError as e:
+            log.error("配置文件保存失败: %s", e)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def get(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
@@ -100,9 +121,7 @@ class Config:
     def models_dir(self) -> Path:
         custom = self.get("stt.models_dir", "")
         if custom:
-            p = Path(custom)
-            p.mkdir(parents=True, exist_ok=True)
-            return p
+            return Path(custom)
         return self._models_dir
 
     @property

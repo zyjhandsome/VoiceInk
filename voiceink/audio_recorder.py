@@ -30,21 +30,22 @@ class AudioRecorder(QObject):
             return
 
         audio_data = indata[:, 0].copy()
+        volume = float(np.sqrt(np.mean(audio_data ** 2)))
+        self.volume_changed.emit(volume)
 
+        emit_chunk = None
         with self._lock:
             self._audio_chunks.append(audio_data)
             self._chunk_accumulator.append(audio_data)
             self._chunk_sample_count += len(audio_data)
 
-        volume = float(np.sqrt(np.mean(audio_data ** 2)))
-        self.volume_changed.emit(volume)
-
-        if self._chunk_sample_count >= self._streaming_interval_samples:
-            with self._lock:
-                chunk = np.concatenate(self._chunk_accumulator)
+            if self._chunk_sample_count >= self._streaming_interval_samples:
+                emit_chunk = np.concatenate(self._chunk_accumulator)
                 self._chunk_accumulator = []
                 self._chunk_sample_count = 0
-            self.audio_chunk_ready.emit(chunk)
+
+        if emit_chunk is not None:
+            self.audio_chunk_ready.emit(emit_chunk)
 
     def start(self):
         if self._is_recording:
@@ -52,21 +53,29 @@ class AudioRecorder(QObject):
 
         self._is_recording = True
         self._is_cancelled = False
-        self._audio_chunks = []
-        self._chunk_accumulator = []
-        self._chunk_sample_count = 0
+        with self._lock:
+            self._audio_chunks = []
+            self._chunk_accumulator = []
+            self._chunk_sample_count = 0
 
+        stream = None
         try:
-            self._stream = sd.InputStream(
+            stream = sd.InputStream(
                 samplerate=self.SAMPLE_RATE,
                 channels=self.CHANNELS,
                 dtype="float32",
                 blocksize=int(self.SAMPLE_RATE * self.CHUNK_DURATION),
                 callback=self._audio_callback
             )
-            self._stream.start()
+            stream.start()
+            self._stream = stream
         except Exception as e:
             self._is_recording = False
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
             self.error.emit(f"麦克风启动失败: {str(e)}")
 
     def stop(self):

@@ -161,6 +161,8 @@ def get_model_dir(model_id: str) -> Path:
     if portable:
         return portable
     info = get_model_info(model_id)
+    if not info:
+        raise ValueError(f"未知模型: {model_id}")
     return _get_models_dir() / info["dir_name"]
 
 
@@ -461,7 +463,8 @@ class SpeechRecognizer(QObject):
             return
 
         if self._current_worker and self._current_worker.isRunning():
-            self._current_worker.wait(5000)
+            log.warning("上一次转写仍在进行中，等待完成...")
+            self._current_worker.wait(8000)
 
         worker = TranscribeWorker(self._recognizer, full_audio)
         worker.result_ready.connect(self._on_final_result)
@@ -471,6 +474,13 @@ class SpeechRecognizer(QObject):
 
     def _on_final_result(self, text: str):
         self.final_result.emit(text)
+
+    def shutdown(self):
+        """Stop all running workers for clean app exit."""
+        if self._load_worker and self._load_worker.isRunning():
+            self._load_worker.wait(3000)
+        if self._current_worker and self._current_worker.isRunning():
+            self._current_worker.wait(3000)
 
     @property
     def is_ready(self) -> bool:

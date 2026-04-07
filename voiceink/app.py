@@ -1,4 +1,5 @@
 import logging
+import sys
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon
@@ -16,6 +17,8 @@ from voiceink.ui.settings_window import SettingsWindow
 
 log = logging.getLogger("VoiceInk")
 
+MIN_AUDIO_SAMPLES = 1600  # 0.1s at 16kHz — ignore recordings shorter than this
+
 
 class App(QObject):
     """Central orchestrator that connects all modules."""
@@ -25,6 +28,7 @@ class App(QObject):
 
         self._config = Config()
         self._current_transcription = ""
+        self._is_transcribing = False
 
         log.info("正在初始化各模块...")
         set_models_dir(self._config.models_dir)
@@ -99,6 +103,10 @@ class App(QObject):
             self._floating.show_error("语音模型未就绪，请在设置中下载模型")
             return
 
+        if self._is_transcribing:
+            log.warning("正在转写中，忽略新的录音请求")
+            return
+
         log.info("开始录音...")
         self._current_transcription = ""
         self._sound.play_start()
@@ -128,12 +136,19 @@ class App(QObject):
     # ── Recognition ───────────────────────────────────
 
     def _on_recording_finished(self, full_audio: np.ndarray):
+        if full_audio.size < MIN_AUDIO_SAMPLES:
+            log.warning("录音过短 (%d 采样点)，忽略", full_audio.size)
+            self._floating.show_error("录音过短，请按住快捷键说话")
+            return
+
+        self._is_transcribing = True
         self._floating.show_recognizing()
         self._recognizer.transcribe_final(full_audio)
 
     def _on_final_result(self, text: str):
         if not text.strip():
             log.warning("未识别到语音内容")
+            self._is_transcribing = False
             self._floating.show_error("未识别到语音内容")
             return
 
@@ -144,14 +159,16 @@ class App(QObject):
         api_url = self._config.get("llm.api_url", "")
         api_key = self._config.get("llm.api_key", "")
         model_name = self._config.get("llm.model_name", "")
+        prompt = self._config.get("llm.prompt", "")
 
         if llm_enabled and api_url and api_key and model_name:
             self._floating.show_polishing(text)
-            self._polisher.polish(text, api_url, api_key, model_name)
+            self._polisher.polish(text, api_url, api_key, model_name, prompt)
         else:
             self._output_text(text)
 
     def _on_recognizer_error(self, error_msg: str):
+        self._is_transcribing = False
         self._sound.play_error()
         self._floating.show_error(error_msg)
 
@@ -178,6 +195,7 @@ class App(QObject):
     # ── Output ────────────────────────────────────────
 
     def _output_text(self, text: str):
+        self._is_transcribing = False
         result = self._paster.paste(text)
 
         if result == "pasted":
@@ -240,35 +258,41 @@ class App(QObject):
         self._setup_auto_start(enabled)
 
     def _setup_auto_start(self, enabled: bool):
+        if sys.platform != "win32":
+            return
         try:
             import winreg
-            import sys
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
             app_name = "VoiceInk"
 
-            if enabled:
-                exe_path = sys.executable
-                if hasattr(sys, '_MEIPASS'):
-                    exe_path = sys.argv[0]
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"')
-                winreg.CloseKey(key)
-            else:
-                try:
-                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-                    winreg.DeleteValue(key, app_name)
-                    winreg.CloseKey(key)
-                except FileNotFoundError:
-                    pass
-        except Exception:
-            pass
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                if enabled:
+                    exe_path = sys.executable
+                    if hasattr(sys, '_MEIPASS'):
+                        exe_path = sys.argv[0]
+                    winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"')
+                else:
+                    try:
+                        winreg.DeleteValue(key, app_name)
+                    except FileNotFoundError:
+                        pass
+        except Exception as e:
+            log.warning("设置开机自启失败: %s", e)
 
     # ── Lifecycle ─────────────────────────────────────
 
     def _quit(self):
+        log.info("VoiceInk 正在退出...")
         self._hotkey_mgr.stop()
         if self._recorder.is_recording:
             self._recorder.cancel()
+
+        if self._settings_win is not None:
+            self._settings_win.cancel_all_downloads()
+            self._settings_win.close()
+
+        self._recognizer.shutdown()
+        self._polisher.cancel()
         self._tray.hide()
         QApplication.quit()
 

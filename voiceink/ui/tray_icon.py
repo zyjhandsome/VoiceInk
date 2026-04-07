@@ -3,7 +3,7 @@ from PyQt6.QtGui import (
     QIcon, QPixmap, QPainter, QColor, QBrush, QPen,
     QRadialGradient, QPainterPath, QActionGroup
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRectF, QPointF
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF, QPointF
 
 
 _MENU_CSS = """
@@ -171,11 +171,18 @@ class TrayIcon(QSystemTrayIcon):
         self.setContextMenu(menu)
 
     def update_models(self, downloaded_models: list[dict], active_id: str):
+        if self._model_group is not None:
+            try:
+                self._model_group.triggered.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+
         self._model_menu.clear()
 
         if not downloaded_models:
             empty = self._model_menu.addAction("暂无已下载模型")
             empty.setEnabled(False)
+            self._model_group = None
             return
 
         self._model_group = QActionGroup(self._model_menu)
@@ -192,6 +199,7 @@ class TrayIcon(QSystemTrayIcon):
             lambda a: self.model_switched.emit(a.data())
         )
 
+    @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def _on_activated(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger,
                       QSystemTrayIcon.ActivationReason.DoubleClick):
@@ -201,4 +209,6 @@ class TrayIcon(QSystemTrayIcon):
         self.setIcon(self._recording_icon if is_recording else self._normal_icon)
 
     def set_auto_start(self, enabled: bool):
+        self._auto_start_action.blockSignals(True)
         self._auto_start_action.setChecked(enabled)
+        self._auto_start_action.blockSignals(False)

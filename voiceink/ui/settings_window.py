@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QFormLayout, QMessageBox, QFrame, QScrollArea,
     QProgressBar, QListWidget, QListWidgetItem, QStackedWidget,
-    QFileDialog, QGraphicsDropShadowEffect,
+    QFileDialog, QGraphicsDropShadowEffect, QTextEdit,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QSize
 from PyQt6.QtGui import QFont, QPainter, QColor, QIcon, QPixmap, QPen
@@ -99,6 +99,9 @@ NAV_CSS = f"""
         border: none;
         outline: none;
         padding: 8px 8px 0 8px;
+    }}
+    QScrollBar:horizontal {{
+        height: 0px;
     }}
     QListWidget::item {{
         color: {_TEXT_SEC};
@@ -513,7 +516,10 @@ class SettingsWindow(QDialog):
         self.setMinimumSize(580, 440)
         self.resize(700, 520)
         self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowCloseButtonHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
         )
         self.setStyleSheet(WINDOW_CSS)
 
@@ -530,6 +536,7 @@ class SettingsWindow(QDialog):
 
         self._nav = QListWidget()
         self._nav.setFixedWidth(136)
+        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._nav.setStyleSheet(NAV_CSS)
 
         for shape, label in [("general", "通用"), ("model", "模型"),
@@ -816,10 +823,26 @@ class SettingsWindow(QDialog):
     # ── Page: Polish (LLM) ─────────────────────────────
 
     def _create_polish_page(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{
+                background: transparent; width: 6px; margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {_BORDER}; border-radius: 3px; min-height: 30px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+        """)
+
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(32, 28, 32, 28)
-        lay.setSpacing(20)
+        lay.setSpacing(16)
 
         t = QLabel("文字润色")
         t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
@@ -830,11 +853,20 @@ class SettingsWindow(QDialog):
         self._llm_enable_cb.toggled.connect(self._on_llm_toggle)
         lay.addWidget(self._llm_enable_cb)
 
-        self._add_sep(lay)
+        self._llm_off_hint = QLabel("启用后可配置 LLM 接口与润色提示词。")
+        self._llm_off_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px;")
+        lay.addWidget(self._llm_off_hint)
+
+        self._llm_container = QWidget()
+        c_lay = QVBoxLayout(self._llm_container)
+        c_lay.setContentsMargins(0, 0, 0, 0)
+        c_lay.setSpacing(16)
+
+        self._add_sep(c_lay)
 
         self._llm_form = QWidget()
         form = QFormLayout(self._llm_form)
-        form.setSpacing(14)
+        form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._llm_url_edit = QLineEdit()
@@ -866,7 +898,7 @@ class SettingsWindow(QDialog):
         self._llm_model_edit.setPlaceholderText("deepseek-chat")
         form.addRow("模型名称", self._llm_model_edit)
 
-        lay.addWidget(self._llm_form)
+        c_lay.addWidget(self._llm_form)
 
         tr = QHBoxLayout()
         tr.addStretch()
@@ -874,7 +906,47 @@ class SettingsWindow(QDialog):
         self._llm_test_btn.setStyleSheet(_BTN_GHOST)
         self._llm_test_btn.clicked.connect(self._test_llm)
         tr.addWidget(self._llm_test_btn)
-        lay.addLayout(tr)
+        c_lay.addLayout(tr)
+
+        self._add_sep(c_lay)
+
+        prompt_header = QHBoxLayout()
+        prompt_lbl = QLabel("润色提示词")
+        prompt_lbl.setStyleSheet(_SECTION)
+        prompt_header.addWidget(prompt_lbl)
+        prompt_header.addStretch()
+        self._prompt_reset_btn = QPushButton("恢复默认")
+        self._prompt_reset_btn.setFixedHeight(24)
+        self._prompt_reset_btn.setStyleSheet(_BTN_GHOST_SM)
+        self._prompt_reset_btn.clicked.connect(self._reset_prompt)
+        prompt_header.addWidget(self._prompt_reset_btn)
+        c_lay.addLayout(prompt_header)
+
+        prompt_hint = QLabel("自定义发送给大模型的 System Prompt，留空则使用内置默认提示词")
+        prompt_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
+        c_lay.addWidget(prompt_hint)
+
+        self._llm_prompt_edit = QTextEdit()
+        self._llm_prompt_edit.setFixedHeight(120)
+        self._llm_prompt_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background: {_INPUT_BG};
+                color: {_TEXT};
+                border: 1px solid {_BORDER};
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-family: {_FONT};
+            }}
+            QTextEdit:focus {{
+                border: 2px solid {_ACCENT};
+                padding: 7px 11px;
+            }}
+        """)
+        self._llm_prompt_edit.setPlaceholderText(
+            "留空使用默认提示词。默认行为：去除口语赘词、补全标点、理顺语序，保持原意不变。"
+        )
+        c_lay.addWidget(self._llm_prompt_edit)
 
         hint = QLabel(
             "支持 OpenAI、DeepSeek、通义千问、Ollama 等兼容接口。\n"
@@ -882,14 +954,21 @@ class SettingsWindow(QDialog):
         )
         hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
         hint.setWordWrap(True)
-        lay.addWidget(hint)
+        c_lay.addWidget(hint)
 
+        lay.addWidget(self._llm_container)
         lay.addStretch()
-        return page
+
+        scroll.setWidget(page)
+        return scroll
 
     def _on_llm_toggle(self, enabled: bool):
-        self._llm_form.setEnabled(enabled)
-        self._llm_test_btn.setEnabled(enabled)
+        self._llm_container.setVisible(enabled)
+        self._llm_off_hint.setVisible(not enabled)
+
+    def _reset_prompt(self):
+        from voiceink.text_polisher import POLISH_PROMPT
+        self._llm_prompt_edit.setPlainText(POLISH_PROMPT)
 
     # ── Page: About ────────────────────────────────────
 
@@ -981,17 +1060,23 @@ class SettingsWindow(QDialog):
 
         llm_on = self._config.get("llm.enabled", False)
         self._llm_enable_cb.setChecked(llm_on)
-        self._llm_form.setEnabled(llm_on)
-        self._llm_test_btn.setEnabled(llm_on)
+        self._llm_container.setVisible(llm_on)
+        self._llm_off_hint.setVisible(not llm_on)
         self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
         self._llm_key_edit.setText(self._config.get("llm.api_key", ""))
         self._llm_model_edit.setText(self._config.get("llm.model_name", ""))
+        self._llm_prompt_edit.setPlainText(self._config.get("llm.prompt", ""))
 
         self._refresh_about_info()
 
     def _save_settings(self):
         hotkey = self._hotkey_edit.value
         if hotkey:
+            parts = hotkey.lower().split("+")
+            has_modifier = any(p.strip() in ("ctrl", "alt", "shift", "win", "cmd") for p in parts)
+            if not has_modifier:
+                QMessageBox.warning(self, "提示", "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。")
+                return
             old = self._config.get("hotkey")
             self._config.set("hotkey", hotkey)
             if hotkey != old:
@@ -1004,6 +1089,7 @@ class SettingsWindow(QDialog):
         self._config.set("llm.api_url", self._llm_url_edit.text().strip())
         self._config.set("llm.api_key", self._llm_key_edit.text().strip())
         self._config.set("llm.model_name", self._llm_model_edit.text().strip())
+        self._config.set("llm.prompt", self._llm_prompt_edit.toPlainText().strip())
 
         self.settings_changed.emit()
         self.close()
@@ -1043,3 +1129,16 @@ class SettingsWindow(QDialog):
             QMessageBox.information(self, "成功", "连接正常，可以使用。")
         else:
             QMessageBox.warning(self, "失败", w.msg)
+
+    # ── Cleanup ────────────────────────────────────────
+
+    def cancel_all_downloads(self):
+        """Wait for any in-progress download workers to finish."""
+        for model_id, worker in list(self._dl_workers.items()):
+            if hasattr(worker, 'isRunning') and worker.isRunning():
+                worker.wait(3000)
+        self._dl_workers.clear()
+
+    def closeEvent(self, event):
+        self.cancel_all_downloads()
+        super().closeEvent(event)

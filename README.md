@@ -174,13 +174,80 @@ python build.py
 
 ---
 
+## 代码架构
+
+### 整体架构
+
+VoiceInk 采用**信号驱动的模块化架构**，所有模块通过 PyQt6 的信号/槽机制松耦合通信，由 `App` 类作为中央协调器统一调度。
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    App (中央协调器)                        │
+│  连接所有模块信号，管理 录音→识别→润色→输出 完整流程        │
+└────┬──────┬──────┬──────┬──────┬──────┬──────┬───────────┘
+     │      │      │      │      │      │      │
+     ▼      ▼      ▼      ▼      ▼      ▼      ▼
+  HotKey  Audio  Speech  Text   Text   Sound    UI
+  Manager Recorder Recognizer Polisher Paster Manager  (Tray/Float/Settings)
+```
+
+### 核心数据流
+
+```
+按住快捷键 → 录音 → 松开 → 音频数据 → ASR识别 → 文字
+                                                   ↓
+                                          [LLM润色(可选)]
+                                                   ↓
+                                          粘贴到光标位置
+```
+
+1. `HotKeyManager` 监听全局快捷键（pynput），按下触发 `recording_start`，松开触发 `recording_stop`
+2. `AudioRecorder` 录制麦克风音频（sounddevice），录音结束后发射 `recording_finished(np.ndarray)`
+3. `SpeechRecognizer` 在后台线程加载/运行 sherpa-onnx 模型，完成后发射 `final_result(str)`
+4. `TextPolisher`（可选）调用 LLM API 润色文字，通过后台 QThread 避免阻塞 UI
+5. `TextPaster` 将文字写入剪贴板并模拟 Ctrl+V 粘贴到前台窗口
+
+### 线程模型
+
+| 线程 | 模块 | 说明 |
+|------|------|------|
+| 主线程 (Qt 事件循环) | App, UI | 所有 UI 操作和信号路由 |
+| sounddevice 回调线程 | AudioRecorder | 实时采集麦克风数据 |
+| pynput 监听线程 | HotKeyManager | 全局键盘事件监听 |
+| ModelLoadWorker (QThread) | SpeechRecognizer | 模型加载（避免阻塞 UI） |
+| TranscribeWorker (QThread) | SpeechRecognizer | 语音转文字推理 |
+| PolishWorker (QThread) | TextPolisher | LLM API 调用 |
+| ModelDownloadWorker (QThread) | SpeechRecognizer | 模型文件下载 |
+
+所有后台线程通过 Qt 信号（`QueuedConnection`）与主线程通信，保证 UI 线程安全。
+
+### 模块职责
+
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| **入口** | `main.py` | 单实例锁、日志初始化、全局异常处理、QApplication 启动 |
+| **协调器** | `app.py` | 连接所有模块信号/槽，管理完整的录音-识别-润色-输出流程 |
+| **配置** | `config.py` | JSON 配置读写（原子写入防损坏），默认值合并 |
+| **录音** | `audio_recorder.py` | 16kHz 单声道音频采集，实时音量回调 |
+| **识别** | `speech_recognizer.py` | 7 款 ASR 模型注册表，HuggingFace 下载，后台加载与推理 |
+| **润色** | `text_polisher.py` | OpenAI Chat Completions 格式 API 调用 |
+| **粘贴** | `text_paster.py` | 跨平台前台窗口检测 + 剪贴板粘贴 |
+| **快捷键** | `hotkey_manager.py` | 全局快捷键监听，支持暂停/恢复/动态更新 |
+| **提示音** | `sound_manager.py` | numpy 生成正弦波提示音 |
+| **悬浮窗** | `ui/floating_window.py` | 半透明悬浮窗，声波动画，状态指示 |
+| **设置窗口** | `ui/settings_window.py` | 分页设置界面（通用/模型/润色/关于） |
+| **系统托盘** | `ui/tray_icon.py` | 托盘图标、右键菜单、模型切换 |
+
+---
+
 ## 项目结构
 
 ```
 VoiceInk/
 ├── voiceink/                   # 源代码
-│   ├── main.py                 # 应用入口
-│   ├── app.py                  # 核心协调器
+│   ├── __init__.py
+│   ├── main.py                 # 应用入口（单实例锁、异常处理）
+│   ├── app.py                  # 核心协调器（信号路由、状态管理）
 │   ├── config.py               # 配置管理（~/.voiceink/config.json）
 │   ├── audio_recorder.py       # 麦克风录制（sounddevice）
 │   ├── speech_recognizer.py    # 语音识别（sherpa-onnx，多模型管理与下载）
@@ -189,7 +256,8 @@ VoiceInk/
 │   ├── hotkey_manager.py       # 全局快捷键（pynput，支持暂停/恢复）
 │   ├── sound_manager.py        # 提示音（numpy 生成）
 │   └── ui/
-│       ├── floating_window.py  # 悬浮窗（状态指示灯动画）
+│       ├── __init__.py
+│       ├── floating_window.py  # 悬浮窗（状态指示灯 + 声波动画）
 │       ├── settings_window.py  # 设置窗口（通用/模型/润色/关于）
 │       └── tray_icon.py        # 系统托盘（模型切换子菜单）
 ├── models/                     # 预下载的 ASR 模型（Git LFS）

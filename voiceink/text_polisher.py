@@ -24,12 +24,14 @@ class PolishWorker(QThread):
     result_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, api_url: str, api_key: str, model_name: str, text: str):
+    def __init__(self, api_url: str, api_key: str, model_name: str, text: str,
+                 prompt: str = ""):
         super().__init__()
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
         self._model_name = model_name
         self._text = text
+        self._prompt = prompt or POLISH_PROMPT
 
     def run(self):
         try:
@@ -50,7 +52,7 @@ class PolishWorker(QThread):
             payload = {
                 "model": self._model_name,
                 "messages": [
-                    {"role": "system", "content": POLISH_PROMPT},
+                    {"role": "system", "content": self._prompt},
                     {"role": "user", "content": self._text}
                 ],
                 "temperature": 0.3,
@@ -62,7 +64,14 @@ class PolishWorker(QThread):
                 response.raise_for_status()
                 data = response.json()
 
-            polished = data["choices"][0]["message"]["content"].strip()
+            choices = data.get("choices")
+            if not choices or not isinstance(choices, list):
+                self.error.emit("润色失败: API 响应格式异常")
+                return
+            polished = choices[0].get("message", {}).get("content", "").strip()
+            if not polished:
+                self.error.emit("润色失败: API 返回空内容")
+                return
             log.info("  润色结果: %s", polished[:80])
             self.result_ready.emit(polished)
 
@@ -82,15 +91,24 @@ class TextPolisher(QObject):
         super().__init__(parent)
         self._worker = None
 
-    def polish(self, text: str, api_url: str, api_key: str, model_name: str):
+    def polish(self, text: str, api_url: str, api_key: str, model_name: str,
+               prompt: str = ""):
         if not text.strip():
             self.polish_complete.emit(text)
             return
 
-        self._worker = PolishWorker(api_url, api_key, model_name, text)
+        self.cancel()
+
+        self._worker = PolishWorker(api_url, api_key, model_name, text, prompt)
         self._worker.result_ready.connect(self._on_result)
         self._worker.error.connect(self._on_error)
         self._worker.start()
+
+    def cancel(self):
+        """Wait for any running worker to finish (best-effort cleanup)."""
+        if self._worker and self._worker.isRunning():
+            self._worker.wait(3000)
+        self._worker = None
 
     def _on_result(self, polished_text: str):
         self.polish_complete.emit(polished_text)
