@@ -50,6 +50,10 @@ def build():
     import PyInstaller.__main__
 
     main_script = str(SCRIPT_DIR / "voiceink" / "main.py")
+    win_dll_rthook = SCRIPT_DIR / "packaging" / "pyi_rth_voiceink_win_dll.py"
+    if not win_dll_rthook.is_file():
+        print(f"\n[ERROR] Missing runtime hook: {win_dll_rthook}")
+        sys.exit(1)
 
     args = [
         main_script,
@@ -58,6 +62,7 @@ def build():
         "--windowed",
         "--noconfirm",
         "--clean",
+        f"--runtime-hook={win_dll_rthook}",
         "--hidden-import=pynput.keyboard._win32",
         "--hidden-import=pynput.mouse._win32",
         "--hidden-import=sounddevice",
