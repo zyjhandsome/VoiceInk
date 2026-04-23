@@ -1,7 +1,10 @@
+import logging
 import numpy as np
 import sounddevice as sd
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 import threading
+
+log = logging.getLogger("VoiceInk")
 
 
 class AudioRecorder(QObject):
@@ -20,9 +23,6 @@ class AudioRecorder(QObject):
         self._is_cancelled = False
         self._audio_chunks = []
         self._stream = None
-        self._chunk_accumulator = []
-        self._chunk_sample_count = 0
-        self._streaming_interval_samples = int(self.SAMPLE_RATE * 3)  # 3 seconds for STT chunks
         self._lock = threading.Lock()
 
     def _audio_callback(self, indata, frames, time_info, status):
@@ -33,19 +33,8 @@ class AudioRecorder(QObject):
         volume = float(np.sqrt(np.mean(audio_data ** 2)))
         self.volume_changed.emit(volume)
 
-        emit_chunk = None
         with self._lock:
             self._audio_chunks.append(audio_data)
-            self._chunk_accumulator.append(audio_data)
-            self._chunk_sample_count += len(audio_data)
-
-            if self._chunk_sample_count >= self._streaming_interval_samples:
-                emit_chunk = np.concatenate(self._chunk_accumulator)
-                self._chunk_accumulator = []
-                self._chunk_sample_count = 0
-
-        if emit_chunk is not None:
-            self.audio_chunk_ready.emit(emit_chunk)
 
     def start(self):
         if self._is_recording:
@@ -55,8 +44,6 @@ class AudioRecorder(QObject):
         self._is_cancelled = False
         with self._lock:
             self._audio_chunks = []
-            self._chunk_accumulator = []
-            self._chunk_sample_count = 0
 
         stream = None
         try:
@@ -74,9 +61,16 @@ class AudioRecorder(QObject):
             if stream is not None:
                 try:
                     stream.close()
-                except Exception:
-                    pass
-            self.error.emit(f"麦克风启动失败: {str(e)}")
+                except Exception as close_err:
+                    log.warning("关闭音频流失败: %s", close_err)
+            # 友好化错误信息
+            error_msg = str(e)
+            if "Permission denied" in error_msg or "access" in error_msg.lower():
+                self.error.emit("无法访问麦克风，请检查系统权限设置")
+            elif "No device" in error_msg or "device" in error_msg.lower():
+                self.error.emit("未检测到麦克风，请确认设备已连接")
+            else:
+                self.error.emit(f"麦克风启动失败: {error_msg}")
 
     def stop(self):
         if not self._is_recording:
@@ -91,12 +85,19 @@ class AudioRecorder(QObject):
                 pass
             self._stream = None
 
-        if not self._is_cancelled and self._audio_chunks:
-            with self._lock:
-                full_audio = np.concatenate(self._audio_chunks)
-            self.recording_finished.emit(full_audio)
+        # 所有操作在锁内完成，避免竞争条件
+        with self._lock:
+            chunks = self._audio_chunks
+            self._audio_chunks = []
+            is_cancelled = self._is_cancelled
+            self._is_cancelled = False
 
-        self._audio_chunks = []
+        # 空音频检查
+        if is_cancelled or not chunks:
+            return
+
+        full_audio = np.concatenate(chunks)
+        self.recording_finished.emit(full_audio)
 
     def cancel(self):
         self._is_cancelled = True

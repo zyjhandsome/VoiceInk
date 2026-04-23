@@ -1,10 +1,10 @@
 import os
 import sys
-import time
 import subprocess
 
 import pyperclip
 import pyautogui
+from PyQt6.QtCore import QTimer
 
 
 def _get_foreground_window_win32():
@@ -91,28 +91,12 @@ class TextPaster:
         hwnd = info[0]
         has_target = hwnd != 0 and not self._is_own_window(info)
 
-        try:
-            old_clipboard = ""
-            try:
-                old_clipboard = pyperclip.paste()
-            except Exception:
-                pass
+        pyperclip.copy(text)
 
-            pyperclip.copy(text)
-
-            if has_target:
-                time.sleep(0.15)
-                _paste_shortcut()
-                time.sleep(0.1)
-
-                try:
-                    pyperclip.copy(old_clipboard)
-                except Exception:
-                    pass
-
-                return "pasted"
-            else:
-                return "clipboard"
-
-        except Exception as e:
-            return f"error:{str(e)}"
+        if has_target:
+            # 使用 QTimer 异步执行粘贴，避免 UI 阻塞
+            QTimer.singleShot(150, _paste_shortcut)
+            # 不恢复剪贴板，避免覆盖用户可能复制的新内容
+            return "pasted"
+        else:
+            return "clipboard"

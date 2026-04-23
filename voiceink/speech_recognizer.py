@@ -204,6 +204,11 @@ class ModelDownloadWorker(QThread):
     def __init__(self, model_id: str):
         super().__init__()
         self._model_id = model_id
+        self._cancelled = False
+
+    def cancel(self):
+        """Set cancellation flag to stop download."""
+        self._cancelled = True
 
     def run(self):
         try:
@@ -221,11 +226,21 @@ class ModelDownloadWorker(QThread):
             files = info["files"]
             total_files = len(files)
 
+            last_emit_pct = -1
+
             for i, filename in enumerate(files):
+                if self._cancelled:
+                    log.info("模型下载已取消")
+                    self.error.emit("下载已取消")
+                    return
+
                 target = model_dir / filename
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():
-                    self.progress.emit(int((i + 1) / total_files * 100))
+                    current_pct = int((i + 1) / total_files * 100)
+                    if current_pct > last_emit_pct:
+                        last_emit_pct = current_pct
+                        self.progress.emit(current_pct)
                     continue
 
                 url = hf_url + filename
@@ -233,25 +248,37 @@ class ModelDownloadWorker(QThread):
 
                 tmp_path = target.with_suffix(".tmp")
                 try:
-                    with httpx.stream("GET", url, timeout=600.0, follow_redirects=True) as resp:
+                    # 缩短超时时间，添加取消检查
+                    with httpx.stream("GET", url, timeout=60.0, follow_redirects=True) as resp:
                         resp.raise_for_status()
                         total = int(resp.headers.get("content-length", 0))
                         downloaded = 0
 
                         with open(tmp_path, "wb") as f:
                             for chunk in resp.iter_bytes(chunk_size=1024 * 256):
+                                if self._cancelled:
+                                    resp.close()
+                                    tmp_path.unlink()
+                                    log.info("模型下载已取消")
+                                    self.error.emit("下载已取消")
+                                    return
                                 f.write(chunk)
                                 downloaded += len(chunk)
                                 if total > 0:
                                     file_pct = downloaded / total
-                                    overall = (i + file_pct) / total_files * 100
-                                    self.progress.emit(int(overall))
+                                    overall_pct = int((i + file_pct) / total_files * 100)
+                                    if overall_pct > last_emit_pct:
+                                        last_emit_pct = overall_pct
+                                        self.progress.emit(overall_pct)
 
                     tmp_path.rename(target)
                 except Exception:
                     if tmp_path.exists():
                         tmp_path.unlink()
                     raise
+
+            if self._cancelled:
+                return
 
             if is_model_downloaded(self._model_id):
                 log.info("模型下载完成: %s", info["name"])
@@ -381,12 +408,25 @@ class TranscribeWorker(QThread):
         super().__init__()
         self._recognizer = recognizer
         self._audio_data = audio_data
+        self._cancelled = False
+
+    def cancel(self):
+        """Set cancellation flag."""
+        self._cancelled = True
 
     def run(self):
+        if self._cancelled:
+            return
+
         try:
             audio = self._audio_data.astype(np.float32)
             if audio.ndim > 1:
                 audio = audio[:, 0]
+
+            # 验证音频数据有效性
+            if audio.size == 0 or np.any(np.isnan(audio)) or np.any(np.isinf(audio)):
+                self.error.emit("音频数据无效")
+                return
 
             log.info("开始识别 (%.1f 秒音频)...", len(audio) / SAMPLE_RATE)
 
@@ -394,8 +434,11 @@ class TranscribeWorker(QThread):
             stream.accept_waveform(SAMPLE_RATE, audio)
             self._recognizer.decode_stream(stream)
 
+            if self._cancelled:
+                return
+
             text = stream.result.text.strip()
-            log.info("识别结果: %s", text[:100] if text else "(空)")
+            log.debug("识别结果长度: %d 字符", len(text))
             self.result_ready.emit(text)
 
         except Exception as e:
@@ -462,9 +505,21 @@ class SpeechRecognizer(QObject):
             self.error.emit("语音模型未就绪，请等待模型加载完成")
             return
 
+        # 正确处理正在运行的 Worker，避免线程泄漏
         if self._current_worker and self._current_worker.isRunning():
-            log.warning("上一次转写仍在进行中，等待完成...")
-            self._current_worker.wait(8000)
+            log.warning("上一次转写仍在进行中，取消旧任务...")
+            self._current_worker.cancel()
+            self._current_worker.wait(1000)  # 等待最多1秒
+            if self._current_worker.isRunning():
+                log.warning("Worker 未响应取消，强制终止")
+                self._current_worker.terminate()
+                self._current_worker.wait()
+            # 断开信号连接
+            try:
+                self._current_worker.disconnect()
+            except TypeError:
+                pass
+            self._current_worker = None
 
         worker = TranscribeWorker(self._recognizer, full_audio)
         worker.result_ready.connect(self._on_final_result)
@@ -478,9 +533,19 @@ class SpeechRecognizer(QObject):
     def shutdown(self):
         """Stop all running workers for clean app exit."""
         if self._load_worker and self._load_worker.isRunning():
-            self._load_worker.wait(3000)
+            try:
+                self._load_worker.disconnect()
+            except TypeError:
+                pass
+            self._load_worker.wait(1000)
+
         if self._current_worker and self._current_worker.isRunning():
-            self._current_worker.wait(3000)
+            self._current_worker.cancel()
+            try:
+                self._current_worker.disconnect()
+            except TypeError:
+                pass
+            self._current_worker.wait(1000)
 
     @property
     def is_ready(self) -> bool:

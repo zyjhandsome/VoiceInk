@@ -1,11 +1,15 @@
+import logging
 import numpy as np
-import threading
+from concurrent.futures import ThreadPoolExecutor
+
+log = logging.getLogger("VoiceInk")
 
 
 class SoundManager:
     """Generates and plays simple beep sounds for recording start/stop feedback."""
 
     SAMPLE_RATE = 44100
+    _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sound")
 
     def __init__(self, enabled: bool = True):
         self._enabled = enabled
@@ -33,11 +37,11 @@ class SoundManager:
             try:
                 import sounddevice as sd
                 sd.play(audio_data, self.SAMPLE_RATE, blocking=True)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("播放声音失败: %s", e)
 
-        thread = threading.Thread(target=_play, daemon=True)
-        thread.start()
+        # 使用线程池，避免频繁创建线程
+        self._executor.submit(_play)
 
     def play_start(self):
         if not self._enabled:

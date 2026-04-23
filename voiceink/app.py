@@ -23,6 +23,24 @@ MIN_AUDIO_SAMPLES = 1600  # 0.1s at 16kHz — ignore recordings shorter than thi
 class App(QObject):
     """Central orchestrator that connects all modules."""
 
+    # 友好化错误信息映射
+    ERROR_HINTS = {
+        "麦克风": "无法访问麦克风\n请检查：1) 麦克风是否已连接\n2) 是否被其他应用占用\n3) 系统隐私设置",
+        "模型未就绪": "语音模型未就绪\n请右键托盘图标 → 设置 → 模型 → 下载模型",
+        "模型未下载": "语音模型未下载\n请右键托盘图标 → 设置 → 模型 → 下载模型",
+        "录音过短": "录音过短\n请按住快捷键说话，时长至少 0.1 秒",
+        "未识别": "未识别到语音内容\n请确保麦克风正常工作并靠近说话",
+        "润色失败": "润色失败，已输出原文\n请检查 API 配置是否正确",
+        "输出失败": "输出失败\n请确保目标窗口可接收文本输入",
+    }
+
+    def _friendly_error(self, original_msg: str) -> str:
+        """将技术性错误信息转换为友好提示"""
+        for keyword, hint in self.ERROR_HINTS.items():
+            if keyword in original_msg:
+                return hint
+        return original_msg
+
     def __init__(self):
         super().__init__()
 
@@ -100,7 +118,7 @@ class App(QObject):
 
     def _on_recording_start(self):
         if not self._recognizer.is_ready:
-            self._floating.show_error("语音模型未就绪，请在设置中下载模型")
+            self._floating.show_error(self._friendly_error("模型未就绪"))
             return
 
         if self._is_transcribing:
@@ -131,14 +149,14 @@ class App(QObject):
     def _on_recorder_error(self, error_msg: str):
         self._tray.set_recording(False)
         self._sound.play_error()
-        self._floating.show_error(error_msg)
+        self._floating.show_error(self._friendly_error(error_msg))
 
     # ── Recognition ───────────────────────────────────
 
     def _on_recording_finished(self, full_audio: np.ndarray):
         if full_audio.size < MIN_AUDIO_SAMPLES:
             log.warning("录音过短 (%d 采样点)，忽略", full_audio.size)
-            self._floating.show_error("录音过短，请按住快捷键说话")
+            self._floating.show_error(self._friendly_error("录音过短"))
             return
 
         self._is_transcribing = True
@@ -149,10 +167,10 @@ class App(QObject):
         if not text.strip():
             log.warning("未识别到语音内容")
             self._is_transcribing = False
-            self._floating.show_error("未识别到语音内容")
+            self._floating.show_error(self._friendly_error("未识别"))
             return
 
-        log.info("识别结果: %s", text[:80])
+        log.debug("识别结果长度: %d 字符", len(text))
         self._current_transcription = text
 
         llm_enabled = self._config.get("llm.enabled", False)
@@ -170,7 +188,7 @@ class App(QObject):
     def _on_recognizer_error(self, error_msg: str):
         self._is_transcribing = False
         self._sound.play_error()
-        self._floating.show_error(error_msg)
+        self._floating.show_error(self._friendly_error(error_msg))
 
     def _on_stt_ready(self):
         hotkey = format_hotkey(self._config.get("hotkey", "ctrl+space"))
@@ -188,8 +206,8 @@ class App(QObject):
         self._output_text(polished_text)
 
     def _on_polish_error(self, error_msg: str):
-        log.warning("润色失败，输出原文: %s", error_msg)
-        self._floating.show_error("润色失败，已输出原文")
+        log.warning("润色失败: %s", error_msg)
+        self._floating.show_error(self._friendly_error("润色失败"))
         QTimer.singleShot(500, lambda: self._output_text(self._current_transcription))
 
     # ── Output ────────────────────────────────────────
@@ -199,15 +217,15 @@ class App(QObject):
         result = self._paster.paste(text)
 
         if result == "pasted":
-            log.info("✓ 已粘贴到光标位置")
+            log.info("已粘贴到光标位置")
             self._floating.show_success("已输入")
         elif result == "clipboard":
-            log.info("✓ 已复制到剪贴板")
+            log.info("已复制到剪贴板")
             self._floating.show_success("已复制到剪贴板")
         else:
             error_msg = result.replace("error:", "")
             log.error("输出失败: %s", error_msg)
-            self._floating.show_error(f"输出失败: {error_msg}")
+            self._floating.show_error(self._friendly_error("输出失败"))
 
     # ── Settings ──────────────────────────────────────
 
@@ -294,6 +312,8 @@ class App(QObject):
         self._recognizer.shutdown()
         self._polisher.cancel()
         self._tray.hide()
+        # 确保配置已保存
+        self._config.save_immediate()
         QApplication.quit()
 
     def start(self):

@@ -63,6 +63,7 @@ def build():
         "--noconfirm",
         "--clean",
         f"--runtime-hook={win_dll_rthook}",
+        f"--icon={SCRIPT_DIR / 'voiceink' / 'icon.ico'}",
         "--hidden-import=pynput.keyboard._win32",
         "--hidden-import=pynput.mouse._win32",
         "--hidden-import=sounddevice",

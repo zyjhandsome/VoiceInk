@@ -32,17 +32,31 @@ class PolishWorker(QThread):
         self._model_name = model_name
         self._text = text
         self._prompt = prompt or POLISH_PROMPT
+        self._cancelled = False
+
+    def cancel(self):
+        """Set cancellation flag to stop the worker."""
+        self._cancelled = True
 
     def run(self):
+        if self._cancelled:
+            return
+
         try:
             import httpx
+
+            # HTTPS 安全检查
+            if not self._api_url.startswith("https://"):
+                log.warning("API URL 未使用 HTTPS，存在安全风险")
+                self.error.emit("安全错误: API URL 必须使用 HTTPS 协议")
+                return
 
             url = self._api_url
             if not url.endswith("/chat/completions"):
                 url = url.rstrip("/") + "/chat/completions"
 
             log.info("正在调用 LLM 润色 (%s)...", self._model_name)
-            log.info("  原文: %s", self._text[:80])
+            log.debug("原文长度: %d 字符", len(self._text))
 
             headers = {
                 "Content-Type": "application/json",
@@ -61,23 +75,38 @@ class PolishWorker(QThread):
 
             with httpx.Client(timeout=15.0) as client:
                 response = client.post(url, headers=headers, json=payload)
+                if self._cancelled:
+                    return
                 response.raise_for_status()
                 data = response.json()
 
+            # 严格的 API 响应校验
             choices = data.get("choices")
-            if not choices or not isinstance(choices, list):
+            if not choices or not isinstance(choices, list) or len(choices) == 0:
                 self.error.emit("润色失败: API 响应格式异常")
                 return
-            polished = choices[0].get("message", {}).get("content", "").strip()
+
+            message = choices[0].get("message")
+            if not message or not isinstance(message, dict):
+                self.error.emit("润色失败: API 响应格式异常")
+                return
+
+            content = message.get("content")
+            if content is None:
+                self.error.emit("润色失败: API 返回空内容")
+                return
+
+            polished = str(content).strip()
             if not polished:
                 self.error.emit("润色失败: API 返回空内容")
                 return
-            log.info("  润色结果: %s", polished[:80])
+
+            log.debug("润色结果长度: %d 字符", len(polished))
             self.result_ready.emit(polished)
 
         except httpx.TimeoutException:
             log.error("LLM 润色超时")
-            self.error.emit("润色超时")
+            self.error.emit("润色超时，请稍后重试")
         except Exception as e:
             log.error("LLM 润色失败: %s", e)
             self.error.emit(f"润色失败: {str(e)}")
@@ -105,9 +134,14 @@ class TextPolisher(QObject):
         self._worker.start()
 
     def cancel(self):
-        """Wait for any running worker to finish (best-effort cleanup)."""
+        """Cancel running worker properly."""
         if self._worker and self._worker.isRunning():
-            self._worker.wait(3000)
+            self._worker.cancel()  # 设置取消标志
+            # 断开信号连接，避免回调
+            try:
+                self._worker.disconnect()
+            except TypeError:
+                pass
         self._worker = None
 
     def _on_result(self, polished_text: str):
@@ -118,6 +152,10 @@ class TextPolisher(QObject):
 
     @staticmethod
     def test_connection(api_url: str, api_key: str, model_name: str) -> tuple[bool, str]:
+        # HTTPS 安全检查
+        if not api_url.startswith("https://"):
+            return False, "安全错误: API URL 必须使用 HTTPS 协议"
+
         try:
             import httpx
 

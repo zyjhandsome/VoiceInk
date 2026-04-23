@@ -3,16 +3,45 @@ import os
 import atexit
 import logging
 import threading
+import ctypes
 
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 _lock_file_path: str | None = None
+_win_mutex = None
+
+# 在 main() 配置日志前，使用临时 logger
+_log = logging.getLogger("VoiceInk")
 
 
 def check_single_instance() -> bool:
-    """Ensure only one instance of VoiceInk runs at a time using a lock file."""
+    """Ensure only one instance of VoiceInk runs at a time."""
+    if sys.platform == "win32":
+        # 使用 ctypes 创建 Windows 互斥锁（更可靠，不需要 pywin32）
+        try:
+            mutex_name = "Local\\VoiceInk_Single_Instance_Mutex"
+            # CreateMutex 参数: lpMutexAttributes=NULL, bInitialOwner=False, lpName
+            kernel32 = ctypes.windll.kernel32
+            ERROR_ALREADY_EXISTS = 183  # Windows 错误代码
+
+            mutex = kernel32.CreateMutexW(None, False, mutex_name)
+            last_error = kernel32.GetLastError()
+
+            if last_error == ERROR_ALREADY_EXISTS:
+                # 互斥锁已存在，说明已有实例运行
+                if mutex:
+                    kernel32.CloseHandle(mutex)
+                return False
+
+            global _win_mutex
+            _win_mutex = mutex
+            return True
+        except Exception as e:
+            _log.warning("互斥锁创建失败，使用文件锁: %s", e)
+
+    # 非 Windows 或互斥锁失败时，使用文件锁
     global _lock_file_path
     import tempfile
     lock_file = os.path.join(tempfile.gettempdir(), "voiceink.lock")
@@ -26,26 +55,33 @@ def check_single_instance() -> bool:
                 old_pid = int(old_pid_str)
                 try:
                     os.kill(old_pid, 0)
-                    if sys.platform == "win32":
-                        import ctypes
-                        kernel32 = ctypes.windll.kernel32
-                        handle = kernel32.OpenProcess(0x0400, False, old_pid)
-                        if handle:
-                            kernel32.CloseHandle(handle)
-                            return False
-                    else:
-                        return False
+                    # 进程存在，说明已有实例
+                    return False
                 except (OSError, ProcessLookupError):
+                    # 进程不存在，可以启动
                     pass
 
         with open(lock_file, "w") as f:
             f.write(str(os.getpid()))
         return True
-    except Exception:
+    except OSError as e:
+        _log.warning("文件锁创建失败: %s", e)
         return True
 
 
 def cleanup_lock():
+    """清理单实例锁"""
+    global _win_mutex
+
+    # Windows: 关闭互斥锁句柄
+    if _win_mutex:
+        try:
+            ctypes.windll.kernel32.CloseHandle(_win_mutex)
+            _win_mutex = None
+        except Exception:
+            pass
+
+    # 文件锁: 删除锁文件
     if _lock_file_path:
         try:
             os.remove(_lock_file_path)
@@ -91,11 +127,25 @@ def main():
     log.info("VoiceInk 启动中...")
 
     from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtGui import QIcon
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("VoiceInk")
     app.setStyle("Fusion")
+
+    # 设置应用图标，让 Windows 任务栏显示正确的图标
+    from voiceink.ui.tray_icon import create_microphone_icon
+    app_icon = create_microphone_icon(recording=False, size=64)
+    app.setWindowIcon(app_icon)
+
+    # Windows: 设置 AppUserModelID 让任务栏显示正确的图标
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("VoiceInk.VoiceInkApp")
+        except Exception:
+            pass
 
     app.setStyleSheet("""
         QWidget {

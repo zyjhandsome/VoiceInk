@@ -4,6 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
+from PyQt6.QtCore import QTimer
 
 log = logging.getLogger("VoiceInk")
 
@@ -46,6 +47,10 @@ class Config:
         self._models_dir = self._config_dir / "models"
         self._config: dict = {}
         self._extra_keys: dict = {}
+        # 延迟保存机制：避免频繁写入文件
+        self._save_timer = QTimer()
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._do_save)
         self._ensure_dirs()
         self._load()
 
@@ -76,6 +81,15 @@ class Config:
             else:
                 result[key] = default_value
         return result
+
+    def _do_save(self):
+        """实际执行保存操作"""
+        self.save()
+
+    def save_immediate(self):
+        """立即保存配置，用于应用退出前"""
+        self._save_timer.stop()
+        self.save()
 
     def save(self):
         """Atomic write: write to temp file then rename to prevent corruption."""
@@ -112,7 +126,8 @@ class Config:
                 config[k] = {}
             config = config[k]
         config[keys[-1]] = value
-        self.save()
+        # 延迟保存：500ms 后写入，多次 set 只触发一次写入
+        self._save_timer.start(500)
 
     def get_all(self) -> dict:
         return self._config.copy()

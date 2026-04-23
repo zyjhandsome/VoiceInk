@@ -194,7 +194,7 @@ class FloatingWindow(QWidget):
     def show_recording(self):
         self._hide_timer.stop()
         self._set_state("录音中", "#FF6B6B", pulse=True)
-        self._text_label.setText("")
+        self._text_label.setText("按 ESC 取消")  # 添加取消提示
         self._waveform.show()
         self._waveform.start()
         self._position_on_screen()
@@ -241,7 +241,9 @@ class FloatingWindow(QWidget):
         self._text_label.setText("")
         self._position_on_screen()
         self.show()
-        self._hide_timer.start(2000)
+        # 根据文字长度动态计算显示时间：每10字符+1秒，最少3秒，最多8秒
+        duration = min(8, max(3, len(message) // 10 + 2))
+        self._hide_timer.start(duration * 1000)
 
     def update_volume(self, volume: float):
         self._waveform.set_volume(volume)
