@@ -3,6 +3,9 @@ build/
 dist/
 *.spec
 
+# Models (large files, download separately)
+models/
+
 # Python
 __pycache__/
 *.py[cod]
