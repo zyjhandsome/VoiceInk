@@ -1,6 +1,5 @@
-# Build artifacts (exclude dist/ - large binary files)
+# Build artifacts (exclude build/, keep dist/ via LFS for installer)
 build/
-dist/
 *.spec
 
 # Models (large files, download separately)
