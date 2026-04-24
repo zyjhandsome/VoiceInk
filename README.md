@@ -2,6 +2,8 @@
 
 按住快捷键说话，松开后自动将语音转为文字并粘贴到光标位置。基于本地离线 ASR 模型（sherpa-onnx），无需网络即可高精度识别中英文语音，可选配置大模型 API 对文字进行智能润色。
 
+版本号以 **`voiceink/version.py`** 中的 `__version__` 为准；安装包文件名、Inno 元数据与 Windows 下 `VoiceInk.exe` 属性均与之同步。
+
 ---
 
 ## 功能特点
@@ -22,11 +24,10 @@
 
 | 依赖 | 版本要求 | 说明 |
 |------|----------|------|
-| Python | **3.10** 及以上 | 代码使用了 `X \| Y` 类型语法等 3.10+ 特性 |
-| pip | 最新版 | 用于安装依赖包 |
-| Git LFS | 最新版 | 克隆仓库时拉取大文件（模型、exe） |
+| Python | **3.10** 及以上 | 类型语法等需 3.10+ |
+| pip | 最新版 | 安装依赖 |
 
-> **直接使用 exe 运行无需安装 Python**，仅从源码运行或打包时需要。
+> **使用已打包的安装程序或 exe 时无需安装 Python**；从源码运行或自行打包时需要。
 
 完整 Python 依赖见 `requirements.txt`，主要包括：
 
@@ -42,81 +43,39 @@
 
 ## 快速上手
 
-仓库已包含打包好的可执行文件和预下载的 ASR 模型，**无需安装 Python、无需联网**，开箱即用。
+### Windows：安装包（推荐分发）
 
-### 方式一：直接运行 exe（Windows，推荐）
+使用 **`VoiceInk-Setup-<版本号>.exe`**（例如 `VoiceInk-Setup-1.3.0.exe`）安装即可。自行构建见下文「打包」：`python build_release.py` 后在 `dist/` 下得到与 `voiceink/version.py` 中版本一致的安装包。
 
-`dist/VoiceInk/` 文件夹包含完整应用程序，模型文件已作为独立文件夹 `dist/VoiceInk/models/` 附带。
+### Windows：便携目录
 
-```
-dist/VoiceInk/
-├── VoiceInk.exe          ← 双击运行
-├── models/               ← ASR 模型（程序自动识别）
-│   ├── sherpa-onnx-sense-voice-*/
-│   ├── sherpa-onnx-paraformer-zh-*/
-│   └── ...
-└── _internal/            ← 运行时依赖（无需关注）
-```
+运行 `python build.py` 后使用 `dist/VoiceInk/VoiceInk.exe`（与同级的 `models/`、`_internal/` 一起分发）。未打包时不会有该目录。
 
-直接双击 `VoiceInk.exe` 即可使用，无网络环境也可正常运行。
-
-> **分发给同事**：将整个 `dist/VoiceInk/` 文件夹打包为 zip 发送，对方解压后双击 exe 即可。
-
-### 方式二：从源码运行
+### 从源码运行
 
 ```bash
-cd Speech-to-text-software-development
 pip install -r requirements.txt
 python run.py
 ```
 
-从源码运行时，程序会按以下顺序查找模型：
-1. 项目根目录的 `models/` 文件夹（仓库已预置）
-2. 用户目录 `~/.voiceink/models/`
-
-仓库自带的 `models/` 目录已包含 5 个常用模型，从源码运行可直接使用，无需额外操作。
+模型来源：**设置 → 模型** 中下载；或自行放到项目 `models/`、`~/.voiceink/models/`（目录名须与内置注册表一致）。打包发布前若需自带 **Qwen3-ASR 0.6B**，可执行 `python voiceink_build/download_qwen3_for_build.py` 下载到 `./models/`（详见「打包」）。
 
 ### 首次使用
 
-1. 启动后系统托盘区出现 VoiceInk 图标，单击打开设置界面
-2. 进入 **模型** 页面，确认有可用模型（仓库预置的模型会自动识别）
-3. 模型加载就绪后，托盘提示"已就绪"
-4. 按住 **Ctrl+Space** 说话，松开后自动识别并粘贴
+1. 托盘出现 VoiceInk 图标 → 单击打开设置  
+2. **模型** 页确认已下载/识别到至少一个模型  
+3. 就绪后托盘提示「已就绪」  
+4. 默认 **Ctrl+Space** 按住说话，松开转写并粘贴  
 
 ### 操作指南
 
 | 操作 | 说明 |
 |------|------|
-| **按住 Ctrl+Space** | 开始录音，悬浮窗弹出显示状态 |
-| **松开 Ctrl+Space** | 停止录音，自动转写 → 润色 → 粘贴到光标位置 |
-| **按 Esc** | 取消当前录音 |
-| **单击托盘图标** | 打开设置界面 |
-| **右键托盘图标** | 切换模型 / 打开设置 / 退出 |
-
----
-
-## 仓库内置模型
-
-`models/` 目录包含以下预下载的 ASR 模型，方便离线环境直接使用：
-
-| 模型 | 精度 | 速度 | 大小 | 语言 | 目录名 |
-|------|:----:|:----:|-----:|------|--------|
-| SenseVoice | ★★★ | ★★★★★ | 228 MB | 中/英/日/韩/粤 | `sherpa-onnx-sense-voice-*` |
-| Paraformer 中文 | ★★★★ | ★★★★ | 217 MB | 中/英 | `sherpa-onnx-paraformer-zh-*` |
-| Paraformer 三语 | ★★★★ | ★★★★ | 233 MB | 中/英/粤 | `sherpa-onnx-paraformer-trilingual-*` |
-| FireRedASR2 (CTC) | ★★★★★ | ★★★ | 740 MB | 中/英/方言 | `sherpa-onnx-fire-red-asr2-ctc-*` |
-| Qwen3-ASR 0.6B | ★★★★★ | ★★ | 942 MB | 中/英 | `sherpa-onnx-qwen3-asr-*` |
-
-> **注意**：模型文件较大（共约 2.4 GB），仓库使用 **Git LFS** 存储。克隆时请确保已安装 Git LFS：
->
-> ```bash
-> git lfs install
-> git clone https://github.com/zyjhandsome/VoiceInk.git
-> ```
->
-> 如果克隆时未安装 LFS，模型文件会显示为指针文件。可事后拉取：`git lfs pull`
-
-另有 2 款模型（Zipformer CTC、FireRedASR2 AED）可在设置界面在线下载。
+| **按住 Ctrl+Space** | 开始录音 |
+| **松开** | 停止录音 → 转写 →（可选润色）→ 粘贴 |
+| **Esc** | 取消录音 |
+| **单击托盘** | 打开设置 |
+| **右键托盘** | 切换模型 / 设置 / 退出 |
 
 ---
 
@@ -159,18 +118,25 @@ python run.py
 
 ---
 
-## 打包成可执行文件
+## 版本号（发布前必读）
+
+- **唯一来源：** `voiceink/version.py` 中的 `__version__`（如 `1.3.0`）。
+- 修改并提交后，以下会自动与该版本对齐：
+  - 应用内「关于」页显示
+  - Windows 下 `VoiceInk.exe` 文件属性（PyInstaller `--version-file`）
+  - Inno 安装包：`AppVersion`、`OutputBaseFilename`（`VoiceInk-Setup-<version>.exe`）及安装程序版本资源
+
+## 打包
+
+**一键生成版本化安装包**（`dist/VoiceInk-Setup-<version>.exe`，成功后默认删除中间目录 `dist/VoiceInk/`）：
 
 ```bash
 pip install -r requirements.txt
-python build.py
+python voiceink_build/download_qwen3_for_build.py   # 首次或 CI：自带 Qwen3 模型（build.py 强制要求）
+python build_release.py
 ```
 
-打包脚本会：
-1. 使用 PyInstaller 构建 `dist/VoiceInk/VoiceInk.exe`
-2. 自动将 `models/` 或 `~/.voiceink/models/` 中已下载的模型复制到 `dist/VoiceInk/models/`
-
-打包完成后，将整个 `dist/VoiceInk/` 文件夹压缩分发即可。接收方无需安装 Python。
+需已安装 [Inno Setup 6](https://jrsoftware.org/isdl.php)。仅生成便携目录、不做安装包：`python build.py`（输出 `dist/VoiceInk/`，模型来自 `./models/` 与 `~/.voiceink/models/`）。
 
 ---
 
@@ -248,6 +214,7 @@ VoiceInk/
 │   ├── __init__.py
 │   ├── main.py                 # 应用入口（单实例锁、异常处理）
 │   ├── app.py                  # 核心协调器（信号路由、状态管理）
+│   ├── version.py              # 发布版本号（安装包 / EXE 属性 / 关于页）
 │   ├── config.py               # 配置管理（~/.voiceink/config.json）
 │   ├── audio_recorder.py       # 麦克风录制（sounddevice）
 │   ├── speech_recognizer.py    # 语音识别（sherpa-onnx，多模型管理与下载）
@@ -260,12 +227,14 @@ VoiceInk/
 │       ├── floating_window.py  # 悬浮窗（状态指示灯 + 声波动画）
 │       ├── settings_window.py  # 设置窗口（通用/模型/润色/关于）
 │       └── tray_icon.py        # 系统托盘（模型切换子菜单）
-├── models/                     # 预下载的 ASR 模型（Git LFS）
-├── dist/VoiceInk/              # 打包好的可执行文件
-├── docs/                       # 设计文档
-├── build.py                    # PyInstaller 打包脚本
-├── run.py                      # 源码启动入口
-├── requirements.txt            # Python 依赖
+├── models/                     # 可选：本地 ASR 模型目录（默认不提交，见 .gitignore）
+├── dist/                       # 构建输出：VoiceInk-Setup-<ver>.exe / 便携版 VoiceInk/
+├── installer/                  # Inno Setup 与 build_installer.py（从 version.py 注入版本）
+├── voiceink_build/             # PyInstaller hook、版本资源、Qwen3 下载（勿用名 packaging，会与 PyPI 包冲突）
+├── build.py                    # PyInstaller → dist/VoiceInk/
+├── build_release.py            # build.py + Inno 一键发布
+├── run.py                      # 源码入口
+├── requirements.txt
 └── README.md
 ```
 
@@ -273,8 +242,11 @@ VoiceInk/
 
 ## 常见问题
 
-**Q: 克隆后模型文件很小（只有几 KB）？**
-A: 模型通过 Git LFS 存储。请先安装 Git LFS（`git lfs install`），然后执行 `git lfs pull` 拉取实际文件。
+**Q: 打包时提示缺少 Qwen3 模型？**
+A: 运行 `python voiceink_build/download_qwen3_for_build.py`，或在应用内下载后将模型目录放到 `models/` 或 `~/.voiceink/models/`。
+
+**Q: 克隆后看不到大模型文件？**
+A: 默认 `models/` 在 `.gitignore` 中，需自行下载或使用上述脚本；若仓库对个别文件使用 Git LFS，需 `git lfs pull`。
 
 **Q: 识别准确率不高？**
 A: 尝试切换到 FireRedASR2 或 Qwen3-ASR 模型，它们的中文识别准确率最高。SenseVoice 速度最快但精度稍低。

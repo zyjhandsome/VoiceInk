@@ -1,4 +1,5 @@
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -8,6 +9,17 @@ from PyQt6.QtCore import QObject, pyqtSignal, QThread
 log = logging.getLogger("VoiceInk")
 
 SAMPLE_RATE = 16000
+
+# Qwen3-ASR (sherpa-onnx) may emit XML-style delimiters in decoded text.
+_ASR_TEXT_TAG_RE = re.compile(r"</?asr_text\s*>", re.IGNORECASE)
+
+
+def normalize_asr_output(text: str) -> str:
+    """Remove ASR model wrapper tags (e.g. <asr_text>...</asr_text>) from recognition text."""
+    if not text:
+        return text
+    cleaned = _ASR_TEXT_TAG_RE.sub("", text)
+    return cleaned.strip()
 
 HF_URL = "https://huggingface.co"
 
@@ -454,7 +466,7 @@ class TranscribeWorker(QThread):
             if self._cancelled:
                 return
 
-            text = stream.result.text.strip()
+            text = normalize_asr_output(stream.result.text)
             log.debug("识别结果长度: %d 字符", len(text))
             self.result_ready.emit(text)
 

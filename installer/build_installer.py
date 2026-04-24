@@ -3,11 +3,17 @@ Build script for creating VoiceInk Windows installer using Inno Setup.
 
 Prerequisites:
 - Inno Setup 6 must be installed (https://jrsoftware.org/isdl.php)
-- VoiceInk must already be built with PyInstaller (run build.py first)
+- VoiceInk must already be built with PyInstaller (run build.py first), or use
+  ../build_release.py for a one-shot build.
 
-Output: dist/VoiceInk-Setup.exe - A professional Windows installer
+Output: dist/VoiceInk-Setup-<version>.exe (version from voiceink/version.py)
+
+By default, the intermediate folder dist/VoiceInk/ is deleted after a
+successful compile so dist/ only contains the setup EXE. Pass --keep-staging
+to preserve it for debugging.
 """
 
+import argparse
 import subprocess
 import shutil
 import sys
@@ -15,6 +21,11 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from voiceink.version import __version__, file_version_quad
 
 # Inno Setup compiler path (common installation locations)
 INNO_SETUP_PATHS = [
@@ -85,10 +96,11 @@ def check_prerequisites():
     return True
 
 
-def build_installer():
+def build_installer(*, keep_staging: bool = False):
     """Build the Windows installer using Inno Setup."""
     print("=" * 60)
     print("  VoiceInk Installer Build Script")
+    print(f"  Version {__version__}  (Inno / Win file quad {file_version_quad()})")
     print("=" * 60)
     print()
 
@@ -97,40 +109,38 @@ def build_installer():
 
     print()
     print("[1/2] Building installer with Inno Setup...")
+    print("     (Large tree + LZMA ultra can take many minutes; progress from ISCC appears below.)")
+    print()
 
     inno_path = find_inno_setup()
     installer_script = SCRIPT_DIR / "VoiceInk-Setup.iss"
 
-    # Run Inno Setup compiler
+    # Stream ISCC output (do not capture) so long compress steps do not look hung.
     try:
         result = subprocess.run(
-            [str(inno_path), str(installer_script)],
+            [
+                str(inno_path),
+                f"/DAppVersionStr={__version__}",
+                f"/DAppVersionQuad={file_version_quad()}",
+                str(installer_script),
+            ],
             cwd=str(SCRIPT_DIR),
-            capture_output=True,
-            text=True,
-            timeout=600  # 10 minutes timeout
+            timeout=7200,  # 2 h — ~1 GB+ payloads with ultra compression
         )
 
         if result.returncode != 0:
-            print("\n[ERROR] Inno Setup compilation failed!")
-            print(result.stdout)
-            print(result.stderr)
+            print("\n[ERROR] Inno Setup compilation failed (see messages above).")
             sys.exit(1)
 
-        # Print output
-        for line in result.stdout.split('\n'):
-            if line.strip():
-                print(f"  {line}")
-
     except subprocess.TimeoutExpired:
-        print("\n[ERROR] Inno Setup compilation timed out!")
+        print("\n[ERROR] Inno Setup compilation timed out after 2 hours.")
         sys.exit(1)
     except Exception as e:
         print(f"\n[ERROR] Failed to run Inno Setup: {e}")
         sys.exit(1)
 
-    # Check output
-    output_file = PROJECT_ROOT / "dist" / "VoiceInk-Setup.exe"
+    # Check output (filename includes version; see VoiceInk-Setup.iss OutputBaseFilename)
+    output_file = PROJECT_ROOT / "dist" / f"VoiceInk-Setup-{__version__}.exe"
     if not output_file.exists():
         print("\n[ERROR] Installer not created!")
         sys.exit(1)
@@ -146,12 +156,26 @@ def build_installer():
     print(f"  File size   : {size_mb:.0f} MB")
     print()
     print("  Distribution:")
-    print("    Share VoiceInk-Setup.exe with users.")
+    print(f"    Share {output_file.name} with users.")
     print("    Users run the installer to install VoiceInk.")
     print("=" * 60)
+
+    staging_dir = PROJECT_ROOT / "dist" / "VoiceInk"
+    if not keep_staging and staging_dir.exists():
+        shutil.rmtree(staging_dir)
+        print()
+        print(f"  Removed staging folder (intermediate build): {staging_dir}")
+        print(f"  dist/ now contains {output_file.name} only.")
 
     return output_file
 
 
 if __name__ == "__main__":
-    build_installer()
+    ap = argparse.ArgumentParser(description="Build VoiceInk-Setup.exe (Inno Setup).")
+    ap.add_argument(
+        "--keep-staging",
+        action="store_true",
+        help="Keep dist/VoiceInk after success (default: delete to leave only the installer).",
+    )
+    ns = ap.parse_args()
+    build_installer(keep_staging=ns.keep_staging)

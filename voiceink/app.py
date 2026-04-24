@@ -230,13 +230,13 @@ class App(QObject):
     # ── Settings ──────────────────────────────────────
 
     def _show_settings(self):
-        self._hotkey_mgr.pause()
-
         if self._settings_win is None:
             self._settings_win = SettingsWindow(self._config)
             self._settings_win.hotkey_updated.connect(self._on_hotkey_updated)
             self._settings_win.settings_changed.connect(self._on_settings_changed)
             self._settings_win.finished.connect(self._on_settings_closed)
+            self._settings_win.hotkey_capture_started.connect(self._hotkey_mgr.pause)
+            self._settings_win.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
 
         self._settings_win._load_settings()
         self._settings_win.show()
@@ -244,7 +244,6 @@ class App(QObject):
         self._settings_win.activateWindow()
 
     def _on_settings_closed(self):
-        self._hotkey_mgr.resume()
         self._update_tray_models()
 
     def _on_hotkey_updated(self, new_hotkey: str):

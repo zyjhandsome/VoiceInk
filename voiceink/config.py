@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 from PyQt6.QtCore import QTimer
 
-log = logging.getLogger("VoiceInk")
+from voiceink.version import __version__ as VERSION
 
-VERSION = "1.1.0"
+log = logging.getLogger("VoiceInk")
 
 
 def _get_default_models_dir() -> Path:

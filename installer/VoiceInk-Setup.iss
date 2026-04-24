@@ -1,9 +1,18 @@
 ; VoiceInk Installation Script for Inno Setup 6
 ; Creates a professional Windows installer with custom installation path
+;
+; Version constants are normally passed by build_installer.py:
+;   ISCC /DAppVersionStr=1.3.0 /DAppVersionQuad=1.3.0.0 VoiceInk-Setup.iss
+#ifndef AppVersionStr
+#define AppVersionStr "1.3.0"
+#endif
+#ifndef AppVersionQuad
+#define AppVersionQuad "1.3.0.0"
+#endif
 
 [Setup]
 AppName=VoiceInk
-AppVersion=1.2.0
+AppVersion={#AppVersionStr}
 AppPublisher=VoiceInk
 AppPublisherURL=https://github.com/zyjhandsome/VoiceInk
 AppSupportURL=https://github.com/zyjhandsome/VoiceInk/issues
@@ -11,7 +20,7 @@ DefaultDirName={commonpf}\VoiceInk
 DefaultGroupName=VoiceInk
 AllowNoIcons=yes
 OutputDir=..\dist
-OutputBaseFilename=VoiceInk-Setup
+OutputBaseFilename=VoiceInk-Setup-{#AppVersionStr}
 SetupIconFile=..\voiceink\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -24,12 +33,12 @@ DirExistsWarning=no
 DisableDirPage=no
 
 ; Version info
-VersionInfoVersion=1.2.0.0
+VersionInfoVersion={#AppVersionQuad}
 VersionInfoCompany=VoiceInk
 VersionInfoDescription=VoiceInk Setup
 VersionInfoCopyright=VoiceInk
 VersionInfoProductName=VoiceInk
-VersionInfoProductVersion=1.2.0.0
+VersionInfoProductVersion={#AppVersionQuad}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,12 +48,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "开机自动启动"; GroupDescription: "启动选项"; Flags: unchecked
 
 [Files]
-; Main executable
-Source: "..\dist\VoiceInk_final\VoiceInk\VoiceInk.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Internal dependencies
-Source: "..\dist\VoiceInk_final\VoiceInk\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Qwen3-ASR model (bundled)
-Source: "..\dist\VoiceInk_final\VoiceInk\models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Paths match build.py PyInstaller output: dist\VoiceInk\
+Source: "..\dist\VoiceInk\VoiceInk.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\VoiceInk\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Models copied by build.py when present (optional at compile time)
+Source: "..\dist\VoiceInk\models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\VoiceInk"; Filename: "{app}\VoiceInk.exe"

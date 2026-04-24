@@ -1,6 +1,8 @@
-# Build artifacts (exclude build/, keep dist/ via LFS for installer)
+# PyInstaller
 build/
 *.spec
+# PyInstaller staging for Inno; release artifact is dist/VoiceInk-Setup-<version>.exe
+dist/VoiceInk/
 
 # Models (large files, download separately)
 models/

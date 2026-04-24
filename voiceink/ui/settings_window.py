@@ -276,6 +276,8 @@ def _qt_key_to_name(key: int) -> str:
 
 class HotkeyEdit(QLineEdit):
     hotkey_changed = pyqtSignal(str)
+    capture_started = pyqtSignal()
+    capture_ended = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -295,9 +297,12 @@ class HotkeyEdit(QLineEdit):
         self.setText(_format_hotkey(hotkey))
 
     def mousePressEvent(self, event):
+        if self._capturing:
+            self.capture_ended.emit()
         self._capturing = True
         self.setText("请按下组合键...")
         self.setStyleSheet(f"border: 2px solid {_ACCENT}; background: {_ACCENT_BG};")
+        self.capture_started.emit()
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
@@ -335,13 +340,24 @@ class HotkeyEdit(QLineEdit):
         self._capturing = False
         self.setStyleSheet("")
         self.hotkey_changed.emit(value)
+        self.capture_ended.emit()
 
     def focusOutEvent(self, event):
         if self._capturing:
             self._capturing = False
             self.setStyleSheet("")
             self.setText(_format_hotkey(self._value))
+            self.capture_ended.emit()
         super().focusOutEvent(event)
+
+    def cancel_capture_if_active(self):
+        """If user closes settings while recording a new shortcut, release global hotkey pause."""
+        if not self._capturing:
+            return
+        self._capturing = False
+        self.setStyleSheet("")
+        self.setText(_format_hotkey(self._value))
+        self.capture_ended.emit()
 
 
 # ── Model Card ───────────────────────────────────────────────────
@@ -501,6 +517,8 @@ class ModelCard(QFrame):
 class SettingsWindow(QDialog):
     hotkey_updated = pyqtSignal(str)
     settings_changed = pyqtSignal()
+    hotkey_capture_started = pyqtSignal()
+    hotkey_capture_ended = pyqtSignal()
 
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
@@ -610,6 +628,8 @@ class SettingsWindow(QDialog):
         row.addStretch()
         self._hotkey_edit = HotkeyEdit()
         self._hotkey_edit.setFixedWidth(200)
+        self._hotkey_edit.capture_started.connect(self.hotkey_capture_started.emit)
+        self._hotkey_edit.capture_ended.connect(self.hotkey_capture_ended.emit)
         row.addWidget(self._hotkey_edit)
         lay.addLayout(row)
 
@@ -1140,5 +1160,6 @@ class SettingsWindow(QDialog):
         self._dl_workers.clear()
 
     def closeEvent(self, event):
+        self._hotkey_edit.cancel_capture_if_active()
         self.cancel_all_downloads()
         super().closeEvent(event)
