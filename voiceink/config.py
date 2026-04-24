@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,22 @@ from PyQt6.QtCore import QTimer
 log = logging.getLogger("VoiceInk")
 
 VERSION = "1.1.0"
+
+
+def _get_default_models_dir() -> Path:
+    """Return default models directory. Packaged exe uses install dir."""
+    # Packaged exe: try install directory first
+    if hasattr(sys, '_MEIPASS'):
+        install_models = Path(sys._MEIPASS).parent / "models"
+        if install_models.exists():
+            return install_models
+        try:
+            install_models.mkdir(parents=True, exist_ok=True)
+            return install_models
+        except OSError:
+            pass  # Permission denied, use user dir
+    # Development or fallback: user directory
+    return Path.home() / ".voiceink" / "models"
 
 
 def format_hotkey(hotkey: str) -> str:
@@ -26,7 +43,7 @@ DEFAULT_CONFIG = {
     "auto_start": False,
     "sound_enabled": True,
     "stt": {
-        "model_id": "sensevoice",
+        "model_id": "qwen3-asr-0.6b",
         "num_threads": 4,
         "models_dir": "",
     },
@@ -44,7 +61,7 @@ class Config:
     def __init__(self):
         self._config_dir = Path.home() / ".voiceink"
         self._config_file = self._config_dir / "config.json"
-        self._models_dir = self._config_dir / "models"
+        self._models_dir = _get_default_models_dir()
         self._config: dict = {}
         self._extra_keys: dict = {}
         # 延迟保存机制：避免频繁写入文件
@@ -53,10 +70,15 @@ class Config:
         self._save_timer.timeout.connect(self._do_save)
         self._ensure_dirs()
         self._load()
+        self._sync_registry_auto_start()
 
     def _ensure_dirs(self):
         self._config_dir.mkdir(parents=True, exist_ok=True)
-        self._models_dir.mkdir(parents=True, exist_ok=True)
+        # models_dir may be install dir (already exists) or user dir
+        try:
+            self._models_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # Permission denied (install dir), models already there
 
     def _load(self):
         raw: dict = {}
@@ -69,6 +91,28 @@ class Config:
                 raw = {}
         self._extra_keys = {k: v for k, v in raw.items() if k not in DEFAULT_CONFIG}
         self._config = self._merge_defaults(DEFAULT_CONFIG, raw)
+
+    def _sync_registry_auto_start(self):
+        """Sync auto_start setting with Windows registry (installer may have set it)."""
+        if sys.platform != "win32":
+            return
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+            try:
+                winreg.QueryValueEx(key, "VoiceInk")
+                # Registry entry exists - sync to config
+                if not self._config.get("auto_start", False):
+                    self._config["auto_start"] = True
+                    self.save_immediate()
+                    log.info("同步注册表开机自启状态到配置文件")
+            except FileNotFoundError:
+                # Registry entry doesn't exist - nothing to sync
+                pass
+            winreg.CloseKey(key)
+        except Exception as e:
+            log.warning("读取注册表开机自启状态失败: %s", e)
 
     def _merge_defaults(self, defaults: dict, current: dict) -> dict:
         result = {}

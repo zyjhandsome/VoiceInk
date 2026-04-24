@@ -133,8 +133,25 @@ def set_models_dir(path: Path | None):
 
 
 def _get_models_dir() -> Path:
+    """Return models directory. Packaged exe uses install dir, dev uses user dir."""
+    import sys
+
     if _custom_models_dir:
         return _custom_models_dir
+
+    # Packaged exe: try install directory first
+    if hasattr(sys, '_MEIPASS'):
+        install_models = Path(sys._MEIPASS).parent / "models"
+        if install_models.exists():
+            return install_models
+        # Install dir not writable? Fall back to user dir
+        try:
+            install_models.mkdir(parents=True, exist_ok=True)
+            return install_models
+        except OSError:
+            pass  # Permission denied, use user dir
+
+    # Development or fallback: user directory
     return Path.home() / ".voiceink" / "models"
 
 

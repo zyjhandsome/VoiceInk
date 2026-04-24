@@ -1,5 +1,6 @@
-# Build artifacts (keep dist/ for distribution)
+# Build artifacts (exclude dist/ - large binary files)
 build/
+dist/
 *.spec
 
 # Python
