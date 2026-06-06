@@ -2,12 +2,12 @@
 ; Creates a professional Windows installer with custom installation path
 ;
 ; Version constants are normally passed by build_installer.py:
-;   ISCC /DAppVersionStr=1.3.0 /DAppVersionQuad=1.3.0.0 VoiceInk-Setup.iss
+;   ISCC /DAppVersionStr=1.3.2 /DAppVersionQuad=1.3.2.0 VoiceInk-Setup.iss
 #ifndef AppVersionStr
-#define AppVersionStr "1.3.0"
+#define AppVersionStr "1.3.2"
 #endif
 #ifndef AppVersionQuad
-#define AppVersionQuad "1.3.0.0"
+#define AppVersionQuad "1.3.2.0"
 #endif
 
 [Setup]

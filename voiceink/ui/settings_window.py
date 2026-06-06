@@ -4,15 +4,32 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget,
-    QLabel, QLineEdit, QPushButton, QCheckBox,
+    QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
     QFormLayout, QMessageBox, QFrame, QScrollArea,
     QProgressBar, QListWidget, QListWidgetItem, QStackedWidget,
-    QFileDialog, QGraphicsDropShadowEffect, QTextEdit,
+    QFileDialog,     QGraphicsDropShadowEffect, QTextEdit,
+    QSizePolicy, QRadioButton, QButtonGroup,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QSize, QTimer
 from PyQt6.QtGui import QFont, QPainter, QColor, QIcon, QPixmap, QPen
 
-from voiceink.config import Config, VERSION, format_hotkey
+from voiceink.config import (
+    Config,
+    VERSION,
+    format_hotkey,
+    TRIGGER_MODE_CONTINUOUS,
+    TRIGGER_MODE_HOTKEY,
+)
+from voiceink.audio_recorder import AudioRecorder
+from voiceink.audio_devices import (
+    INPUT_SOURCE_MICROPHONE,
+    INPUT_SOURCE_MIXED,
+    INPUT_SOURCE_SYSTEM,
+    list_microphone_devices,
+    list_system_capture_devices_for_settings,
+    platform_audio_hint,
+    sanitize_system_device_index,
+)
 
 # ── Design Tokens (Light) ────────────────────────────────────────
 
@@ -77,6 +94,23 @@ WINDOW_CSS = f"""
     QScrollArea {{
         border: none;
         background: transparent;
+    }}
+    QComboBox {{
+        background: {_INPUT_BG};
+        color: {_TEXT};
+        border: 1px solid {_BORDER};
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        min-height: 28px;
+    }}
+    QComboBox:focus {{
+        border: 2px solid {_ACCENT};
+        padding: 5px 9px;
+    }}
+    QComboBox::drop-down {{
+        border: none;
+        width: 24px;
     }}
     QScrollBar:vertical {{
         background: transparent;
@@ -525,6 +559,9 @@ class SettingsWindow(QDialog):
         self._config = config
         self._model_cards: dict[str, ModelCard] = {}
         self._dl_workers: dict[str, object] = {}
+        self._mic_test_recorder = AudioRecorder(self)
+        self._mic_probe_active = False
+        self._mic_probe_max = 0.0
         self._setup_window()
         self._setup_ui()
         self._load_settings()
@@ -608,9 +645,19 @@ class SettingsWindow(QDialog):
 
     def _create_general_page(self) -> QWidget:
         page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(32, 28, 32, 28)
-        lay.setSpacing(20)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        lay = QVBoxLayout(content)
+        lay.setContentsMargins(32, 28, 32, 20)
+        lay.setSpacing(16)
 
         t = QLabel("通用设置")
         t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
@@ -644,7 +691,153 @@ class SettingsWindow(QDialog):
         lay.addWidget(self._auto_start_cb)
         lay.addWidget(self._sound_cb)
 
-        lay.addStretch()
+        self._add_sep(lay)
+
+        s_audio = QLabel("声音收录")
+        s_audio.setStyleSheet(_SECTION)
+        lay.addWidget(s_audio)
+
+        src_lbl = QLabel("音频来源")
+        src_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
+        lay.addWidget(src_lbl)
+
+        self._source_group = QButtonGroup(self)
+        self._src_mic_rb = QRadioButton("仅麦克风（你的说话）")
+        self._src_sys_rb = QRadioButton("仅电脑播放（视频、会议里传来的声音）")
+        self._src_mixed_rb = QRadioButton("麦克风 + 电脑播放（开会：远端 + 自己）")
+        for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
+            rb.setStyleSheet(f"color: {_TEXT}; font-size: 12px;")
+            self._source_group.addButton(rb)
+            lay.addWidget(rb)
+        self._src_mic_rb.toggled.connect(self._sync_source_device_widgets)
+        self._src_sys_rb.toggled.connect(self._sync_source_device_widgets)
+        self._src_mixed_rb.toggled.connect(self._sync_source_device_widgets)
+
+        trig_lbl = QLabel("触发方式")
+        trig_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
+        lay.addWidget(trig_lbl)
+
+        self._trigger_group = QButtonGroup(self)
+        self._trigger_continuous_rb = QRadioButton("自动持续转写（检测到说话后自动出字）")
+        self._trigger_hotkey_rb = QRadioButton("按住快捷键录音（松开结束）")
+        for rb in (self._trigger_continuous_rb, self._trigger_hotkey_rb):
+            rb.setStyleSheet(f"color: {_TEXT}; font-size: 12px;")
+            self._trigger_group.addButton(rb)
+            lay.addWidget(rb)
+        self._trigger_save_hint = QLabel(
+            "修改触发方式或音频来源后，必须点右下角「保存设置」才会生效。"
+        )
+        self._trigger_save_hint.setStyleSheet(f"color: {_ACCENT}; font-size: 11px;")
+        self._trigger_save_hint.setWordWrap(True)
+        lay.addWidget(self._trigger_save_hint)
+
+        self._audio_desc = QLabel(
+            "建议先点「测试声音」验证设备。开会请选「麦克风 + 电脑播放」；"
+            "自动模式下静音一段时间会输出一段文字。"
+        )
+        self._audio_desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
+        self._platform_audio_hint = QLabel(platform_audio_hint())
+        self._platform_audio_hint.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
+        self._platform_audio_hint.setWordWrap(True)
+        self._audio_desc.setWordWrap(True)
+        lay.addWidget(self._audio_desc)
+        lay.addWidget(self._platform_audio_hint)
+
+        hk_hint = QLabel(
+            "提示：若 Ctrl+Space 无反应，可能是输入法占用了该组合键，可改为 Alt+Space。"
+        )
+        hk_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
+        hk_hint.setWordWrap(True)
+        lay.addWidget(hk_hint)
+
+        self._mic_test_btn = QPushButton("测试声音（约 2 秒）")
+        self._mic_test_btn.setStyleSheet(_BTN_GHOST)
+        self._mic_test_btn.clicked.connect(self._run_mic_probe)
+        lay.addWidget(self._mic_test_btn)
+
+        self._advanced_audio_btn = QPushButton("出问题了再改设备 ▼")
+        self._advanced_audio_btn.setStyleSheet(_BTN_GHOST_SM)
+        self._advanced_audio_btn.setCheckable(True)
+        self._advanced_audio_btn.setFixedWidth(120)
+        self._advanced_audio_btn.toggled.connect(self._toggle_advanced_audio)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(self._advanced_audio_btn)
+        lay.addLayout(btn_row)
+
+        self._advanced_audio_panel = QFrame()
+        self._advanced_audio_panel.setObjectName("advancedAudioPanel")
+        self._advanced_audio_panel.setStyleSheet(f"""
+            QFrame#advancedAudioPanel {{
+                background: {_SURFACE};
+                border: 1px solid {_BORDER};
+                border-radius: 10px;
+            }}
+        """)
+        self._advanced_audio_panel.setVisible(False)
+        self._advanced_audio_panel.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        adv_lay = QVBoxLayout(self._advanced_audio_panel)
+        adv_lay.setContentsMargins(14, 12, 14, 12)
+        adv_lay.setSpacing(10)
+
+        mic_dev_row = QHBoxLayout()
+        mic_dev_lbl = QLabel("麦克风")
+        mic_dev_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
+        mic_dev_lbl.setFixedWidth(52)
+        mic_dev_row.addWidget(mic_dev_lbl)
+        self._mic_device_combo = QComboBox()
+        self._mic_device_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self._mic_device_combo.setMinimumWidth(180)
+        mic_dev_row.addWidget(self._mic_device_combo, 1)
+        refresh_btn = QPushButton("刷新")
+        refresh_btn.setStyleSheet(_BTN_GHOST_SM)
+        refresh_btn.setFixedHeight(28)
+        refresh_btn.clicked.connect(self._refresh_audio_device_lists)
+        mic_dev_row.addWidget(refresh_btn)
+        reset_btn = QPushButton("恢复自动选择")
+        reset_btn.setStyleSheet(_BTN_GHOST_SM)
+        reset_btn.setFixedHeight(28)
+        reset_btn.setToolTip("推荐：让程序自动挑选麦克风与扬声器，避免选到打不开的设备")
+        reset_btn.clicked.connect(self._reset_audio_devices_to_auto)
+        mic_dev_row.addWidget(reset_btn)
+        adv_lay.addLayout(mic_dev_row)
+
+        sys_dev_row = QHBoxLayout()
+        sys_dev_lbl = QLabel("电脑声")
+        sys_dev_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
+        sys_dev_lbl.setFixedWidth(52)
+        sys_dev_row.addWidget(sys_dev_lbl)
+        self._system_device_combo = QComboBox()
+        self._system_device_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self._system_device_combo.setMinimumWidth(180)
+        sys_dev_row.addWidget(self._system_device_combo, 1)
+        adv_lay.addLayout(sys_dev_row)
+
+        adv_hint = QLabel(
+            "两项都请保持「自动选择」。只有测试失败时再改：电脑声优先选带 Realtek 的扬声器，"
+            "不要选名称含糊的「Audio Device」或网易等虚拟声卡。"
+        )
+        adv_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
+        adv_hint.setWordWrap(True)
+        adv_lay.addWidget(adv_hint)
+
+        lay.addWidget(self._advanced_audio_panel)
+
+        self._mic_test_status = QLabel("")
+        self._mic_test_status.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
+        self._mic_test_status.setWordWrap(True)
+        lay.addWidget(self._mic_test_status)
+
+        lay.addStretch(1)
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
         return page
 
     # ── Page: Model ────────────────────────────────────
@@ -1070,10 +1263,61 @@ class SettingsWindow(QDialog):
 
     # ── Load / Save ────────────────────────────────────
 
+    def _selected_input_source(self) -> str:
+        if self._src_sys_rb.isChecked():
+            return INPUT_SOURCE_SYSTEM
+        if self._src_mixed_rb.isChecked():
+            return INPUT_SOURCE_MIXED
+        return INPUT_SOURCE_MICROPHONE
+
+    def _selected_trigger_mode(self) -> str:
+        if self._trigger_hotkey_rb.isChecked():
+            return TRIGGER_MODE_HOTKEY
+        return TRIGGER_MODE_CONTINUOUS
+
+    def _sync_source_device_widgets(self):
+        src = self._selected_input_source()
+        mic_on = src in (INPUT_SOURCE_MICROPHONE, INPUT_SOURCE_MIXED)
+        sys_on = src in (INPUT_SOURCE_SYSTEM, INPUT_SOURCE_MIXED)
+        self._mic_device_combo.setEnabled(mic_on)
+        self._system_device_combo.setEnabled(sys_on)
+
+    def _apply_input_source_radios(self, source: str):
+        if source == INPUT_SOURCE_SYSTEM:
+            self._src_sys_rb.setChecked(True)
+        elif source == INPUT_SOURCE_MIXED:
+            self._src_mixed_rb.setChecked(True)
+        else:
+            self._src_mic_rb.setChecked(True)
+        self._sync_source_device_widgets()
+
+    def _apply_trigger_mode_radios(self, mode: str):
+        if mode == TRIGGER_MODE_HOTKEY:
+            self._trigger_hotkey_rb.setChecked(True)
+        else:
+            self._trigger_continuous_rb.setChecked(True)
+
     def _load_settings(self):
         self._hotkey_edit.set_value(self._config.get("hotkey", "ctrl+space"))
         self._auto_start_cb.setChecked(self._config.get("auto_start", False))
         self._sound_cb.setChecked(self._config.get("sound_enabled", True))
+
+        self._apply_input_source_radios(
+            self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
+        )
+        self._apply_trigger_mode_radios(
+            self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
+        )
+
+        self._refresh_audio_device_lists()
+        mic_ok = self._set_combo_by_data(
+            self._mic_device_combo, int(self._config.get("audio.mic_device_index", -1))
+        )
+        sys_ok = self._set_combo_by_data(
+            self._system_device_combo, int(self._config.get("audio.system_device_index", -1))
+        )
+        if not mic_ok or not sys_ok:
+            self._reset_audio_devices_to_auto()
 
         self._refresh_dir_label()
         self._rebuild_model_cards()
@@ -1089,7 +1333,151 @@ class SettingsWindow(QDialog):
 
         self._refresh_about_info()
 
+    def _set_combo_by_data(self, combo: QComboBox, value: int) -> bool:
+        idx = combo.findData(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+            return True
+        if combo.count() > 0:
+            combo.setCurrentIndex(0)
+        return False
+
+    def _reset_audio_devices_to_auto(self):
+        self._set_combo_by_data(self._mic_device_combo, -1)
+        self._set_combo_by_data(self._system_device_combo, -1)
+        self._mic_test_status.setText("已恢复为「自动选择」，请再点「测试声音」。")
+
+    def _refresh_audio_device_lists(self):
+        mic_sel = self._mic_device_combo.currentData() if self._mic_device_combo.count() else -1
+        sys_sel = self._system_device_combo.currentData() if self._system_device_combo.count() else -1
+
+        self._mic_device_combo.clear()
+        self._mic_device_combo.addItem("自动选择", -1)
+        try:
+            for dev in list_microphone_devices():
+                self._mic_device_combo.addItem(dev.label, dev.index)
+        except Exception as e:
+            self._mic_device_combo.addItem(f"枚举失败: {e}", -1)
+
+        self._system_device_combo.clear()
+        self._system_device_combo.addItem("自动选择", -1)
+        try:
+            for dev in list_system_capture_devices_for_settings():
+                self._system_device_combo.addItem(dev.label, dev.index)
+        except Exception as e:
+            self._system_device_combo.addItem(f"枚举失败: {e}", -1)
+
+        if mic_sel is not None:
+            self._set_combo_by_data(self._mic_device_combo, int(mic_sel))
+        if sys_sel is not None:
+            self._set_combo_by_data(self._system_device_combo, int(sys_sel))
+
+    def _toggle_advanced_audio(self, visible: bool):
+        self._advanced_audio_panel.setVisible(visible)
+        self._advanced_audio_btn.setText(
+            "出问题了再改设备 ▲" if visible else "出问题了再改设备 ▼"
+        )
+        if visible and self._mic_device_combo.count() <= 1:
+            self._refresh_audio_device_lists()
+
+    def _current_audio_probe_config(self) -> tuple[str, int, int]:
+        return (
+            self._selected_input_source(),
+            int(self._mic_device_combo.currentData() if self._mic_device_combo.currentData() is not None else -1),
+            int(self._system_device_combo.currentData() if self._system_device_combo.currentData() is not None else -1),
+        )
+
+    def _disconnect_mic_probe_signals(self):
+        try:
+            self._mic_test_recorder.volume_changed.disconnect(self._on_mic_probe_volume)
+        except TypeError:
+            pass
+        try:
+            self._mic_test_recorder.error.disconnect(self._on_mic_probe_error)
+        except TypeError:
+            pass
+        try:
+            self._mic_test_recorder.warning.disconnect(self._on_mic_probe_warning)
+        except TypeError:
+            pass
+
+    def _run_mic_probe(self):
+        if self._mic_probe_active or self._mic_test_recorder.is_recording:
+            return
+        if self._mic_device_combo.count() <= 1 or self._system_device_combo.count() <= 1:
+            self._refresh_audio_device_lists()
+        src, mic_idx, sys_idx = self._current_audio_probe_config()
+        if mic_idx >= 0 and self._mic_device_combo.findData(mic_idx) < 0:
+            mic_idx = -1
+        if sys_idx >= 0 and self._system_device_combo.findData(sys_idx) < 0:
+            sys_idx = -1
+        sys_idx = sanitize_system_device_index(sys_idx)
+        if sys_idx < 0:
+            self._set_combo_by_data(self._system_device_combo, -1)
+        self._mic_test_recorder.configure(
+            input_source=src,
+            mic_device_index=mic_idx,
+            system_device_index=sys_idx,
+        )
+        self._mic_probe_active = True
+        self._mic_probe_max = 0.0
+        self._mic_test_btn.setEnabled(False)
+        self._mic_test_status.setText("监听中…请说话并播放一段电脑声音")
+        self._mic_test_recorder.volume_changed.connect(self._on_mic_probe_volume)
+        self._mic_test_recorder.error.connect(self._on_mic_probe_error)
+        self._mic_test_recorder.warning.connect(self._on_mic_probe_warning)
+        self._mic_test_recorder.start()
+        QTimer.singleShot(2000, self._finish_mic_probe)
+
+    def _on_mic_probe_volume(self, volume: float):
+        self._mic_probe_max = max(self._mic_probe_max, float(volume))
+
+    def _on_mic_probe_error(self, msg: str):
+        if not self._mic_probe_active:
+            return
+        self._mic_probe_active = False
+        self._disconnect_mic_probe_signals()
+        if self._mic_test_recorder.is_recording:
+            self._mic_test_recorder.cancel()
+        self._mic_test_btn.setEnabled(True)
+        self._mic_test_status.setText("")
+        QMessageBox.warning(self, "音频设备", msg)
+
+    def _on_mic_probe_warning(self, msg: str):
+        if not self._mic_probe_active:
+            return
+        self._mic_test_status.setText(msg)
+
+    def _finish_mic_probe(self):
+        if not self._mic_probe_active:
+            return
+        self._mic_probe_active = False
+        self._disconnect_mic_probe_signals()
+        if self._mic_test_recorder.is_recording:
+            self._mic_test_recorder.stop()
+        self._mic_test_btn.setEnabled(True)
+        threshold = 0.0015
+        peak = self._mic_probe_max
+        warn = self._mic_test_recorder.last_start_warning
+        if peak >= threshold:
+            base = f"已检测到声音（峰值约 {peak:.4f}），可以正常使用。"
+            self._mic_test_status.setText(f"{base} {warn}".strip() if warn else base)
+        else:
+            self._mic_test_status.setText(
+                f"几乎无输入（峰值约 {peak:.4f}）。请点「恢复自动选择」后再测；仍失败再展开下方改设备。"
+            )
+
+    def _cancel_mic_probe_if_active(self):
+        if not self._mic_probe_active and not self._mic_test_recorder.is_recording:
+            return
+        self._mic_probe_active = False
+        self._disconnect_mic_probe_signals()
+        if self._mic_test_recorder.is_recording:
+            self._mic_test_recorder.cancel()
+        self._mic_test_btn.setEnabled(True)
+
     def _save_settings(self):
+        self._cancel_mic_probe_if_active()
         hotkey = self._hotkey_edit.value
         if hotkey:
             parts = hotkey.lower().split("+")
@@ -1104,6 +1492,16 @@ class SettingsWindow(QDialog):
 
         self._config.set("auto_start", self._auto_start_cb.isChecked())
         self._config.set("sound_enabled", self._sound_cb.isChecked())
+
+        self._config.set("audio.input_source", self._selected_input_source())
+        self._config.set("audio.trigger_mode", self._selected_trigger_mode())
+        self._config.set("audio.mic_device_index", int(self._mic_device_combo.currentData() or -1))
+        sys_idx = sanitize_system_device_index(
+            int(self._system_device_combo.currentData() or -1)
+        )
+        self._config.set("audio.system_device_index", sys_idx)
+        if sys_idx < 0:
+            self._set_combo_by_data(self._system_device_combo, -1)
 
         self._config.set("llm.enabled", self._llm_enable_cb.isChecked())
         self._config.set("llm.api_url", self._llm_url_edit.text().strip())
@@ -1160,6 +1558,7 @@ class SettingsWindow(QDialog):
         self._dl_workers.clear()
 
     def closeEvent(self, event):
+        self._cancel_mic_probe_if_active()
         self._hotkey_edit.cancel_capture_if_active()
         self.cancel_all_downloads()
         super().closeEvent(event)

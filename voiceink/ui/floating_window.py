@@ -191,14 +191,31 @@ class FloatingWindow(QWidget):
         else:
             self._dot.stop_pulse()
 
-    def show_recording(self):
+    def show_listening(self):
         self._hide_timer.stop()
-        self._set_state("录音中", "#FF6B6B", pulse=True)
-        self._text_label.setText("按 ESC 取消")  # 添加取消提示
+        self._set_state("自动监听中", "#4A90D9", pulse=True)
+        self._text_label.setText("检测到说话后会自动转写并粘贴")
         self._waveform.show()
         self._waveform.start()
         self._position_on_screen()
         self.show()
+
+    def show_recording(self):
+        self._hide_timer.stop()
+        self._set_state("录音中", "#FF6B6B", pulse=True)
+        self._text_label.setText("松开结束 · ESC 取消")
+        self._waveform.show()
+        self._waveform.start()
+        self._position_on_screen()
+        self.show()
+
+    def dismiss_if_idle(self):
+        """Hide floating window when recording never started or UI was left visible."""
+        self._waveform.stop()
+        self._waveform.hide()
+        self._dot.stop_pulse()
+        self._hide_timer.stop()
+        self.hide()
 
     def show_recognizing(self, partial_text: str = ""):
         self._hide_timer.stop()
@@ -220,12 +237,13 @@ class FloatingWindow(QWidget):
             self._text_label.setText(display)
         self.show()
 
-    def show_success(self, message: str = "已输入"):
+    def show_success(self, message: str = "已输入", subtitle: str = ""):
         self._waveform.stop()
         self._waveform.hide()
         self._set_state(message, "#6BCB77")
-        self._text_label.setText("")
-        self._hide_timer.start(1500)
+        self._text_label.setText(subtitle)
+        dur = 2200 if subtitle else 1500
+        self._hide_timer.start(dur)
 
     def show_cancelled(self):
         self._waveform.stop()
@@ -247,6 +265,17 @@ class FloatingWindow(QWidget):
 
     def update_volume(self, volume: float):
         self._waveform.set_volume(volume)
+
+    def show_busy_transcribing(self):
+        """User tried to record while inference is running."""
+        self._hide_timer.stop()
+        self._set_state("请稍候", "#FFD93D", pulse=False)
+        self._text_label.setText("正在识别上一轮语音，稍后重试")
+        self._waveform.stop()
+        self._waveform.hide()
+        self._position_on_screen()
+        self.show()
+        self._hide_timer.start(2200)
 
     def update_partial_text(self, text: str):
         if text:

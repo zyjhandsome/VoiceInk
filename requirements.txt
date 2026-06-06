@@ -1,5 +1,6 @@
 PyQt6>=6.6.0
 sounddevice>=0.4.6
+PyAudioWPatch>=0.2.12.6; sys_platform == "win32"
 pynput>=1.7.6
 httpx>=0.27.0
 pyperclip>=1.8.2

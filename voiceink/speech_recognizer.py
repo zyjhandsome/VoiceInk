@@ -11,15 +11,28 @@ log = logging.getLogger("VoiceInk")
 SAMPLE_RATE = 16000
 
 # Qwen3-ASR (sherpa-onnx) may emit XML-style delimiters in decoded text.
-_ASR_TEXT_TAG_RE = re.compile(r"</?asr_text\s*>", re.IGNORECASE)
+_ASR_TAG_PATTERNS = (
+    re.compile(r"</?\s*asr_text\s*/?\s*>", re.IGNORECASE),
+    re.compile(r"<\s*asr_text\b[^>]*>", re.IGNORECASE),
+    re.compile(r"</\s*asr_text\b[^>]*>", re.IGNORECASE),
+    re.compile(r"<\s*/\s*asr_text\b[^>]*>", re.IGNORECASE),
+)
 
 
 def normalize_asr_output(text: str) -> str:
-    """Remove ASR model wrapper tags (e.g. <asr_text>...</asr_text>) from recognition text."""
+    """Remove ASR model wrapper tags (e.g. ``<asr_text>嗯``) from recognition text."""
     if not text:
-        return text
-    cleaned = _ASR_TEXT_TAG_RE.sub("", text)
-    return cleaned.strip()
+        return ""
+    cleaned = text
+    stripped_tags = False
+    for pattern in _ASR_TAG_PATTERNS:
+        if pattern.search(cleaned):
+            stripped_tags = True
+        cleaned = pattern.sub("", cleaned)
+    cleaned = cleaned.strip()
+    if stripped_tags:
+        log.debug("已剥离 ASR 标签，清洗后长度: %d", len(cleaned))
+    return cleaned
 
 HF_URL = "https://huggingface.co"
 

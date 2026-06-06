@@ -27,6 +27,17 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from voiceink.version import __version__, file_version_quad
 
+
+def resolve_staging_dir() -> Path:
+    """PyInstaller output folder (dist/VoiceInk or alternate from VOICEINK_STAGING_DIR.txt)."""
+    marker = PROJECT_ROOT / "dist" / "VOICEINK_STAGING_DIR.txt"
+    if marker.is_file():
+        name = marker.read_text(encoding="utf-8").strip()
+        if name:
+            return PROJECT_ROOT / "dist" / name
+    return PROJECT_ROOT / "dist" / "VoiceInk"
+
+
 # Inno Setup compiler path (common installation locations)
 INNO_SETUP_PATHS = [
     Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
@@ -59,7 +70,7 @@ def check_prerequisites():
     print(f"[OK] Inno Setup found: {inno_path}")
 
     # Check VoiceInk build exists
-    voiceink_exe = PROJECT_ROOT / "dist" / "VoiceInk" / "VoiceInk.exe"
+    voiceink_exe = resolve_staging_dir() / "VoiceInk.exe"
     if not voiceink_exe.exists():
         print("\n[ERROR] VoiceInk.exe not found!")
         print("\nPlease run build.py first to create the executable.")
@@ -86,7 +97,7 @@ def check_prerequisites():
     print(f"[OK] Icon file found: {icon_file}")
 
     # Check models
-    models_dir = PROJECT_ROOT / "dist" / "VoiceInk" / "models"
+    models_dir = resolve_staging_dir() / "models"
     if models_dir.exists():
         model_count = len(list(models_dir.iterdir()))
         print(f"[OK] Models found: {model_count} models in {models_dir}")
@@ -160,9 +171,12 @@ def build_installer(*, keep_staging: bool = False):
     print("    Users run the installer to install VoiceInk.")
     print("=" * 60)
 
-    staging_dir = PROJECT_ROOT / "dist" / "VoiceInk"
+    staging_dir = resolve_staging_dir()
     if not keep_staging and staging_dir.exists():
-        shutil.rmtree(staging_dir)
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        marker = PROJECT_ROOT / "dist" / "VOICEINK_STAGING_DIR.txt"
+        if marker.is_file():
+            marker.unlink(missing_ok=True)
         print()
         print(f"  Removed staging folder (intermediate build): {staging_dir}")
         print(f"  dist/ now contains {output_file.name} only.")

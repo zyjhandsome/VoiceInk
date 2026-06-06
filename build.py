@@ -16,7 +16,9 @@ Distribution:
 """
 
 import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 if __name__ == "__main__" and __package__ is None:
@@ -76,6 +78,39 @@ def _require_bundle_model(downloaded: list[tuple[str, Path]]) -> None:
     sys.exit(1)
 
 
+def _kill_running_voiceink():
+    if sys.platform != "win32":
+        return
+    subprocess.run(
+        ["taskkill", "/IM", "VoiceInk.exe", "/F"],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _prepare_dist_output_dir() -> tuple[Path, str]:
+    """Return (dist_parent, pyinstaller --name) after trying to clear dist/VoiceInk."""
+    dist_parent = SCRIPT_DIR / "dist"
+    dist_parent.mkdir(parents=True, exist_ok=True)
+    target = dist_parent / "VoiceInk"
+    if not target.exists():
+        return dist_parent, "VoiceInk"
+
+    _kill_running_voiceink()
+    for attempt in range(4):
+        try:
+            shutil.rmtree(target)
+            return dist_parent, "VoiceInk"
+        except OSError as exc:
+            print(f"[WARN] 无法删除 {target} (尝试 {attempt + 1}/4): {exc}")
+            time.sleep(2)
+            _kill_running_voiceink()
+
+    alt_name = f"VoiceInk_{int(time.time())}"
+    print(f"[WARN] 将输出到备用目录 dist/{alt_name}/（请关闭占用 dist/VoiceInk 的程序后改回标准路径）")
+    return dist_parent, alt_name
+
+
 def build():
     """Package VoiceInk with PyInstaller."""
     print("=" * 55)
@@ -87,6 +122,8 @@ def build():
 
     import PyInstaller.__main__
 
+    dist_parent, app_name = _prepare_dist_output_dir()
+
     main_script = str(SCRIPT_DIR / "voiceink" / "main.py")
     win_dll_rthook = SCRIPT_DIR / "voiceink_build" / "pyi_rth_voiceink_win_dll.py"
     if not win_dll_rthook.is_file():
@@ -95,7 +132,8 @@ def build():
 
     args = [
         main_script,
-        "--name=VoiceInk",
+        f"--name={app_name}",
+        f"--distpath={dist_parent}",
         "--onedir",
         "--windowed",
         "--noconfirm",
@@ -128,8 +166,13 @@ def build():
 
     PyInstaller.__main__.run(args)
 
-    dist_dir = SCRIPT_DIR / "dist" / "VoiceInk"
+    dist_dir = dist_parent / app_name
     exe_path = dist_dir / "VoiceInk.exe"
+    if app_name != "VoiceInk":
+        marker = dist_parent / "VOICEINK_STAGING_DIR.txt"
+        marker.write_text(app_name, encoding="utf-8")
+    elif (dist_parent / "VOICEINK_STAGING_DIR.txt").exists():
+        (dist_parent / "VOICEINK_STAGING_DIR.txt").unlink(missing_ok=True)
 
     if not exe_path.exists():
         print("\n[ERROR] Build failed — VoiceInk.exe not found.")

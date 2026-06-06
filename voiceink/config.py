@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -38,10 +39,20 @@ def format_hotkey(hotkey: str) -> str:
         out.append(p.capitalize() if len(p) > 1 else p.upper())
     return " + ".join(out)
 
+TRIGGER_MODE_HOTKEY = "hotkey"
+TRIGGER_MODE_CONTINUOUS = "continuous"
+
 DEFAULT_CONFIG = {
     "hotkey": "ctrl+space",
+    "first_run_welcome_seen": True,
     "auto_start": False,
     "sound_enabled": True,
+    "audio": {
+        "input_source": "microphone",
+        "trigger_mode": "continuous",
+        "mic_device_index": -1,
+        "system_device_index": -1,
+    },
     "stt": {
         "model_id": "qwen3-asr-0.6b",
         "num_threads": 4,
@@ -81,8 +92,9 @@ class Config:
             pass  # Permission denied (install dir), models already there
 
     def _load(self):
+        config_existed = self._config_file.exists()
         raw: dict = {}
-        if self._config_file.exists():
+        if config_existed:
             try:
                 with open(self._config_file, "r", encoding="utf-8") as f:
                     raw = json.load(f)
@@ -91,6 +103,9 @@ class Config:
                 raw = {}
         self._extra_keys = {k: v for k, v in raw.items() if k not in DEFAULT_CONFIG}
         self._config = self._merge_defaults(DEFAULT_CONFIG, raw)
+        # True = 不写欢迎弹窗（升级用户或未配置时用默认 True）；首次本无配置文件时单独打开欢迎
+        if not config_existed:
+            self._config["first_run_welcome_seen"] = False
 
     def _sync_registry_auto_start(self):
         """Sync auto_start setting with Windows registry (installer may have set it)."""
@@ -123,7 +138,11 @@ class Config:
                 else:
                     result[key] = current[key]
             else:
-                result[key] = default_value
+                result[key] = (
+                    copy.deepcopy(default_value)
+                    if isinstance(default_value, dict)
+                    else default_value
+                )
         return result
 
     def _do_save(self):

@@ -1,106 +1,524 @@
 import logging
+import threading
+from typing import Callable, Optional
+
 import numpy as np
 import sounddevice as sd
-from PyQt6.QtCore import QObject, pyqtSignal, QThread
-import threading
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+
+from voiceink.audio_devices import (
+    INPUT_SOURCE_MICROPHONE,
+    INPUT_SOURCE_MIXED,
+    INPUT_SOURCE_SYSTEM,
+    RecordingPlan,
+    StreamEndpoint,
+    build_recording_plan,
+    input_source_label,
+    is_unreliable_loopback_output,
+    ordered_system_devices,
+    should_use_wasapi_loopback,
+)
+from voiceink.audio_utils import TARGET_SAMPLE_RATE, mix_to_mono, resample_mono, rms_volume, to_mono
+from voiceink.pawp_capture import decode_pawp_device_index, is_encoded_pawp_device_index
+from voiceink.vad_segmenter import SpeechSegmenter
 
 log = logging.getLogger("VoiceInk")
 
 
+class _CaptureLane:
+    def __init__(self, endpoint: StreamEndpoint):
+        self.endpoint = endpoint
+        self.chunks: list[np.ndarray] = []
+        self.drain_idx = 0
+        self.sample_rate = TARGET_SAMPLE_RATE
+        self.stream: Optional[sd.InputStream] = None
+        self.pawp_stream: object | None = None
+        self.pawp_stop: threading.Event | None = None
+        self.pawp_thread: threading.Thread | None = None
+
+
 class AudioRecorder(QObject):
     volume_changed = pyqtSignal(float)
-    audio_chunk_ready = pyqtSignal(np.ndarray)
     recording_finished = pyqtSignal(np.ndarray)
+    segment_ready = pyqtSignal(np.ndarray)
     error = pyqtSignal(str)
+    warning = pyqtSignal(str)
 
-    SAMPLE_RATE = 16000
+    SAMPLE_RATE = TARGET_SAMPLE_RATE
     CHANNELS = 1
-    CHUNK_DURATION = 0.1  # 100ms per callback for responsive volume display
+    CHUNK_DURATION = 0.1
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_recording = False
         self._is_cancelled = False
-        self._audio_chunks = []
-        self._stream = None
+        self._lanes: list[_CaptureLane] = []
         self._lock = threading.Lock()
+        self._input_source = INPUT_SOURCE_MICROPHONE
+        self._mic_device_index = -1
+        self._system_device_index = -1
+        self._plan: Optional[RecordingPlan] = None
+        self._last_start_warning: str = ""
+        self._pawp: object | None = None
+        self._continuous_mode = False
+        self._segmenter = SpeechSegmenter()
+        self._continuous_timer = QTimer(self)
+        self._continuous_timer.setInterval(100)
+        self._continuous_timer.timeout.connect(self._on_continuous_tick)
 
-    def _audio_callback(self, indata, frames, time_info, status):
-        if not self._is_recording or self._is_cancelled:
+    def configure(
+        self,
+        input_source: str = INPUT_SOURCE_MICROPHONE,
+        mic_device_index: int = -1,
+        system_device_index: int = -1,
+    ):
+        self._input_source = input_source
+        self._mic_device_index = int(mic_device_index)
+        self._system_device_index = int(system_device_index)
+        threshold = 0.0006 if input_source == INPUT_SOURCE_SYSTEM else 0.002
+        self._segmenter = SpeechSegmenter(speech_threshold=threshold)
+
+    @property
+    def input_source(self) -> str:
+        return self._input_source
+
+    @property
+    def input_source_display(self) -> str:
+        return input_source_label(self._input_source)
+
+    def _make_callback(self, lane: _CaptureLane) -> Callable:
+        def _callback(indata, _frames, _time_info, status):
+            if status:
+                log.debug("音频流状态 [%s]: %s", lane.endpoint.role, status)
+            if not self._is_recording or self._is_cancelled:
+                return
+            block = to_mono(indata.copy())
+            vol = rms_volume(block)
+            self.volume_changed.emit(vol)
+            with self._lock:
+                lane.chunks.append(block)
+        return _callback
+
+    def _ensure_pawp(self):
+        if self._pawp is None:
+            import pyaudiowpatch as pyaudio
+
+            self._pawp = pyaudio.PyAudio()
+        return self._pawp
+
+    def _terminate_pawp(self):
+        if self._pawp is not None:
+            try:
+                self._pawp.terminate()
+            except Exception:
+                pass
+            self._pawp = None
+
+    def _pawp_read_loop(self, lane: _CaptureLane, stream, channels: int, rate: int):
+        """Blocking read loop — stream_callback is unreliable on some Windows drivers."""
+        import time
+
+        frame_count = max(1, int(rate * self.CHUNK_DURATION))
+        while (
+            self._is_recording
+            and not self._is_cancelled
+            and lane.pawp_stop is not None
+            and not lane.pawp_stop.is_set()
+        ):
+            try:
+                avail = stream.get_read_available()
+                if avail <= 0:
+                    time.sleep(0.02)
+                    continue
+                to_read = min(avail, frame_count)
+                data = stream.read(to_read, exception_on_overflow=False)
+            except Exception as e:
+                log.debug("PyAudioWPatch 读取失败: %s", e)
+                break
+            if not data:
+                continue
+            arr = np.frombuffer(data, dtype=np.float32)
+            if channels > 1:
+                arr = arr.reshape(-1, channels)
+            block_mono = to_mono(arr.copy())
+            if self._input_source == INPUT_SOURCE_SYSTEM:
+                block_mono = np.clip(block_mono * 2.5, -1.0, 1.0)
+            vol = rms_volume(block_mono)
+            self.volume_changed.emit(vol)
+            with self._lock:
+                lane.chunks.append(block_mono)
+
+    def _open_pawp_lane(self, lane: _CaptureLane):
+        import pyaudiowpatch as pyaudio
+
+        ep = lane.endpoint
+        pawp_idx = decode_pawp_device_index(ep.device.index)
+        p = self._ensure_pawp()
+        info = p.get_device_info_by_index(pawp_idx)
+        rate = int(info.get("defaultSampleRate") or ep.device.sample_rate or 48000)
+        channels = int(info.get("maxInputChannels", 0) or ep.device.channels or 1)
+        channels = max(1, channels)
+        frame_count = max(1, int(rate * self.CHUNK_DURATION))
+
+        stream = p.open(
+            format=pyaudio.paFloat32,
+            channels=channels,
+            rate=rate,
+            input=True,
+            input_device_index=pawp_idx,
+            frames_per_buffer=frame_count,
+        )
+        stream.start_stream()
+        lane.pawp_stream = stream
+        lane.sample_rate = rate
+        lane.pawp_stop = threading.Event()
+        lane.pawp_thread = threading.Thread(
+            target=self._pawp_read_loop,
+            args=(lane, stream, channels, rate),
+            daemon=True,
+            name=f"pawp-{ep.role}",
+        )
+        lane.pawp_thread.start()
+        log.info(
+            "已打开音频流 [%s] %s @ %d Hz, %d 声道 (PyAudioWPatch 环回)",
+            ep.role,
+            ep.device.name,
+            rate,
+            channels,
+        )
+
+    def _open_lane_stream(self, lane: _CaptureLane):
+        ep = lane.endpoint
+        if is_encoded_pawp_device_index(ep.device.index):
+            self._open_pawp_lane(lane)
             return
+        info = sd.query_devices(ep.device.index)
+        device = ep.device.index
 
-        audio_data = indata[:, 0].copy()
-        volume = float(np.sqrt(np.mean(audio_data ** 2)))
-        self.volume_changed.emit(volume)
+        in_ch = int(info.get("max_input_channels", 0) or 0)
+        out_ch = int(info.get("max_output_channels", 0) or 0)
+        channels = ep.device.channels
+        if ep.use_wasapi_loopback and out_ch > 0:
+            channels = min(out_ch, 2)
+        elif in_ch > 0:
+            channels = min(in_ch, 2)
+        channels = max(1, channels)
 
+        sample_rates = (
+            TARGET_SAMPLE_RATE,
+            int(info.get("default_samplerate") or 48000),
+            48000,
+            44100,
+        )
+        loopback_attempts = (True, False) if ep.use_wasapi_loopback else (False,)
+        last_err: Optional[Exception] = None
+
+        for try_loopback in loopback_attempts:
+            extra = None
+            if try_loopback:
+                try:
+                    extra = sd.WasapiSettings(loopback=True)
+                except TypeError:
+                    continue
+            for rate in sample_rates:
+                try:
+                    kwargs = dict(
+                        samplerate=rate,
+                        channels=channels,
+                        dtype="float32",
+                        blocksize=int(rate * self.CHUNK_DURATION),
+                        callback=self._make_callback(lane),
+                    )
+                    if extra is not None:
+                        kwargs["extra_settings"] = extra
+                    stream = sd.InputStream(device=device, **kwargs)
+                    stream.start()
+                    lane.stream = stream
+                    lane.sample_rate = rate
+                    log.info(
+                        "已打开音频流 [%s] %s @ %d Hz (loopback=%s)",
+                        ep.role,
+                        ep.device.name,
+                        rate,
+                        try_loopback,
+                    )
+                    return
+                except Exception as e:
+                    last_err = e
+                    log.debug(
+                        "打开设备失败 %s @ %d loopback=%s: %s",
+                        ep.device.name,
+                        rate,
+                        try_loopback,
+                        e,
+                    )
+                    if lane.stream is not None:
+                        try:
+                            lane.stream.close()
+                        except Exception:
+                            pass
+                        lane.stream = None
+
+        raise RuntimeError(f"无法打开音频设备：{ep.device.name}") from last_err
+
+    def _system_device_candidates(self, primary: StreamEndpoint) -> list[StreamEndpoint]:
+        from voiceink.pawp_capture import is_encoded_pawp_device_index
+
+        ordered = ordered_system_devices(self._system_device_index)
+        reliable = [d for d in ordered if not is_unreliable_loopback_output(d)]
+        pool = reliable if reliable else ordered
+        pool = [primary.device] + [d for d in pool if d.index != primary.device.index]
+        return [
+            StreamEndpoint("system", d, should_use_wasapi_loopback(d))
+            for d in pool
+        ]
+
+    def _open_system_lane_with_fallback(self, primary: StreamEndpoint) -> Optional[_CaptureLane]:
+        last_err: Optional[Exception] = None
+        for ep in self._system_device_candidates(primary):
+            lane = _CaptureLane(ep)
+            try:
+                self._open_lane_stream(lane)
+                if ep.device.index != primary.device.index:
+                    log.info("系统声音改用备用设备: %s", ep.device.name)
+                return lane
+            except Exception as e:
+                last_err = e
+                log.debug("系统设备打开失败 %s: %s", ep.device.name, e)
+        if last_err is not None:
+            log.warning("所有系统声音设备均无法打开（末次错误: %s）", last_err)
+        return None
+
+    @property
+    def last_start_warning(self) -> str:
+        return self._last_start_warning
+
+    def _drain_mixed_mono(self) -> Optional[np.ndarray]:
+        parts: list[tuple[np.ndarray, int]] = []
         with self._lock:
-            self._audio_chunks.append(audio_data)
+            for lane in self._lanes:
+                if lane.drain_idx >= len(lane.chunks):
+                    continue
+                new = lane.chunks[lane.drain_idx :]
+                lane.drain_idx = len(lane.chunks)
+                if not new:
+                    continue
+                parts.append((np.concatenate(new), lane.sample_rate))
+        if not parts:
+            return None
+        tracks = [resample_mono(raw, sr, TARGET_SAMPLE_RATE) for raw, sr in parts]
+        if len(tracks) == 1:
+            return tracks[0]
+        return mix_to_mono(tracks, TARGET_SAMPLE_RATE)
 
-    def start(self):
+    def _on_continuous_tick(self):
+        if not self._is_recording or self._is_cancelled or not self._continuous_mode:
+            return
+        block = self._drain_mixed_mono()
+        if block is None or block.size == 0:
+            return
+        self.volume_changed.emit(rms_volume(block))
+        segment = self._segmenter.feed(block)
+        if segment is not None and segment.size > 0:
+            log.debug("持续监听切分片段: %d 采样点", segment.size)
+            self.segment_ready.emit(segment)
+
+    def start(self, *, continuous: bool = False):
         if self._is_recording:
             return
 
-        self._is_recording = True
+        self._continuous_mode = continuous
+        if continuous:
+            self._segmenter.reset()
         self._is_cancelled = False
-        with self._lock:
-            self._audio_chunks = []
+        self._lanes = []
+        self._last_start_warning = ""
 
-        stream = None
         try:
-            stream = sd.InputStream(
-                samplerate=self.SAMPLE_RATE,
-                channels=self.CHANNELS,
-                dtype="float32",
-                blocksize=int(self.SAMPLE_RATE * self.CHUNK_DURATION),
-                callback=self._audio_callback
+            self._plan = build_recording_plan(
+                self._input_source,
+                self._mic_device_index,
+                self._system_device_index,
             )
-            stream.start()
-            self._stream = stream
+        except RuntimeError as e:
+            self.error.emit(str(e))
+            return
+
+        self._is_recording = True
+        opened: list[_CaptureLane] = []
+        try:
+            for endpoint in self._plan.endpoints:
+                if endpoint.role == "system":
+                    lane = self._open_system_lane_with_fallback(endpoint)
+                    if lane is None:
+                        if self._input_source == INPUT_SOURCE_MIXED:
+                            from voiceink.pawp_capture import pawp_available
+
+                            if pawp_available():
+                                warn = (
+                                    "无法打开电脑播放声（已尝试 WASAPI 环回设备）。"
+                                    "请确认正在用系统默认扬声器播放视频，并在设置中刷新设备列表。"
+                                )
+                            else:
+                                warn = (
+                                    "无法采集电脑播放声；本次仅录麦克风。"
+                                    "请安装依赖：pip install PyAudioWPatch，"
+                                    "或在 Windows 启用「立体声混音」后点「恢复自动选择」。"
+                                )
+                            self._last_start_warning = warn
+                            log.warning(warn)
+                            self.warning.emit(warn)
+                            continue
+                        raise RuntimeError(
+                            f"无法打开音频设备：{endpoint.device.name}"
+                        )
+                    opened.append(lane)
+                else:
+                    lane = _CaptureLane(endpoint)
+                    self._open_lane_stream(lane)
+                    opened.append(lane)
+            if not opened:
+                raise RuntimeError("未打开任何音频采集通道")
+            self._lanes = opened
+            if continuous:
+                for lane in self._lanes:
+                    lane.drain_idx = 0
+                self._continuous_timer.start()
+                log.info("持续监听已开启（来源: %s）", self.input_source_display)
         except Exception as e:
             self._is_recording = False
-            if stream is not None:
-                try:
-                    stream.close()
-                except Exception as close_err:
-                    log.warning("关闭音频流失败: %s", close_err)
-            # 友好化错误信息
-            error_msg = str(e)
-            if "Permission denied" in error_msg or "access" in error_msg.lower():
-                self.error.emit("无法访问麦克风，请检查系统权限设置")
-            elif "No device" in error_msg or "device" in error_msg.lower():
-                self.error.emit("未检测到麦克风，请确认设备已连接")
-            else:
-                self.error.emit(f"麦克风启动失败: {error_msg}")
+            self._continuous_mode = False
+            self._continuous_timer.stop()
+            for lane in opened:
+                self._close_lane(lane)
+            self._lanes = []
+            self.error.emit(self._friendly_open_error(str(e)))
+
+    def start_continuous(self):
+        self.start(continuous=True)
+
+    def stop_continuous(self):
+        if not self._continuous_mode and not self._is_recording:
+            return
+        self._continuous_timer.stop()
+        self._continuous_mode = False
+        self._is_cancelled = False
+        self._is_recording = False
+        lanes = self._lanes
+        self._lanes = []
+        for lane in lanes:
+            self._close_lane(lane)
+        self._terminate_pawp()
+        self._segmenter.reset()
+
+    @property
+    def is_continuous(self) -> bool:
+        return self._continuous_mode and self._is_recording
+
+    def _friendly_open_error(self, msg: str) -> str:
+        lower = msg.lower()
+        if msg.startswith("无法打开音频设备") or msg.startswith("音频设备启动失败"):
+            if "audio device" in lower and "realtek" not in lower:
+                return (
+                    "无法打开「Audio Device」类虚拟扬声器。"
+                    "请点「恢复自动选择」，或将 Windows 默认扬声器改为 Realtek 物理声卡。"
+                )
+            return msg
+        if "未找到可用的" in msg:
+            return msg
+        if "permission" in lower or "access" in lower:
+            return "无法访问音频设备，请检查系统隐私与麦克风权限"
+        if (
+            "no device" in lower
+            or "invalid device" in lower
+            or "painvaliddevice" in lower
+            or "there is no device" in lower
+        ):
+            return "未检测到可用的音频设备，请在设置中点「恢复自动选择」后重试"
+        if "loopback" in lower or "wasapi" in lower:
+            return (
+                "无法打开系统声音采集。可尝试在设置中更换「系统声音设备」，"
+                "或启用立体声混音 / 安装 VB-Audio Virtual Cable"
+            )
+        if "网易" in msg or "netease" in lower or "虚拟" in msg:
+            return (
+                "无法打开该虚拟扬声器采集电脑播放声。"
+                "请在「设备设置」中将「电脑声」改为系统默认 Realtek 扬声器，或启用「立体声混音」。"
+            )
+        return f"音频设备启动失败: {msg}"
+
+    def _close_lane(self, lane: _CaptureLane):
+        if lane.pawp_stop is not None:
+            lane.pawp_stop.set()
+        if lane.pawp_thread is not None:
+            lane.pawp_thread.join(timeout=2.0)
+            lane.pawp_thread = None
+        lane.pawp_stop = None
+        if lane.pawp_stream is not None:
+            try:
+                lane.pawp_stream.stop_stream()
+                lane.pawp_stream.close()
+            except Exception:
+                pass
+            lane.pawp_stream = None
+        if lane.stream is not None:
+            try:
+                lane.stream.stop()
+                lane.stream.close()
+            except Exception:
+                pass
+            lane.stream = None
 
     def stop(self):
+        if self._continuous_mode:
+            self.stop_continuous()
+            return
         if not self._is_recording:
             return
 
         self._is_recording = False
-        if self._stream:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:
-                pass
-            self._stream = None
+        lanes = self._lanes
+        self._lanes = []
 
-        # 所有操作在锁内完成，避免竞争条件
+        for lane in lanes:
+            self._close_lane(lane)
+
         with self._lock:
-            chunks = self._audio_chunks
-            self._audio_chunks = []
             is_cancelled = self._is_cancelled
             self._is_cancelled = False
+            lane_chunks = [(lane.endpoint.role, list(lane.chunks), lane.sample_rate) for lane in lanes]
+            for lane in lanes:
+                lane.chunks = []
 
-        # 空音频检查
-        if is_cancelled or not chunks:
+        if is_cancelled:
+            self._terminate_pawp()
             return
 
-        full_audio = np.concatenate(chunks)
+        self._terminate_pawp()
+
+        tracks = []
+        for role, chunks, sample_rate in lane_chunks:
+            if not chunks:
+                continue
+            raw = np.concatenate(chunks)
+            tracks.append(resample_mono(raw, sample_rate, TARGET_SAMPLE_RATE))
+
+        if not tracks:
+            self.recording_finished.emit(np.array([], dtype=np.float32))
+            return
+
+        if len(tracks) == 1:
+            full_audio = tracks[0]
+        else:
+            full_audio = mix_to_mono(tracks, TARGET_SAMPLE_RATE)
+
         self.recording_finished.emit(full_audio)
 
     def cancel(self):
         self._is_cancelled = True
+        if self._continuous_mode:
+            self.stop_continuous()
+            return
         self.stop()
 
     @property

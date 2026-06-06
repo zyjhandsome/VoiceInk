@@ -136,7 +136,8 @@ class TrayIcon(QSystemTrayIcon):
         self._recording_icon = create_microphone_icon(recording=True)
 
         self.setIcon(self._normal_icon)
-        self.setToolTip("VoiceInk - 语音转文字")
+        self._idle_tooltip = "VoiceInk — 就绪"
+        self.setToolTip(self._idle_tooltip)
 
         self._model_menu = None
         self._model_group = None
@@ -207,6 +208,18 @@ class TrayIcon(QSystemTrayIcon):
 
     def set_recording(self, is_recording: bool):
         self.setIcon(self._recording_icon if is_recording else self._normal_icon)
+
+    def set_activity_tooltip(self, state: str | None):
+        """Brief tray hint for background work. None = idle."""
+        if state is None:
+            self.setToolTip(self._idle_tooltip)
+            return
+        lines = {"recording": "录音中", "recognizing": "识别中", "polishing": "润色中"}
+        label = lines.get(state, "")
+        if label:
+            self.setToolTip(f"VoiceInk — {label}")
+        else:
+            self.setToolTip(self._idle_tooltip)
 
     def set_auto_start(self, enabled: bool):
         self._auto_start_action.blockSignals(True)
