@@ -30,6 +30,10 @@ class SpeechSegmenter:
         self._max_samples = int(sample_rate * max_speech_sec)
         self.reset()
 
+    @property
+    def speech_threshold(self) -> float:
+        return self._speech_threshold
+
     def reset(self) -> None:
         self._buffer: list[np.ndarray] = []
         self._total_samples = 0
@@ -60,6 +64,18 @@ class SpeechSegmenter:
         if self._silence_run >= self._silence_hold_samples:
             return self._take_segment()
         return None
+
+    def flush(self) -> np.ndarray | None:
+        """Emit buffered speech that has not yet reached the silence threshold."""
+        if not self._in_speech or self._total_samples < self._min_samples:
+            self.reset()
+            return None
+        if not self._buffer:
+            self.reset()
+            return None
+        out = np.concatenate(self._buffer).astype(np.float32, copy=False)
+        self.reset()
+        return out
 
     def _take_segment(self) -> np.ndarray | None:
         if self._total_samples < self._min_samples:

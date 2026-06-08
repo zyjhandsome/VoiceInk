@@ -1,4 +1,5 @@
 from voiceink.config import Config, format_hotkey, DEFAULT_CONFIG
+from voiceink.speech_recognizer import DEFAULT_MODEL_ID
 import tempfile
 import json
 import os
@@ -38,7 +39,7 @@ class TestFormatHotkey:
 
 class TestConfigDefaults:
     def test_default_hotkey(self):
-        assert DEFAULT_CONFIG["hotkey"] == "ctrl+space"
+        assert DEFAULT_CONFIG["hotkey"] == "alt+space"
 
     def test_default_sound_enabled(self):
         assert DEFAULT_CONFIG["sound_enabled"] is True
@@ -50,7 +51,8 @@ class TestConfigDefaults:
         assert DEFAULT_CONFIG["first_run_welcome_seen"] is True
 
     def test_default_model_id(self):
-        assert DEFAULT_CONFIG["stt"]["model_id"] == "qwen3-asr-0.6b"
+        assert DEFAULT_CONFIG["stt"]["model_id"] == DEFAULT_MODEL_ID
+        assert DEFAULT_MODEL_ID == "fireredasr2-ctc"
 
     def test_default_num_threads(self):
         assert DEFAULT_CONFIG["stt"]["num_threads"] == 4
@@ -71,7 +73,7 @@ class TestConfigInit:
             with open(os.path.join(temp_dir, ".voiceink", "config.json"), "w") as f:
                 json.dump({}, f)
             config = Config()
-            assert config.get("hotkey") == "ctrl+space"
+            assert config.get("hotkey") == "alt+space"
             assert config.get("sound_enabled") is True
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -101,7 +103,7 @@ class TestConfigGetSet:
         temp_dir = tempfile.mkdtemp()
         try:
             config = Config()
-            assert config.get("stt.model_id") == "qwen3-asr-0.6b"
+            assert config.get("stt.model_id") == DEFAULT_MODEL_ID
             assert config.get("llm.enabled") is False
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)

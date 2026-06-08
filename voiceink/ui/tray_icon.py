@@ -214,7 +214,13 @@ class TrayIcon(QSystemTrayIcon):
         if state is None:
             self.setToolTip(self._idle_tooltip)
             return
-        lines = {"recording": "录音中", "recognizing": "识别中", "polishing": "润色中"}
+        lines = {
+            "recording": "录音中",
+            "recognizing": "识别中",
+            "polishing": "润色中",
+            "listening": "监听中",
+            "loading": "模型加载中",
+        }
         label = lines.get(state, "")
         if label:
             self.setToolTip(f"VoiceInk — {label}")

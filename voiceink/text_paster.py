@@ -1,10 +1,17 @@
+import logging
 import os
 import sys
 import subprocess
+from typing import Callable
 
 import pyperclip
 import pyautogui
 from PyQt6.QtCore import QTimer
+
+log = logging.getLogger("VoiceInk")
+
+PASTE_DELAY_MS = 150
+VERIFY_AFTER_PASTE_MS = 120
 
 
 def _get_foreground_window_win32():
@@ -66,8 +73,19 @@ def _paste_shortcut():
         pyautogui.hotkey("ctrl", "v")
 
 
+def _verify_paste_target(hwnd_before: int) -> bool:
+    """Best-effort check that focus did not move away before paste completed."""
+    if hwnd_before == 0:
+        return False
+    info_after = get_foreground_window_info()
+    return info_after[0] == hwnd_before
+
+
 class TextPaster:
     OWN_TITLES = {"VoiceInk 设置", "VoiceInk"}
+
+    def __init__(self, restore_clipboard: bool = False):
+        self.restore_clipboard = restore_clipboard
 
     def _is_own_window(self, info: tuple) -> bool:
         """Check if the foreground window belongs to this process."""
@@ -81,8 +99,8 @@ class TextPaster:
 
     def paste(self, text: str) -> str:
         """
-        Paste text to the cursor position.
-        Returns a status string: 'pasted', 'clipboard', or 'error:<msg>'.
+        Synchronous paste (no verification). Prefer paste_async in the UI thread.
+        Returns: 'pasted', 'clipboard', or 'error:<msg>'.
         """
         if not text:
             return "error:空文本"
@@ -94,9 +112,64 @@ class TextPaster:
         pyperclip.copy(text)
 
         if has_target:
-            # 使用 QTimer 异步执行粘贴，避免 UI 阻塞
-            QTimer.singleShot(150, _paste_shortcut)
-            # 不恢复剪贴板，避免覆盖用户可能复制的新内容
+            _paste_shortcut()
             return "pasted"
-        else:
-            return "clipboard"
+        return "clipboard"
+
+    def paste_async(self, text: str, callback: Callable[[str], None]) -> None:
+        """
+        Copy text and attempt paste after a short delay, then verify focus
+        stayed on the target window. Invokes callback with result status.
+        """
+        if not text:
+            callback("error:空文本")
+            return
+
+        info = get_foreground_window_info()
+        hwnd = info[0]
+        has_target = hwnd != 0 and not self._is_own_window(info)
+
+        old_clipboard = None
+        if self.restore_clipboard:
+            try:
+                old_clipboard = pyperclip.paste()
+            except Exception:
+                pass
+
+        try:
+            pyperclip.copy(text)
+        except Exception as e:
+            log.error("写入剪贴板失败: %s", e)
+            callback(f"error:{e}")
+            return
+
+        if not has_target:
+            callback("clipboard")
+            return
+
+        def _do_paste():
+            try:
+                _paste_shortcut()
+            except Exception as e:
+                log.warning("模拟粘贴失败: %s", e)
+                callback("clipboard")
+                return
+            QTimer.singleShot(VERIFY_AFTER_PASTE_MS, _verify)
+
+        def _verify():
+            if _verify_paste_target(hwnd):
+                if self.restore_clipboard and old_clipboard is not None:
+                    try:
+                        pyperclip.copy(old_clipboard)
+                    except Exception:
+                        pass
+                callback("pasted")
+            else:
+                log.info("粘贴校验未通过（焦点已切换或目标不可粘贴），保留剪贴板内容")
+                try:
+                    pyperclip.copy(text)
+                except Exception:
+                    pass
+                callback("clipboard")
+
+        QTimer.singleShot(PASTE_DELAY_MS, _do_paste)

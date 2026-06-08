@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 import numpy as np
@@ -43,6 +44,9 @@ class AudioRecorder(QObject):
     segment_ready = pyqtSignal(np.ndarray)
     error = pyqtSignal(str)
     warning = pyqtSignal(str)
+    no_speech_warning = pyqtSignal()
+
+    NO_SPEECH_WARN_SEC = 30.0
 
     SAMPLE_RATE = TARGET_SAMPLE_RATE
     CHANNELS = 1
@@ -65,6 +69,8 @@ class AudioRecorder(QObject):
         self._continuous_timer = QTimer(self)
         self._continuous_timer.setInterval(100)
         self._continuous_timer.timeout.connect(self._on_continuous_tick)
+        self._last_speech_at = 0.0
+        self._no_speech_warned = False
 
     def configure(
         self,
@@ -311,17 +317,32 @@ class AudioRecorder(QObject):
             return tracks[0]
         return mix_to_mono(tracks, TARGET_SAMPLE_RATE)
 
+    def _reset_continuous_speech_watch(self) -> None:
+        now = time.monotonic()
+        self._last_speech_at = now
+        self._no_speech_warned = False
+
     def _on_continuous_tick(self):
         if not self._is_recording or self._is_cancelled or not self._continuous_mode:
             return
         block = self._drain_mixed_mono()
         if block is None or block.size == 0:
             return
-        self.volume_changed.emit(rms_volume(block))
+        vol = rms_volume(block)
+        self.volume_changed.emit(vol)
+        if vol >= self._segmenter.speech_threshold:
+            self._last_speech_at = time.monotonic()
         segment = self._segmenter.feed(block)
         if segment is not None and segment.size > 0:
+            self._last_speech_at = time.monotonic()
             log.debug("持续监听切分片段: %d 采样点", segment.size)
             self.segment_ready.emit(segment)
+        elif (
+            not self._no_speech_warned
+            and time.monotonic() - self._last_speech_at >= self.NO_SPEECH_WARN_SEC
+        ):
+            self._no_speech_warned = True
+            self.no_speech_warning.emit()
 
     def start(self, *, continuous: bool = False):
         if self._is_recording:
@@ -330,6 +351,7 @@ class AudioRecorder(QObject):
         self._continuous_mode = continuous
         if continuous:
             self._segmenter.reset()
+            self._reset_continuous_speech_watch()
         self._is_cancelled = False
         self._lanes = []
         self._last_start_warning = ""
@@ -397,10 +419,24 @@ class AudioRecorder(QObject):
     def start_continuous(self):
         self.start(continuous=True)
 
+    def _flush_continuous_segments(self) -> None:
+        """Drain VAD buffer so trailing speech is not lost on stop."""
+        block = self._drain_mixed_mono()
+        if block is not None and block.size > 0:
+            segment = self._segmenter.feed(block)
+            if segment is not None and segment.size > 0:
+                log.debug("持续监听收尾片段: %d 采样点", segment.size)
+                self.segment_ready.emit(segment)
+        flushed = self._segmenter.flush()
+        if flushed is not None and flushed.size > 0:
+            log.debug("持续监听 flush 片段: %d 采样点", flushed.size)
+            self.segment_ready.emit(flushed)
+
     def stop_continuous(self):
         if not self._continuous_mode and not self._is_recording:
             return
         self._continuous_timer.stop()
+        self._flush_continuous_segments()
         self._continuous_mode = False
         self._is_cancelled = False
         self._is_recording = False

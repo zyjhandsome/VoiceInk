@@ -9,8 +9,12 @@ from typing import Any
 from PyQt6.QtCore import QTimer
 
 from voiceink.version import __version__ as VERSION
+from voiceink.speech_recognizer import DEFAULT_MODEL_ID, LEGACY_DEFAULT_MODEL_IDS
 
 log = logging.getLogger("VoiceInk")
+
+# Bump when adding one-time STT default migrations for existing installs.
+STT_MODEL_MIGRATION_VERSION = 1
 
 
 def _get_default_models_dir() -> Path:
@@ -43,10 +47,13 @@ TRIGGER_MODE_HOTKEY = "hotkey"
 TRIGGER_MODE_CONTINUOUS = "continuous"
 
 DEFAULT_CONFIG = {
-    "hotkey": "ctrl+space",
+    "hotkey": "alt+space",
     "first_run_welcome_seen": True,
     "auto_start": False,
     "sound_enabled": True,
+    "output": {
+        "restore_clipboard": False,
+    },
     "audio": {
         "input_source": "microphone",
         "trigger_mode": "continuous",
@@ -54,7 +61,7 @@ DEFAULT_CONFIG = {
         "system_device_index": -1,
     },
     "stt": {
-        "model_id": "qwen3-asr-0.6b",
+        "model_id": DEFAULT_MODEL_ID,
         "num_threads": 4,
         "models_dir": "",
     },
@@ -106,6 +113,19 @@ class Config:
         # True = 不写欢迎弹窗（升级用户或未配置时用默认 True）；首次本无配置文件时单独打开欢迎
         if not config_existed:
             self._config["first_run_welcome_seen"] = False
+        self._migrate_stt_model()
+
+    def _migrate_stt_model(self) -> None:
+        """One-time upgrade: former app defaults → FireRedASR2."""
+        stt = self._config.setdefault("stt", {})
+        if stt.get("migration_version", 0) >= STT_MODEL_MIGRATION_VERSION:
+            return
+        cur = stt.get("model_id", DEFAULT_MODEL_ID)
+        if cur in LEGACY_DEFAULT_MODEL_IDS and cur != DEFAULT_MODEL_ID:
+            log.info("升级迁移：语音模型 %s → %s", cur, DEFAULT_MODEL_ID)
+            stt["model_id"] = DEFAULT_MODEL_ID
+        stt["migration_version"] = STT_MODEL_MIGRATION_VERSION
+        self.save_immediate()
 
     def _sync_registry_auto_start(self):
         """Sync auto_start setting with Windows registry (installer may have set it)."""

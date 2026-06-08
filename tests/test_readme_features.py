@@ -37,19 +37,25 @@ class TestReadmeHoldHotkeyFlow:
     def test_hotkey_mode_blocked_when_model_not_ready(self):
         with app_harness({"audio.trigger_mode": "hotkey"}) as h:
             h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
             h["app"]._on_recording_start()
 
             h["floating"].show_recording.assert_not_called()
             h["recorder"].start.assert_not_called()
             h["floating"].show_error.assert_called_once()
 
-    def test_continuous_mode_ignores_hotkey_start(self):
+    def test_continuous_mode_uses_hotkey_start_handler(self):
         with app_harness({"audio.trigger_mode": "continuous"}) as h:
             h["app"]._on_recording_start()
 
             h["floating"].show_recording.assert_not_called()
             h["recorder"].start.assert_not_called()
-            h["tray"].showMessage.assert_called()
+
+    def test_continuous_hotkey_start_begins_listening(self):
+        with app_harness({"audio.trigger_mode": "continuous"}) as h:
+            with patch.object(h["app"], "_start_continuous_listening") as start_cont:
+                h["app"]._on_continuous_hotkey_start()
+                start_cont.assert_called_once()
 
     def test_release_stops_recording_and_starts_asr(self):
         with app_harness({"audio.trigger_mode": "hotkey"}) as h:
@@ -117,19 +123,30 @@ class TestReadmeHotkeyManagerToApp:
 
 
 class TestReadmeContinuousMode:
-    """README FAQ: 自动持续转写 — 检测到说话并停顿后自动识别粘贴。"""
+    """README FAQ: 自动持续转写 — 按住快捷键开始，浮窗 × 结束。"""
 
-    def test_stt_ready_starts_continuous_when_configured(self):
-        with app_harness({"audio.trigger_mode": "continuous"}) as h:
+    def test_stt_ready_does_not_auto_start_continuous(self):
+        with app_harness({"audio.trigger_mode": "continuous", "hotkey": "ctrl+space"}) as h:
             with patch.object(h["app"], "_start_continuous_listening") as start_cont:
                 h["app"]._on_stt_ready()
-                assert start_cont.called or h["tray"].showMessage.called
+                start_cont.assert_not_called()
+                h["floating"].show_continuous_idle.assert_called_once()
+                h["tray"].showMessage.assert_called()
+
+    def test_close_button_stops_continuous_session(self):
+        with app_harness({"audio.trigger_mode": "continuous"}) as h:
+            h["recorder"].is_continuous = True
+            h["app"]._stop_continuous_user_session()
+            h["recorder"].stop_continuous.assert_called_once()
+            h["floating"].show_continuous_stopped.assert_called_once()
+            assert h["app"]._continuous_user_stopped is True
 
     def test_stt_ready_shows_hotkey_hint_in_hotkey_mode(self):
         with app_harness({"audio.trigger_mode": "hotkey", "hotkey": "ctrl+space"}) as h:
             with patch.object(h["app"], "_start_continuous_listening") as start_cont:
                 h["app"]._on_stt_ready()
                 start_cont.assert_not_called()
+                h["floating"].show_success.assert_called_once()
                 h["tray"].showMessage.assert_called()
                 msg = h["tray"].showMessage.call_args[0][1]
                 assert "Ctrl" in msg or "ctrl" in msg.lower()
@@ -187,7 +204,8 @@ class TestReadmeAsrOutputAndPaste:
         with app_harness({"audio.trigger_mode": "hotkey"}) as h:
             with patch.object(h["app"], "_on_polish_complete", wraps=h["app"]._on_polish_complete):
                 h["app"]._output_text("直接粘贴")
-                h["paster"].paste.assert_called_once_with("直接粘贴")
+                h["paster"].paste_async.assert_called_once()
+                assert h["paster"].paste_async.call_args[0][0] == "直接粘贴"
 
 
 class TestReadmeAudioSources:

@@ -76,6 +76,7 @@ def app_harness(config_overrides: dict | None = None):
 
     # Sensible defaults for README flows
     harness["recognizer"].is_ready = True
+    harness["recognizer"].is_loading = False
     harness["recorder"].is_recording = False
     harness["recorder"].is_continuous = False
     harness["recorder"].input_source_display = "麦克风"

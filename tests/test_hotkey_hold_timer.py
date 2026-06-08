@@ -47,17 +47,62 @@ def test_hold_timer_fires_with_right_ctrl():
 
 
 def test_short_tap_does_not_start():
+    from unittest.mock import patch
+
     app = QApplication.instance() or QApplication(sys.argv)
     mgr = HotKeyManager("ctrl+space")
     started = []
+    short_taps = []
     mgr.recording_start.connect(lambda: started.append(True))
+    mgr.hotkey_tap_too_short.connect(lambda: short_taps.append(True))
+
+    t0 = 1000.0
+    with patch("voiceink.hotkey_manager.time.monotonic", side_effect=[t0, t0 + 0.08, t0 + 0.08]):
+        mgr._on_press(keyboard.Key.ctrl_l)
+        mgr._on_press(keyboard.Key.space)
+        mgr._on_release(keyboard.Key.space)
+        mgr._on_release(keyboard.Key.ctrl_l)
+
+    assert not started
+    assert short_taps, "deliberate short tap should notify"
+
+
+def test_ime_flicker_does_not_emit_short_tap():
+    """Sub-50ms combo (typical IME Ctrl+Space) should not spam the user."""
+    import time
+    from unittest.mock import patch
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    mgr = HotKeyManager("ctrl+space")
+    short_taps = []
+    mgr.hotkey_tap_too_short.connect(lambda: short_taps.append(True))
+
+    t0 = 1000.0
+    with patch("voiceink.hotkey_manager.time.monotonic", side_effect=[t0, t0 + 0.02, t0 + 0.02]):
+        mgr._on_press(keyboard.Key.ctrl_l)
+        mgr._on_press(keyboard.Key.space)
+        mgr._on_release(keyboard.Key.space)
+        mgr._on_release(keyboard.Key.ctrl_l)
+
+    assert not short_taps
+
+
+def test_continuous_mode_emits_listen_start_not_recording():
+    app = QApplication.instance() or QApplication(sys.argv)
+    mgr = HotKeyManager("ctrl+space")
+    mgr.set_continuous_trigger_mode(True)
+    started = []
+    recording = []
+
+    mgr.continuous_listen_start.connect(lambda: started.append(True))
+    mgr.recording_start.connect(lambda: recording.append(True))
 
     mgr._on_press(keyboard.Key.ctrl_l)
     mgr._on_press(keyboard.Key.space)
-    mgr._on_release(keyboard.Key.space)
-    mgr._on_release(keyboard.Key.ctrl_l)
 
-    QTimer.singleShot(50, app.quit)
+    QTimer.singleShot(MIN_HOLD_MS + 250, app.quit)
     app.exec()
 
-    assert not started
+    assert started, "continuous_listen_start should emit in continuous trigger mode"
+    assert not recording
+    assert not mgr._is_recording, "release should not latch hotkey recording state"

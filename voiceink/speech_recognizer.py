@@ -10,17 +10,25 @@ log = logging.getLogger("VoiceInk")
 
 SAMPLE_RATE = 16000
 
-# Qwen3-ASR (sherpa-onnx) may emit XML-style delimiters in decoded text.
+# Default STT model for new installs, config fallback, and release EXE bundling.
+DEFAULT_MODEL_ID = "fireredasr2-ctc"
+
+# Former app-wide defaults; upgraded to DEFAULT_MODEL_ID once (see config.py migration).
+LEGACY_DEFAULT_MODEL_IDS = frozenset({"qwen3-asr-0.6b"})
+
+# Qwen3-ASR may emit XML-style delimiters; FireRedASR2 emits <sil>, <zh>, etc.
 _ASR_TAG_PATTERNS = (
     re.compile(r"</?\s*asr_text\s*/?\s*>", re.IGNORECASE),
     re.compile(r"<\s*asr_text\b[^>]*>", re.IGNORECASE),
     re.compile(r"</\s*asr_text\b[^>]*>", re.IGNORECASE),
     re.compile(r"<\s*/\s*asr_text\b[^>]*>", re.IGNORECASE),
 )
+# FireRedASR2 / sherpa meta tokens in tokens.txt: <sil>, <zh>, <en>, dialect tags, …
+_ASR_META_TOKEN_PATTERN = re.compile(r"<\s*/?\s*[^>]+>")
 
 
 def normalize_asr_output(text: str) -> str:
-    """Remove ASR model wrapper tags (e.g. ``<asr_text>嗯``) from recognition text."""
+    """Remove ASR model wrapper / meta tokens from recognition text."""
     if not text:
         return ""
     cleaned = text
@@ -29,6 +37,9 @@ def normalize_asr_output(text: str) -> str:
         if pattern.search(cleaned):
             stripped_tags = True
         cleaned = pattern.sub("", cleaned)
+    if _ASR_META_TOKEN_PATTERN.search(cleaned):
+        stripped_tags = True
+        cleaned = _ASR_META_TOKEN_PATTERN.sub("", cleaned)
     cleaned = cleaned.strip()
     if stripped_tags:
         log.debug("已剥离 ASR 标签，清洗后长度: %d", len(cleaned))
@@ -120,14 +131,34 @@ MODEL_REGISTRY = [
     {
         "id": "qwen3-asr-0.6b",
         "name": "Qwen3-ASR 0.6B",
-        "description": "阿里最新大模型ASR，高精度",
+        "description": "阿里大模型ASR，高精度",
         "accuracy": 5,
         "speed": 2,
-        "languages": "中/英",
+        "languages": "中/英/多语种",
         "size_mb": 983,
         "loader": "qwen3_asr",
         "hf_repo": "csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
         "dir_name": "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+        "files": [
+            "conv_frontend.onnx",
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "tokenizer/vocab.json",
+            "tokenizer/merges.txt",
+            "tokenizer/tokenizer_config.json",
+        ],
+    },
+    {
+        "id": "qwen3-asr-1.7b",
+        "name": "Qwen3-ASR 1.7B",
+        "description": "阿里大模型ASR旗舰版，精度更高（较慢）",
+        "accuracy": 5,
+        "speed": 1,
+        "languages": "中/英/多语种",
+        "size_mb": 2400,
+        "loader": "qwen3_asr",
+        "hf_repo": "ilmina/qwen3-asr-1.7b-sherpa-onnx",
+        "dir_name": "sherpa-onnx-qwen3-asr-1.7B-int8-2026-03-25",
         "files": [
             "conv_frontend.onnx",
             "encoder.int8.onnx",
@@ -220,6 +251,35 @@ def is_model_downloaded(model_id: str) -> bool:
 
 def get_downloaded_models() -> list[str]:
     return [m["id"] for m in MODEL_REGISTRY if is_model_downloaded(m["id"])]
+
+
+def resolve_startup_model_id(configured_id: str | None) -> str:
+    """Choose which STT model to load at startup.
+
+    Uses the saved config when that model is on disk; otherwise prefers
+    DEFAULT_MODEL_ID, then any other downloaded model.
+    """
+    configured = (configured_id or "").strip() or DEFAULT_MODEL_ID
+
+    if is_model_downloaded(configured):
+        return configured
+
+    if configured != DEFAULT_MODEL_ID and is_model_downloaded(DEFAULT_MODEL_ID):
+        log.info("配置的模型 %s 未下载，改用默认模型 %s", configured, DEFAULT_MODEL_ID)
+        return DEFAULT_MODEL_ID
+
+    downloaded = get_downloaded_models()
+    if downloaded:
+        fallback = downloaded[0]
+        log.warning(
+            "配置的模型 %s 未下载，暂时使用已下载模型 %s（请在设置中下载 %s）",
+            configured,
+            fallback,
+            DEFAULT_MODEL_ID,
+        )
+        return fallback
+
+    return configured
 
 
 def delete_model(model_id: str) -> bool:
@@ -507,12 +567,29 @@ class SpeechRecognizer(QObject):
         self._num_threads = 4
 
     def configure(self, model_id: str, num_threads: int = 4):
-        self._num_threads = num_threads
-        self._model_id = model_id
-
         if not model_id:
             log.warning("未选择语音模型")
             return
+
+        if (
+            model_id == self._model_id
+            and num_threads == self._num_threads
+            and self._is_ready
+            and self._recognizer is not None
+        ):
+            log.debug("语音模型已驻留内存，跳过重复加载: %s", model_id)
+            return
+
+        if (
+            model_id == self._model_id
+            and num_threads == self._num_threads
+            and self.is_loading
+        ):
+            log.debug("语音模型正在加载中，跳过重复请求: %s", model_id)
+            return
+
+        self._num_threads = num_threads
+        self._model_id = model_id
 
         if is_model_downloaded(model_id):
             self._load_model()
@@ -523,8 +600,10 @@ class SpeechRecognizer(QObject):
         if self._load_worker and self._load_worker.isRunning():
             return
 
+        info = get_model_info(self._model_id)
+        name = info["name"] if info else self._model_id
         self._is_ready = False
-        self.model_load_progress.emit("正在加载模型...")
+        self.model_load_progress.emit(f"正在加载 {name}…")
         worker = ModelLoadWorker(self._model_id, self._num_threads)
         worker.loaded.connect(self._on_model_loaded)
         worker.error.connect(self._on_model_load_error)
@@ -592,6 +671,10 @@ class SpeechRecognizer(QObject):
     @property
     def is_ready(self) -> bool:
         return self._is_ready
+
+    @property
+    def is_loading(self) -> bool:
+        return self._load_worker is not None and self._load_worker.isRunning()
 
     @property
     def current_model_id(self) -> str:

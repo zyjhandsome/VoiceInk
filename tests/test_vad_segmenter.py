@@ -56,6 +56,25 @@ class TestSpeechSegmenterBasics:
         seg.reset()
         assert seg.feed(_silence(0.5)) is None
 
+    def test_flush_emits_incomplete_speech(self):
+        seg = SpeechSegmenter(
+            speech_threshold=0.002,
+            silence_hold_sec=0.85,
+            min_speech_sec=0.1,
+        )
+        seg.feed(_tone(0.3))
+        out = seg.flush()
+        assert out is not None
+        assert out.size >= int(16000 * 0.1)
+
+    def test_flush_discards_too_short_speech(self):
+        seg = SpeechSegmenter(
+            speech_threshold=0.002,
+            min_speech_sec=0.5,
+        )
+        seg.feed(_tone(0.1))
+        assert seg.flush() is None
+
     def test_lower_threshold_for_system_audio(self):
         """System loopback is quieter; recorder uses 0.0006 threshold."""
         seg = SpeechSegmenter(speech_threshold=0.0006)

@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from pynput import keyboard
@@ -8,6 +9,8 @@ log = logging.getLogger("VoiceInk")
 
 # 短按防误触（毫秒）；计时器必须在 Qt 主线程启动，否则 Windows 上可能永不触发
 MIN_HOLD_MS = 120
+# 松开早于该时长视为输入法/系统误触（如 Ctrl+Space 切换输入法），不提示用户
+MIN_SHORT_TAP_MS = 50
 
 KEY_MAP = {
     "alt": keyboard.Key.alt_l,
@@ -57,15 +60,20 @@ class HotKeyManager(QObject):
     recording_start = pyqtSignal()
     recording_stop = pyqtSignal()
     recording_cancel = pyqtSignal()
+    continuous_listen_start = pyqtSignal()
+    esc_pressed = pyqtSignal()
+    hotkey_tap_too_short = pyqtSignal()
+    listener_status = pyqtSignal(bool, str)
     # 从 pynput 线程投递到 Qt 主线程，再启动 QTimer
     _arm_hold_on_main = pyqtSignal()
 
-    def __init__(self, hotkey_str: str = "ctrl+space", parent=None):
+    def __init__(self, hotkey_str: str = "alt+space", parent=None):
         super().__init__(parent)
         self._hotkey_keys = parse_hotkey(hotkey_str)
         self._hotkey_str = hotkey_str
         self._pressed_keys = set()
         self._is_recording = False
+        self._continuous_trigger_mode = False
         self._paused = False
         self._listener = None
         self._lock = threading.Lock()
@@ -73,6 +81,8 @@ class HotKeyManager(QObject):
         self._hold_timer.setSingleShot(True)
         self._hold_timer.timeout.connect(self._on_hold_timeout)
         self._hold_pending = False
+        self._hold_activated = False
+        self._hold_started_at = 0.0
         self._arm_hold_on_main.connect(self._start_hold_timer_on_main_thread)
 
     def start(self):
@@ -83,8 +93,23 @@ class HotKeyManager(QObject):
             on_release=self._on_release,
         )
         self._listener.daemon = True
-        self._listener.start()
-        log.info("全局快捷键监听已启动: %s", self._hotkey_str)
+        try:
+            self._listener.start()
+        except Exception as e:
+            log.error("全局快捷键监听启动失败: %s", e)
+            self._listener = None
+            self.listener_status.emit(False, f"快捷键监听启动失败: {e}")
+            return
+        if self._listener.is_alive():
+            log.info("全局快捷键监听已启动: %s", self._hotkey_str)
+            self.listener_status.emit(True, "")
+        else:
+            log.error("全局快捷键监听未运行: %s", self._hotkey_str)
+            self._listener = None
+            self.listener_status.emit(
+                False,
+                "快捷键监听未能启动，请在设置中更换快捷键后重试",
+            )
 
     def stop(self):
         self._cancel_hold_pending()
@@ -118,6 +143,14 @@ class HotKeyManager(QObject):
             self._pressed_keys.clear()
         log.info("快捷键已更新: %s", hotkey_str)
 
+    def set_continuous_trigger_mode(self, enabled: bool) -> None:
+        """When True, hold hotkey starts continuous listening (release does not stop)."""
+        self._cancel_hold_pending()
+        with self._lock:
+            self._continuous_trigger_mode = enabled
+            self._pressed_keys.clear()
+            self._is_recording = False
+
     def _cancel_hold_pending(self):
         self._hold_timer.stop()
         self._hold_pending = False
@@ -140,12 +173,21 @@ class HotKeyManager(QObject):
         if not self._hotkey_still_held():
             self._hold_pending = False
             return
+
+        if self._continuous_trigger_mode:
+            self._hold_pending = False
+            self._hold_activated = True
+            log.debug("快捷键按住达标，请求开启持续监听")
+            self.continuous_listen_start.emit()
+            return
+
         with self._lock:
             if self._is_recording:
                 self._hold_pending = False
                 return
             self._is_recording = True
         self._hold_pending = False
+        self._hold_activated = True
         log.debug("快捷键按住达标，开始录音")
         self.recording_start.emit()
 
@@ -172,9 +214,11 @@ class HotKeyManager(QObject):
                 return
             self._pressed_keys.add(normalized)
 
-            if key == keyboard.Key.esc and self._is_recording:
-                self._is_recording = False
-                self.recording_cancel.emit()
+            if key == keyboard.Key.esc:
+                self.esc_pressed.emit()
+                if self._is_recording:
+                    self._is_recording = False
+                    self.recording_cancel.emit()
                 return
 
             if (
@@ -184,6 +228,8 @@ class HotKeyManager(QObject):
                 and self._hotkey_keys.issubset(self._pressed_keys)
             ):
                 self._hold_pending = True
+                self._hold_activated = False
+                self._hold_started_at = time.monotonic()
         if self._hold_pending:
             self._arm_hold_on_main.emit()
 
@@ -191,6 +237,7 @@ class HotKeyManager(QObject):
         normalized = self._normalize_key(key)
         emit_stop = False
         sync_hold_timer = False
+        emit_short_tap = False
 
         with self._lock:
             if self._paused:
@@ -201,11 +248,22 @@ class HotKeyManager(QObject):
             if self._hold_pending:
                 self._hold_pending = False
                 sync_hold_timer = True
+                if not self._hold_activated:
+                    held_ms = (time.monotonic() - self._hold_started_at) * 1000
+                    if held_ms >= MIN_SHORT_TAP_MS:
+                        emit_short_tap = True
+                    else:
+                        log.debug(
+                            "忽略极短快捷键组合 (%.0f ms)，可能为输入法占用",
+                            held_ms,
+                        )
 
             if self._is_recording and not self._hotkey_still_held_locked():
                 self._is_recording = False
                 emit_stop = True
 
+        if emit_short_tap:
+            self.hotkey_tap_too_short.emit()
         if sync_hold_timer:
             self._arm_hold_on_main.emit()
         if emit_stop:

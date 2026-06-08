@@ -65,6 +65,16 @@ class TestTextPasterPaste:
         result = paster.paste("测试文本")
         assert result in ["pasted", "clipboard", "error:"]
 
+    def test_paste_async_empty_text(self):
+        paster = TextPaster()
+        results = []
+        paster.paste_async("", lambda r: results.append(r))
+        assert results == ["error:空文本"]
+
+    def test_restore_clipboard_flag(self):
+        paster = TextPaster(restore_clipboard=True)
+        assert paster.restore_clipboard is True
+
 
 class TestPasteShortcut:
     def test_module_imports(self):

@@ -4,8 +4,8 @@ Build script for packaging VoiceInk as a standalone Windows application.
 Output: dist/VoiceInk/ — VoiceInk.exe, _internal/, and optional models/.
 
 Models are copied next to the exe (not inside it) from ~/.voiceink/models/
-or ./models/ when present. **Qwen3-ASR 0.6B must exist locally** or the build exits with an error.
-Fetch it with: `python voiceink_build/download_qwen3_for_build.py` (writes to `./models/`).
+or ./models/ when present. **FireRedASR2 must exist locally** or the build exits with an error.
+Fetch it with: `python voiceink_build/download_bundle_model_for_build.py` (writes to `./models/`).
 
 Distribution:
 - **Installer (recommended):** run `python build_release.py` — produces
@@ -28,37 +28,34 @@ if __name__ == "__main__" and __package__ is None:
 
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 # Always bundle this model in dist/VoiceInk/models/ for released EXE/installer.
-BUNDLE_REQUIRE_MODEL_ID = "qwen3-asr-0.6b"
+from voiceink.speech_recognizer import DEFAULT_MODEL_ID
+
+BUNDLE_REQUIRE_MODEL_ID = DEFAULT_MODEL_ID
 
 
 def _find_model_sources() -> list[tuple[str, Path]]:
-    """Find downloaded model directories from project root or user home."""
+    """Return the default release model if present under project or user models dir."""
     try:
-        from voiceink.speech_recognizer import MODEL_REGISTRY, get_model_info
+        from voiceink.speech_recognizer import get_model_info
     except ImportError:
+        return []
+
+    info = get_model_info(BUNDLE_REQUIRE_MODEL_ID)
+    if not info:
         return []
 
     project_models = SCRIPT_DIR / "models"
     user_models = Path.home() / ".voiceink" / "models"
 
-    found: list[tuple[str, Path]] = []
-    seen: set[str] = set()
-    for info in MODEL_REGISTRY:
-        for src_dir in [project_models, user_models]:
-            d = src_dir / info["dir_name"]
-            if d.exists() and all((d / f).exists() for f in info["files"]):
-                if info["dir_name"] not in seen:
-                    seen.add(info["dir_name"])
-                    found.append((info["dir_name"], d))
-                break
-
-    qinfo = get_model_info(BUNDLE_REQUIRE_MODEL_ID)
-    if qinfo:
-        qdir = qinfo["dir_name"]
-        found.sort(key=lambda t: (0 if t[0] == qdir else 1, t[0]))
-    return found
+    for src_dir in [project_models, user_models]:
+        d = src_dir / info["dir_name"]
+        if d.exists() and all((d / f).exists() for f in info["files"]):
+            return [(info["dir_name"], d)]
+    return []
 
 
 def _require_bundle_model(downloaded: list[tuple[str, Path]]) -> None:
@@ -71,7 +68,7 @@ def _require_bundle_model(downloaded: list[tuple[str, Path]]) -> None:
     dirname = info["dir_name"]
     if any(d == dirname for d, _ in downloaded):
         return
-    print("\n[ERROR] 打包 EXE 需要已在本地就绪的 Qwen3-ASR 0.6B 模型。")
+    print("\n[ERROR] 打包 EXE 需要已在本地就绪的 FireRedASR2 模型。")
     print("  请先在应用「设置 → 模型」中下载该模型，或将完整目录放到:")
     print(f"    {SCRIPT_DIR / 'models' / dirname}")
     print(f"    或 {Path.home() / '.voiceink' / 'models' / dirname}")

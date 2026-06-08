@@ -3,13 +3,21 @@ import numpy as np
 from voiceink.speech_recognizer import (
     MODEL_REGISTRY, normalize_asr_output, get_model_info,
     is_model_downloaded, get_model_dir, _get_models_dir,
-    SAMPLE_RATE
+    SAMPLE_RATE, DEFAULT_MODEL_ID,
 )
 
 
 class TestSampleRate:
     def test_sample_rate_constant(self):
         assert SAMPLE_RATE == 16000
+
+
+class TestDefaultModel:
+    def test_default_model_is_fireredasr2_ctc(self):
+        assert DEFAULT_MODEL_ID == "fireredasr2-ctc"
+        info = get_model_info(DEFAULT_MODEL_ID)
+        assert info is not None
+        assert info["name"] == "FireRedASR2"
 
 
 class TestNormalizeAsrOutput:
@@ -57,6 +65,18 @@ class TestNormalizeAsrOutput:
         result = normalize_asr_output(text)
         assert result == "嗯"
         assert "asr_text" not in result
+
+    def test_removes_fireredasr_sil_tokens(self):
+        text = "给他购买还出现了个什么标识呢<sil>个没有点伟大<sil><sil><sil>"
+        result = normalize_asr_output(text)
+        assert "<sil>" not in result
+        assert result == "给他购买还出现了个什么标识呢个没有点伟大"
+
+    def test_removes_fireredasr_lang_tags(self):
+        text = "<zh>你好<en>hello"
+        result = normalize_asr_output(text)
+        assert "<" not in result
+        assert result == "你好hello"
 
 
 class TestModelRegistry:
@@ -111,6 +131,13 @@ class TestModelRegistryContent:
         assert model["id"] == "qwen3-asr-0.6b"
         assert model["loader"] == "qwen3_asr"
 
+    def test_qwen3_asr_1_7b_model(self):
+        model = get_model_info("qwen3-asr-1.7b")
+        assert model is not None
+        assert model["id"] == "qwen3-asr-1.7b"
+        assert model["loader"] == "qwen3_asr"
+        assert model["size_mb"] == 2400
+
     def test_unknown_model(self):
         model = get_model_info("nonexistent_model")
         assert model is None
@@ -160,6 +187,11 @@ class TestModelAccuracySpeed:
         model = get_model_info("qwen3-asr-0.6b")
         assert model["accuracy"] == 5
 
+    def test_qwen3_1_7b_slowest_speed(self):
+        model = get_model_info("qwen3-asr-1.7b")
+        assert model["accuracy"] == 5
+        assert model["speed"] == 1
+
     def test_sensevoice_fast_speed(self):
         model = get_model_info("sensevoice")
         assert model["speed"] == 5
@@ -179,3 +211,47 @@ class TestModelLanguages:
     def test_zipformer_chinese_only(self):
         model = get_model_info("zipformer-ctc-zh")
         assert model["languages"] == "中"
+
+
+class TestResolveStartupModelId:
+    def test_uses_configured_when_downloaded(self, monkeypatch):
+        from voiceink.speech_recognizer import resolve_startup_model_id
+
+        monkeypatch.setattr(
+            "voiceink.speech_recognizer.is_model_downloaded",
+            lambda mid: mid == "sensevoice",
+        )
+        monkeypatch.setattr(
+            "voiceink.speech_recognizer.get_downloaded_models",
+            lambda: ["sensevoice"],
+        )
+        assert resolve_startup_model_id("sensevoice") == "sensevoice"
+
+    def test_prefers_default_when_configured_missing(self, monkeypatch):
+        from voiceink.speech_recognizer import (
+            DEFAULT_MODEL_ID,
+            resolve_startup_model_id,
+        )
+
+        monkeypatch.setattr(
+            "voiceink.speech_recognizer.is_model_downloaded",
+            lambda mid: mid == DEFAULT_MODEL_ID,
+        )
+        monkeypatch.setattr(
+            "voiceink.speech_recognizer.get_downloaded_models",
+            lambda: [DEFAULT_MODEL_ID],
+        )
+        assert resolve_startup_model_id("qwen3-asr-0.6b") == DEFAULT_MODEL_ID
+
+    def test_falls_back_to_any_downloaded(self, monkeypatch):
+        from voiceink.speech_recognizer import resolve_startup_model_id
+
+        monkeypatch.setattr(
+            "voiceink.speech_recognizer.is_model_downloaded",
+            lambda mid: mid == "qwen3-asr-0.6b",
+        )
+        monkeypatch.setattr(
+            "voiceink.speech_recognizer.get_downloaded_models",
+            lambda: ["qwen3-asr-0.6b"],
+        )
+        assert resolve_startup_model_id("fireredasr2-ctc") == "qwen3-asr-0.6b"

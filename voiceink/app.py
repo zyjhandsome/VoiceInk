@@ -1,13 +1,25 @@
 import logging
 import sys
+import time
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 
-from voiceink.config import Config, format_hotkey, TRIGGER_MODE_CONTINUOUS, TRIGGER_MODE_HOTKEY
+from voiceink.config import (
+    Config,
+    format_hotkey,
+    TRIGGER_MODE_CONTINUOUS,
+    TRIGGER_MODE_HOTKEY,
+)
 from voiceink.hotkey_manager import HotKeyManager
 from voiceink.audio_recorder import AudioRecorder
-from voiceink.speech_recognizer import SpeechRecognizer, set_models_dir, normalize_asr_output
+from voiceink.speech_recognizer import (
+    DEFAULT_MODEL_ID,
+    SpeechRecognizer,
+    set_models_dir,
+    normalize_asr_output,
+    get_model_info,
+)
 from voiceink.text_polisher import TextPolisher
 from voiceink.text_paster import TextPaster
 from voiceink.sound_manager import SoundManager
@@ -18,6 +30,7 @@ from voiceink.ui.settings_window import SettingsWindow
 log = logging.getLogger("VoiceInk")
 
 MIN_AUDIO_SAMPLES = 1600  # 0.1s at 16kHz — ignore recordings shorter than this
+SHORT_TAP_TRAY_COOLDOWN_S = 300  # 托盘「按过短」提示最少间隔，避免输入法反复弹窗
 
 
 class App(QObject):
@@ -50,6 +63,9 @@ class App(QObject):
         self._current_transcription = ""
         self._is_transcribing = False
         self._segment_queue: list[np.ndarray] = []
+        self._continuous_user_stopped = False
+        self._short_tap_tray_last_at = 0.0
+        self._hotkey_conflict_warned = False
 
         log.info("正在初始化各模块...")
         set_models_dir(self._config.models_dir)
@@ -57,18 +73,21 @@ class App(QObject):
         log.info("正在初始化界面...")
         self._init_ui()
         self._connect_signals()
+        self._sync_hotkey_trigger_mode()
         self._configure_stt()
         self._update_tray_models()
 
     def _init_modules(self):
         self._hotkey_mgr = HotKeyManager(
-            self._config.get("hotkey", "ctrl+space")
+            self._config.get("hotkey", "alt+space")
         )
         self._recorder = AudioRecorder()
         self._apply_audio_config()
         self._recognizer = SpeechRecognizer()
         self._polisher = TextPolisher()
-        self._paster = TextPaster()
+        self._paster = TextPaster(
+            restore_clipboard=self._config.get("output.restore_clipboard", False)
+        )
         self._sound = SoundManager(
             enabled=self._config.get("sound_enabled", True)
         )
@@ -84,23 +103,49 @@ class App(QObject):
     def _is_continuous_mode(self) -> bool:
         return self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS) == TRIGGER_MODE_CONTINUOUS
 
+    def _continuous_session_active(self) -> bool:
+        """True while continuous listen session is running (hotkey started, not yet stopped)."""
+        return self._is_continuous_mode() and self._recorder.is_continuous
+
+    def _continuous_hotkey_label(self) -> str:
+        return format_hotkey(self._config.get("hotkey", "alt+space"))
+
+    def _refresh_continuous_ui_after_output(self) -> None:
+        if self._continuous_session_active():
+            self._floating.show_listening()
+        elif self._is_continuous_mode() and self._recognizer.is_ready:
+            self._floating.show_continuous_idle(self._continuous_hotkey_label())
+        else:
+            self._floating.dismiss_if_idle()
+
+    def _sync_hotkey_trigger_mode(self) -> None:
+        self._hotkey_mgr.set_continuous_trigger_mode(self._is_continuous_mode())
+
     def _connect_signals(self):
         self._hotkey_mgr.recording_start.connect(self._on_recording_start)
         self._hotkey_mgr.recording_stop.connect(self._on_recording_stop)
         self._hotkey_mgr.recording_cancel.connect(self._on_recording_cancel)
+        self._hotkey_mgr.continuous_listen_start.connect(self._on_continuous_hotkey_start)
+        self._hotkey_mgr.hotkey_tap_too_short.connect(self._on_hotkey_tap_too_short)
+        self._hotkey_mgr.esc_pressed.connect(self._on_esc_pressed)
+        self._hotkey_mgr.listener_status.connect(self._on_hotkey_listener_status)
 
         self._recorder.volume_changed.connect(self._floating.update_volume)
         self._recorder.recording_finished.connect(self._on_recording_finished)
         self._recorder.segment_ready.connect(self._on_segment_ready)
         self._recorder.error.connect(self._on_recorder_error)
         self._recorder.warning.connect(self._on_recorder_warning)
+        self._recorder.no_speech_warning.connect(self._on_no_speech_warning)
 
         self._recognizer.final_result.connect(self._on_final_result)
         self._recognizer.error.connect(self._on_recognizer_error)
         self._recognizer.ready.connect(self._on_stt_ready)
+        self._recognizer.model_load_progress.connect(self._on_model_load_progress)
 
         self._polisher.polish_complete.connect(self._on_polish_complete)
         self._polisher.polish_error.connect(self._on_polish_error)
+
+        self._floating.continuous_stop_requested.connect(self._stop_continuous_user_session)
 
         self._tray.open_settings.connect(self._show_settings)
         self._tray.quit_app.connect(self._quit)
@@ -144,36 +189,108 @@ class App(QObject):
             log.warning("音频计划不可用: %s", e)
 
     def _configure_stt(self):
-        from voiceink.speech_recognizer import is_model_downloaded
-        model_id = self._config.get("stt.model_id", "sensevoice")
+        from voiceink.speech_recognizer import is_model_downloaded, resolve_startup_model_id
+
+        configured = self._config.get("stt.model_id", DEFAULT_MODEL_ID)
+        model_id = resolve_startup_model_id(configured)
         num_threads = self._config.get("stt.num_threads", 4)
 
         if model_id and is_model_downloaded(model_id):
+            info = get_model_info(model_id)
+            name = info["name"] if info else model_id
+            needs_load = not (
+                self._recognizer.current_model_id == model_id
+                and self._recognizer.is_ready
+            )
+            if needs_load and not self._recognizer.is_loading:
+                self._floating.show_model_loading(
+                    f"正在将 {name} 载入内存，请稍候（约 10–40 秒）…"
+                )
+                self._tray.set_activity_tooltip("loading")
             self._recognizer.configure(model_id, num_threads)
         else:
-            log.warning("语音模型未下载，请在设置中下载模型")
+            info = get_model_info(model_id) if model_id else None
+            name = info["name"] if info else (model_id or DEFAULT_MODEL_ID)
+            log.warning("语音模型 %s 未下载，请在设置中下载模型", name)
+            hint = f"请下载语音模型「{name}」：右键托盘 → 设置 → 模型"
+            self._floating.show_error(hint)
             self._tray.showMessage(
                 "VoiceInk",
-                "语音模型未下载，请右键托盘图标 → 打开设置 → 下载模型",
+                hint,
                 QSystemTrayIcon.MessageIcon.Warning,
-                5000
+                6000,
             )
 
     # ── Recording flow ────────────────────────────────
 
+    def _model_not_ready_message(self) -> str:
+        if self._recognizer.is_loading:
+            return "模型加载中，请稍候"
+        return self._friendly_error("模型未就绪")
+
+    def _show_model_not_ready(self) -> None:
+        if self._recognizer.is_loading:
+            self._floating.show_model_loading("正在加载语音模型，请稍候...")
+            self._tray.set_activity_tooltip("loading")
+        else:
+            self._floating.show_error(self._friendly_error("模型未就绪"))
+
+    def _pending_segment_count(self) -> int:
+        return len(self._segment_queue) + (1 if self._is_transcribing else 0)
+
+    def _on_esc_pressed(self):
+        if self._continuous_session_active():
+            self._stop_continuous_user_session()
+            return
+        if self._recorder.is_recording and not self._is_continuous_mode():
+            self._on_recording_cancel()
+
+    def _on_hotkey_listener_status(self, ok: bool, message: str):
+        if ok:
+            return
+        self._tray.showMessage(
+            "VoiceInk",
+            message or "快捷键监听未能启动，请在设置中更换快捷键",
+            QSystemTrayIcon.MessageIcon.Warning,
+            8000,
+        )
+        self._floating.show_error(message or "快捷键监听未能启动")
+
+    def _on_model_load_progress(self, msg: str):
+        if "就绪" in msg:
+            self._floating.clear_model_loading_lock()
+            return
+        if "失败" in msg:
+            self._floating.clear_model_loading_lock()
+            self._tray.set_activity_tooltip(None)
+            self._floating.show_error(self._friendly_error(msg))
+            return
+        if self._recorder.is_continuous:
+            log.info("模型重新加载，暂停持续监听")
+            self._stop_continuous_listening()
+        self._floating.show_model_loading(
+            f"{msg}\n模型已下载，正在载入内存，完成前请勿开始录音"
+        )
+        self._tray.set_activity_tooltip("loading")
+
+    def _on_no_speech_warning(self):
+        log.warning("持续监听长时间未检测到有效语音")
+        self._floating.show_warning(
+            "似乎没采集到声音",
+            "请检查麦克风设备与系统隐私权限",
+        )
+        self._tray.showMessage(
+            "VoiceInk",
+            "持续监听中长时间未检测到语音，请检查麦克风与设备设置。",
+            QSystemTrayIcon.MessageIcon.Warning,
+            6000,
+        )
+
     def _on_recording_start(self):
         if self._is_continuous_mode():
-            log.info("已按下快捷键，但当前为「自动持续转写」模式，按住录音不会启动")
-            self._tray.showMessage(
-                "VoiceInk",
-                "当前是「自动持续转写」，Ctrl+Space 不会开始录音。\n"
-                "请在本页选「按住快捷键」后点右下角「保存设置」，或改按 Alt+Space 试输入法冲突。",
-                QSystemTrayIcon.MessageIcon.Information,
-                7000,
-            )
             return
         if not self._recognizer.is_ready:
-            self._floating.show_error(self._friendly_error("模型未就绪"))
+            self._show_model_not_ready()
             return
 
         if self._is_transcribing:
@@ -216,6 +333,65 @@ class App(QObject):
         self._recorder.cancel()
         self._floating.show_cancelled()
 
+    def _on_continuous_hotkey_start(self):
+        if not self._is_continuous_mode():
+            return
+        if not self._recognizer.is_ready:
+            log.warning("持续转写：模型未就绪，无法开始监听")
+            self._show_model_not_ready()
+            if not self._recognizer.is_loading:
+                self._tray.showMessage(
+                    "VoiceInk",
+                    "语音模型未就绪。请在设置 → 模型 中下载 FireRedASR2 并等待加载完成。",
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    6000,
+                )
+            return
+        if self._recorder.is_continuous:
+            log.debug("持续转写：已在监听中，忽略重复快捷键")
+            return
+        log.info("快捷键触发：开始持续转写")
+        self._continuous_user_stopped = False
+        self._start_continuous_listening()
+
+    def _on_hotkey_tap_too_short(self):
+        if self._continuous_session_active():
+            log.debug("已在持续监听中，忽略快捷键短按提示")
+            return
+
+        hotkey = self._continuous_hotkey_label()
+        hint = f"请按住 {hotkey} 约 0.2 秒以上"
+        hotkey_raw = self._config.get("hotkey", "").lower()
+        if "ctrl+space" in hotkey_raw.replace(" ", ""):
+            hint += "。Ctrl+Space 常被输入法占用，请在设置中改为 Alt+Space"
+        log.info("快捷键按过短: %s", hint)
+
+        now = time.monotonic()
+        cooldown = 0.0 if not self._hotkey_conflict_warned else SHORT_TAP_TRAY_COOLDOWN_S
+        if now - self._short_tap_tray_last_at >= cooldown:
+            self._hotkey_conflict_warned = True
+            self._short_tap_tray_last_at = now
+            self._tray.showMessage(
+                "VoiceInk", hint, QSystemTrayIcon.MessageIcon.Information, 4000
+            )
+
+        if self._is_continuous_mode() and self._recognizer.is_ready:
+            self._floating.show_continuous_idle(hotkey)
+        elif not self._is_continuous_mode():
+            self._floating.show_error("录音过短\n" + hint.split("。")[0])
+
+    def _stop_continuous_user_session(self):
+        """End the whole continuous listen session; in-flight transcription still completes."""
+        if not self._is_continuous_mode() or not self._recorder.is_continuous:
+            return
+        self._continuous_user_stopped = True
+        log.info("用户停止持续转写会话（进行中的识别会继续完成）")
+        if self._recorder.is_continuous or self._recorder.is_recording:
+            self._recorder.stop_continuous()
+        self._tray.set_activity_tooltip(None)
+        self._floating.show_continuous_stopped()
+        QTimer.singleShot(1200, self._floating.dismiss_if_idle)
+
     def _on_recorder_error(self, error_msg: str):
         if self._recorder.is_continuous:
             self._stop_continuous_listening()
@@ -226,11 +402,12 @@ class App(QObject):
 
     def _on_recorder_warning(self, warning_msg: str):
         log.warning("%s", warning_msg)
+        self._floating.show_warning("音频采集受限", warning_msg)
         self._tray.showMessage(
             "VoiceInk",
             warning_msg,
             QSystemTrayIcon.MessageIcon.Warning,
-            6000,
+            10000,
         )
 
     def _start_continuous_listening(self):
@@ -241,11 +418,22 @@ class App(QObject):
         if self._recorder.is_continuous:
             return
         log.info("开启自动持续转写（来源: %s）", self._recorder.input_source_display)
-        self._tray.set_activity_tooltip("listening")
-        self._floating.show_listening()
+        self._sound.play_start()
 
         def _begin():
+            if not self._recognizer.is_ready or self._recognizer.is_loading:
+                log.warning("延迟开启持续监听时模型仍未就绪，已取消")
+                self._tray.set_activity_tooltip(None)
+                self._show_model_not_ready()
+                return
             self._recorder.start_continuous()
+            if not self._recorder.is_continuous:
+                log.warning("持续监听启动失败")
+                self._tray.set_activity_tooltip(None)
+                self._floating.show_error("无法开启持续监听\n请检查音频设备设置")
+                return
+            self._tray.set_activity_tooltip("listening")
+            self._floating.show_listening()
             if (
                 self._config.get("audio.input_source") == "system"
                 and self._recorder.is_continuous
@@ -268,6 +456,14 @@ class App(QObject):
     def _on_segment_ready(self, audio: np.ndarray):
         if audio.size < MIN_AUDIO_SAMPLES:
             return
+        if not self._recognizer.is_ready:
+            if self._recognizer.is_loading:
+                self._segment_queue.append(audio)
+                log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
+                self._floating.show_model_loading(
+                    "模型加载中，已录制的语音将排队等待识别…"
+                )
+            return
         if self._is_transcribing:
             self._segment_queue.append(audio)
             log.debug("转写排队，队列长度 %d", len(self._segment_queue))
@@ -285,6 +481,11 @@ class App(QObject):
         self._begin_transcription(full_audio)
 
     def _begin_transcription(self, audio: np.ndarray):
+        if not self._recognizer.is_ready:
+            if self._recognizer.is_loading:
+                self._segment_queue.insert(0, audio)
+                self._floating.show_model_loading("模型加载中，识别已暂停…")
+            return
         self._is_transcribing = True
         self._tray.set_activity_tooltip("recognizing")
         self._floating.show_recognizing()
@@ -295,9 +496,18 @@ class App(QObject):
         if not text.strip():
             log.warning("未识别到语音内容")
             self._is_transcribing = False
-            self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
-            if self._is_continuous_mode():
+            if self._recognizer.is_loading:
+                self._floating.show_model_loading("模型加载中，请稍候…")
+                self._tray.set_activity_tooltip("loading")
+                self._pump_segment_queue()
+                return
+            self._tray.set_activity_tooltip(
+                "listening" if self._continuous_session_active() else None
+            )
+            if self._continuous_session_active():
                 self._floating.show_listening()
+            elif self._is_continuous_mode():
+                self._refresh_continuous_ui_after_output()
             else:
                 self._floating.show_error(self._friendly_error("未识别"))
             self._pump_segment_queue()
@@ -321,38 +531,44 @@ class App(QObject):
 
     def _on_recognizer_error(self, error_msg: str):
         self._is_transcribing = False
+        self._floating.clear_model_loading_lock()
         self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
         self._sound.play_error()
         self._floating.show_error(self._friendly_error(error_msg))
         self._pump_segment_queue()
-        if self._is_continuous_mode() and not self._recorder.is_continuous:
+        if self._is_continuous_mode() and not self._recorder.is_continuous and not self._continuous_user_stopped:
             QTimer.singleShot(1500, self._start_continuous_listening)
 
     def _pump_segment_queue(self):
         if self._is_transcribing or not self._segment_queue:
-            if self._is_continuous_mode() and not self._is_transcribing and self._recorder.is_continuous:
+            if self._continuous_session_active() and not self._is_transcribing:
                 self._floating.show_listening()
             return
         next_audio = self._segment_queue.pop(0)
         self._begin_transcription(next_audio)
 
     def _on_stt_ready(self):
+        self._floating.clear_model_loading_lock()
+        self._tray.set_activity_tooltip(None)
+        if self._segment_queue and not self._is_transcribing:
+            log.info("模型就绪，处理排队语音 %d 段", len(self._segment_queue))
+            self._pump_segment_queue()
+        hotkey = self._continuous_hotkey_label()
         if self._is_continuous_mode():
-            self._tray.showMessage(
-                "VoiceInk",
-                "自动持续转写已就绪（检测到说话后自动出字）",
-                QSystemTrayIcon.MessageIcon.Information,
-                4000,
+            self._floating.show_continuous_idle(hotkey)
+            tray_msg = (
+                f"持续转写已就绪。按住 {hotkey} 开始监听，说完停顿后自动出字；"
+                "按 Esc 或点击浮窗右上角 × 停止。"
             )
-            QTimer.singleShot(400, self._start_continuous_listening)
-            return
-        hotkey = format_hotkey(self._config.get("hotkey", "ctrl+space"))
-        log.info("✓ 语音识别模型已就绪，按 %s 开始语音输入", hotkey)
+        else:
+            log.info("✓ 语音识别模型已就绪，按 %s 开始语音输入", hotkey)
+            self._floating.show_success("已就绪", f"按 {hotkey} 开始语音输入")
+            tray_msg = f"已就绪，按 {hotkey} 开始语音输入"
         self._tray.showMessage(
             "VoiceInk",
-            f"已就绪，按 {hotkey} 开始语音输入",
+            tray_msg,
             QSystemTrayIcon.MessageIcon.Information,
-            3000,
+            6000 if self._is_continuous_mode() else 3000,
         )
 
     # ── Polishing ─────────────────────────────────────
@@ -361,48 +577,69 @@ class App(QObject):
         self._output_text(polished_text)
 
     def _on_polish_error(self, error_msg: str):
-        log.warning("润色失败: %s", error_msg)
-        self._floating.show_error(self._friendly_error("润色失败"))
-        QTimer.singleShot(500, lambda: self._output_text(self._current_transcription))
+        log.warning("润色失败，降级输出原文: %s", error_msg)
+        self._output_text(self._current_transcription, degraded_from_polish=True)
 
     # ── Output ────────────────────────────────────────
 
-    def _output_text(self, text: str):
+    def _output_text(self, text: str, *, degraded_from_polish: bool = False):
         self._is_transcribing = False
         text = normalize_asr_output(text)
         if not text.strip():
-            self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
-            if self._is_continuous_mode():
+            self._tray.set_activity_tooltip(
+                "listening" if self._continuous_session_active() else None
+            )
+            if self._continuous_session_active():
                 self._floating.show_listening()
+            elif self._is_continuous_mode():
+                self._refresh_continuous_ui_after_output()
             else:
                 self._floating.show_error(self._friendly_error("未识别"))
             self._pump_segment_queue()
             return
-        result = self._paster.paste(text)
+
+        self._paster.paste_async(text, lambda result: self._handle_paste_result(
+            result, degraded_from_polish=degraded_from_polish
+        ))
+
+    def _handle_paste_result(self, result: str, *, degraded_from_polish: bool = False):
         paste_hint = "可按 Cmd+V 粘贴" if sys.platform == "darwin" else "可按 Ctrl+V 粘贴"
+        success_msg = "已输入（原文）" if degraded_from_polish else "已输入"
 
         if result == "pasted":
             log.info("已粘贴到光标位置")
-            self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
-            if self._is_continuous_mode():
-                self._floating.show_success("已输入")
-                QTimer.singleShot(1700, self._floating.show_listening)
+            self._tray.set_activity_tooltip(
+                "listening" if self._continuous_session_active() else None
+            )
+            if self._continuous_session_active():
+                if degraded_from_polish:
+                    self._floating.show_info(success_msg)
+                else:
+                    self._floating.show_success("已输入")
+                QTimer.singleShot(1700, self._refresh_continuous_ui_after_output)
             else:
                 self._floating.dismiss_if_idle()
-                self._floating.show_success("已输入")
+                if degraded_from_polish:
+                    self._floating.show_info(success_msg)
+                else:
+                    self._floating.show_success("已输入")
         elif result == "clipboard":
-            log.info("已复制到剪贴板")
-            self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
-            if self._is_continuous_mode():
+            log.info("已复制到剪贴板（粘贴未确认成功）")
+            self._tray.set_activity_tooltip(
+                "listening" if self._continuous_session_active() else None
+            )
+            if self._continuous_session_active():
                 self._floating.show_success("已复制", paste_hint)
-                QTimer.singleShot(2200, self._floating.show_listening)
+                QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
             else:
                 self._floating.dismiss_if_idle()
                 self._floating.show_success("已复制到剪贴板", paste_hint)
         else:
             error_msg = result.replace("error:", "")
             log.error("输出失败: %s", error_msg)
-            self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
+            self._tray.set_activity_tooltip(
+                "listening" if self._continuous_session_active() else None
+            )
             self._floating.show_error(self._friendly_error("输出失败"))
 
         QTimer.singleShot(300, self._pump_segment_queue)
@@ -411,9 +648,13 @@ class App(QObject):
 
     def _show_settings(self):
         if self._settings_win is None:
-            self._settings_win = SettingsWindow(self._config)
+            self._settings_win = SettingsWindow(
+                self._config,
+                pending_segment_count=self._pending_segment_count,
+            )
             self._settings_win.hotkey_updated.connect(self._on_hotkey_updated)
             self._settings_win.settings_changed.connect(self._on_settings_changed)
+            self._settings_win.models_changed.connect(self._on_models_changed)
             self._settings_win.finished.connect(self._on_settings_closed)
             self._settings_win.hotkey_capture_started.connect(self._hotkey_mgr.pause)
             self._settings_win.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
@@ -431,22 +672,40 @@ class App(QObject):
 
     def _on_hotkey_updated(self, new_hotkey: str):
         self._hotkey_mgr.update_hotkey(new_hotkey)
+        if self._is_continuous_mode() and not self._recorder.is_continuous:
+            self._floating.show_continuous_idle(format_hotkey(new_hotkey))
+
+    def _on_models_changed(self):
+        """Reload STT after model download/select without requiring a full settings save."""
+        if self._recorder.is_continuous:
+            self._stop_continuous_listening()
+        self._configure_stt()
+        self._update_tray_models()
+        if self._recognizer.is_ready and self._is_continuous_mode() and not self._recorder.is_continuous:
+            self._floating.show_continuous_idle(self._continuous_hotkey_label())
 
     def _on_settings_changed(self):
         was_continuous = self._recorder.is_continuous
         if was_continuous:
             self._stop_continuous_listening()
 
+        self._continuous_user_stopped = False
         self._sound.enabled = self._config.get("sound_enabled", True)
         self._tray.set_auto_start(self._config.get("auto_start", False))
         self._apply_audio_config()
         set_models_dir(self._config.models_dir)
         self._configure_stt()
         self._update_tray_models()
+        if self._pending_segment_count() > 0:
+            log.warning("设置已保存，丢弃 %d 段待识别语音", self._pending_segment_count())
         self._segment_queue.clear()
+        self._paster.restore_clipboard = self._config.get(
+            "output.restore_clipboard", False
+        )
+        self._sync_hotkey_trigger_mode()
 
-        if self._is_continuous_mode() and self._recognizer.is_ready:
-            QTimer.singleShot(400, self._start_continuous_listening)
+        if self._is_continuous_mode() and self._recognizer.is_ready and not self._recorder.is_continuous:
+            self._floating.show_continuous_idle(self._continuous_hotkey_label())
 
     def _on_tray_model_switch(self, model_id: str):
         current = self._config.get("stt.model_id", "")
@@ -512,13 +771,28 @@ class App(QObject):
     def start(self):
         self._hotkey_mgr.start()
         if not self._config.get("first_run_welcome_seen", True):
-            QTimer.singleShot(600, self._show_first_run_welcome)
+            # 等模型加载完成后再弹欢迎框，避免挡住「模型加载中」状态
+            self._recognizer.ready.connect(self._show_first_run_welcome_once)
+            QTimer.singleShot(15000, self._show_first_run_welcome_once)
+
+    def _show_first_run_welcome_once(self):
+        if self._config.get("first_run_welcome_seen", True):
+            return
+        try:
+            self._recognizer.ready.disconnect(self._show_first_run_welcome_once)
+        except TypeError:
+            pass
+        QTimer.singleShot(400, self._show_first_run_welcome)
 
     def _show_first_run_welcome(self):
         if self._is_continuous_mode():
-            mode_tip = "当前为「自动持续转写」：检测到说话后会自动识别并粘贴。"
+            hotkey = self._continuous_hotkey_label()
+            mode_tip = (
+                f"当前为「自动持续转写」：按住 {hotkey} 开始监听，"
+                "按 Esc 或点击浮窗右上角 × 停止。"
+            )
         else:
-            hk = format_hotkey(self._config.get("hotkey", "ctrl+space"))
+            hk = format_hotkey(self._config.get("hotkey", "alt+space"))
             mode_tip = f"当前为「按住快捷键」：按住 {hk} 说话，松开后识别并粘贴。"
         text = (
             "VoiceInk 在本地完成语音识别（可选通过网络调用大模型润色）。\n\n"
@@ -527,7 +801,9 @@ class App(QObject):
             "· 仅麦克风：你的说话\n"
             "· 仅电脑播放：视频/会议远端声音\n"
             "· 混合：开会时远端 + 自己都要\n\n"
-            "请先在设置 → 模型 中下载至少一个语音模型。"
+            "请先在设置 → 模型 中下载至少一个语音模型。\n\n"
+            "提示：中文 Windows 上请勿使用 Ctrl+Space（常被输入法占用），"
+            "推荐使用 Alt+Space。"
         )
         QMessageBox.information(None, "欢迎使用 VoiceInk", text)
         self._config.set("first_run_welcome_seen", True)

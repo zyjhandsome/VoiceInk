@@ -1,3 +1,4 @@
+import base64
 import math
 import shutil
 from pathlib import Path
@@ -52,6 +53,32 @@ _BAR_ON    = "#007AFF"
 _BAR_OFF   = "#E5E5EA"
 _FONT      = '"Microsoft YaHei", "Segoe UI", sans-serif'
 
+
+def _svg_data_uri(svg: str) -> str:
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"url(data:image/svg+xml;base64,{encoded})"
+
+
+_CHECKMARK_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">'
+    '<path d="M2.5 6l2.5 2.5 4.5-5.5" fill="none" stroke="#ffffff"'
+    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    "</svg>"
+)
+_CHECKMARK_URI = _svg_data_uri(_CHECKMARK_SVG)
+
+_INDICATOR_BOX = f"""
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid {_BORDER};
+    background: {_SURFACE};
+"""
+_INDICATOR_CHECKED = f"""
+    background: {_ACCENT};
+    border: 1.5px solid {_ACCENT};
+    image: {_CHECKMARK_URI};
+"""
+
 WINDOW_CSS = f"""
     QDialog {{
         background: {_BG};
@@ -78,18 +105,39 @@ WINDOW_CSS = f"""
     }}
     QCheckBox {{
         color: {_TEXT};
-        spacing: 8px;
+        spacing: 10px;
         font-size: 13px;
     }}
     QCheckBox::indicator {{
-        width: 18px; height: 18px;
-        border-radius: 4px;
-        border: 1px solid {_BORDER};
-        background: {_SURFACE};
+        {_INDICATOR_BOX}
     }}
     QCheckBox::indicator:checked {{
-        background: {_ACCENT};
-        border: 1px solid {_ACCENT};
+        {_INDICATOR_CHECKED}
+    }}
+    QCheckBox::indicator:unchecked:hover {{
+        border-color: {_ACCENT};
+    }}
+    QCheckBox::indicator:checked:hover {{
+        background: {_ACCENT_HV};
+        border-color: {_ACCENT_HV};
+    }}
+    QRadioButton {{
+        color: {_TEXT};
+        spacing: 10px;
+        font-size: 13px;
+    }}
+    QRadioButton::indicator {{
+        {_INDICATOR_BOX}
+    }}
+    QRadioButton::indicator:checked {{
+        {_INDICATOR_CHECKED}
+    }}
+    QRadioButton::indicator:unchecked:hover {{
+        border-color: {_ACCENT};
+    }}
+    QRadioButton::indicator:checked:hover {{
+        background: {_ACCENT_HV};
+        border-color: {_ACCENT_HV};
     }}
     QScrollArea {{
         border: none;
@@ -551,12 +599,14 @@ class ModelCard(QFrame):
 class SettingsWindow(QDialog):
     hotkey_updated = pyqtSignal(str)
     settings_changed = pyqtSignal()
+    models_changed = pyqtSignal()
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, parent=None, pending_segment_count=None):
         super().__init__(parent)
         self._config = config
+        self._pending_segment_count = pending_segment_count
         self._model_cards: dict[str, ModelCard] = {}
         self._dl_workers: dict[str, object] = {}
         self._mic_test_recorder = AudioRecorder(self)
@@ -625,21 +675,34 @@ class SettingsWindow(QDialog):
         sep.setStyleSheet(f"background: {_BAR_OFF};")
         root.addWidget(sep)
 
-        btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(20, 14, 20, 14)
+        footer = QWidget()
+        footer.setObjectName("settingsFooter")
+        footer.setStyleSheet(f"""
+            QWidget#settingsFooter {{
+                background: {_SURFACE};
+                border-top: 1px solid {_BAR_OFF};
+            }}
+        """)
+        btn_bar = QHBoxLayout(footer)
+        btn_bar.setContentsMargins(24, 14, 24, 14)
+        btn_bar.setSpacing(12)
         btn_bar.addStretch()
 
         cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedHeight(34)
+        cancel_btn.setMinimumWidth(88)
         cancel_btn.setStyleSheet(_BTN_GHOST)
         cancel_btn.clicked.connect(self.close)
         btn_bar.addWidget(cancel_btn)
 
         save_btn = QPushButton("保存设置")
+        save_btn.setFixedHeight(34)
+        save_btn.setMinimumWidth(108)
         save_btn.setStyleSheet(_BTN_PRIMARY)
         save_btn.clicked.connect(self._save_settings)
         btn_bar.addWidget(save_btn)
 
-        root.addLayout(btn_bar)
+        root.addWidget(footer)
 
     # ── Page: General ──────────────────────────────────
 
@@ -686,10 +749,24 @@ class SettingsWindow(QDialog):
         s2.setStyleSheet(_SECTION)
         lay.addWidget(s2)
 
+        pref_frame = QFrame()
+        pref_frame.setObjectName("prefPanel")
+        pref_frame.setStyleSheet(f"""
+            QFrame#prefPanel {{
+                background: {_SURFACE};
+                border: 1px solid {_BORDER};
+                border-radius: 10px;
+            }}
+        """)
+        pref_lay = QVBoxLayout(pref_frame)
+        pref_lay.setContentsMargins(14, 12, 14, 12)
+        pref_lay.setSpacing(10)
+
         self._auto_start_cb = QCheckBox("开机时自动启动 VoiceInk")
         self._sound_cb = QCheckBox("录音开始和结束时播放提示音")
-        lay.addWidget(self._auto_start_cb)
-        lay.addWidget(self._sound_cb)
+        pref_lay.addWidget(self._auto_start_cb)
+        pref_lay.addWidget(self._sound_cb)
+        lay.addWidget(pref_frame)
 
         self._add_sep(lay)
 
@@ -706,7 +783,6 @@ class SettingsWindow(QDialog):
         self._src_sys_rb = QRadioButton("仅电脑播放（视频、会议里传来的声音）")
         self._src_mixed_rb = QRadioButton("麦克风 + 电脑播放（开会：远端 + 自己）")
         for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
-            rb.setStyleSheet(f"color: {_TEXT}; font-size: 12px;")
             self._source_group.addButton(rb)
             lay.addWidget(rb)
         self._src_mic_rb.toggled.connect(self._sync_source_device_widgets)
@@ -718,10 +794,11 @@ class SettingsWindow(QDialog):
         lay.addWidget(trig_lbl)
 
         self._trigger_group = QButtonGroup(self)
-        self._trigger_continuous_rb = QRadioButton("自动持续转写（检测到说话后自动出字）")
+        self._trigger_continuous_rb = QRadioButton(
+            "自动持续转写（按住快捷键开始，浮窗 × 结束）"
+        )
         self._trigger_hotkey_rb = QRadioButton("按住快捷键录音（松开结束）")
         for rb in (self._trigger_continuous_rb, self._trigger_hotkey_rb):
-            rb.setStyleSheet(f"color: {_TEXT}; font-size: 12px;")
             self._trigger_group.addButton(rb)
             lay.addWidget(rb)
         self._trigger_save_hint = QLabel(
@@ -732,8 +809,9 @@ class SettingsWindow(QDialog):
         lay.addWidget(self._trigger_save_hint)
 
         self._audio_desc = QLabel(
-            "建议先点「测试声音」验证设备。开会请选「麦克风 + 电脑播放」；"
-            "自动模式下静音一段时间会输出一段文字。"
+            "建议先点「测试声音」验证设备。开会请选「麦克风 + 电脑播放」。"
+            "持续模式下按住快捷键开始监听，说完一段会自动出字；"
+            "需停止时点击浮窗右上角 ×。"
         )
         self._audio_desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
         self._platform_audio_hint = QLabel(platform_audio_hint())
@@ -932,13 +1010,13 @@ class SettingsWindow(QDialog):
             QMessageBox.information(self, "完成", f"已将 {moved} 个模型迁移到新目录。")
 
     def _rebuild_model_cards(self):
-        from voiceink.speech_recognizer import MODEL_REGISTRY, is_model_downloaded
+        from voiceink.speech_recognizer import MODEL_REGISTRY, DEFAULT_MODEL_ID, is_model_downloaded
         while self._cards_layout.count():
             item = self._cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._model_cards.clear()
-        active_id = self._config.get("stt.model_id", "sensevoice")
+        active_id = self._config.get("stt.model_id", DEFAULT_MODEL_ID)
 
         lbl_dl = QLabel("已下载")
         lbl_dl.setStyleSheet(_SECTION)
@@ -982,6 +1060,7 @@ class SettingsWindow(QDialog):
         if action == "select":
             self._config.set("stt.model_id", model_id)
             self._rebuild_model_cards()
+            self.models_changed.emit()
         elif action == "download":
             self._start_download(model_id)
         elif action == "delete":
@@ -1004,6 +1083,7 @@ class SettingsWindow(QDialog):
         if len(downloaded) == 1 and downloaded[0] == model_id:
             self._config.set("stt.model_id", model_id)
         self._rebuild_model_cards()
+        self.models_changed.emit()
         from voiceink.speech_recognizer import get_model_info
         info = get_model_info(model_id)
         name = info["name"] if info else model_id
@@ -1032,6 +1112,7 @@ class SettingsWindow(QDialog):
             remaining = get_downloaded_models()
             self._config.set("stt.model_id", remaining[0] if remaining else "")
         self._rebuild_model_cards()
+        self.models_changed.emit()
 
     # ── Page: Polish (LLM) ─────────────────────────────
 
@@ -1213,10 +1294,10 @@ class SettingsWindow(QDialog):
 
         lay.addStretch()
 
-        footer = QLabel("按住快捷键说话，松开即转文字")
-        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        lay.addWidget(footer)
+        self._about_footer = QLabel("")
+        self._about_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._about_footer.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
+        lay.addWidget(self._about_footer)
 
         return page
 
@@ -1238,7 +1319,7 @@ class SettingsWindow(QDialog):
             ("已下载", f"{len(downloaded)} 个模型，约 {total_mb} MB"),
             ("模型目录", str(self._config.models_dir)),
             ("配置文件", str(self._config.config_dir / "config.json")),
-            ("快捷键", _format_hotkey(self._config.get("hotkey", "ctrl+space"))),
+            ("快捷键", _format_hotkey(self._config.get("hotkey", "alt+space"))),
         ]
 
         for label_text, value_text in items:
@@ -1251,6 +1332,21 @@ class SettingsWindow(QDialog):
             val.setWordWrap(True)
 
             self._about_form.addRow(lbl, val)
+
+        self._refresh_about_footer()
+
+    def _refresh_about_footer(self) -> None:
+        if not hasattr(self, "_about_footer"):
+            return
+        from voiceink.config import TRIGGER_MODE_CONTINUOUS, format_hotkey
+
+        hotkey = format_hotkey(self._config.get("hotkey", "alt+space"))
+        if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
+            self._about_footer.setText(
+                f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；Esc 或浮窗 × 结束"
+            )
+        else:
+            self._about_footer.setText(f"按住 {hotkey} 说话，松开后识别并粘贴")
 
     # ── Shared ─────────────────────────────────────────
 
@@ -1298,7 +1394,7 @@ class SettingsWindow(QDialog):
             self._trigger_continuous_rb.setChecked(True)
 
     def _load_settings(self):
-        self._hotkey_edit.set_value(self._config.get("hotkey", "ctrl+space"))
+        self._hotkey_edit.set_value(self._config.get("hotkey", "alt+space"))
         self._auto_start_cb.setChecked(self._config.get("auto_start", False))
         self._sound_cb.setChecked(self._config.get("sound_enabled", True))
 
@@ -1478,6 +1574,20 @@ class SettingsWindow(QDialog):
 
     def _save_settings(self):
         self._cancel_mic_probe_if_active()
+
+        if self._pending_segment_count is not None:
+            pending = int(self._pending_segment_count())
+            if pending > 0:
+                reply = QMessageBox.question(
+                    self,
+                    "待识别语音",
+                    f"仍有 {pending} 段语音等待识别，保存设置将丢弃这些片段。\n是否继续？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+
         hotkey = self._hotkey_edit.value
         if hotkey:
             parts = hotkey.lower().split("+")

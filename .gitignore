@@ -4,8 +4,14 @@ build/
 # PyInstaller staging for Inno; release artifact is dist/VoiceInk-Setup-<version>.exe
 dist/VoiceInk/
 
+# Installers / binaries (build locally or attach to GitHub Releases)
+dist/VoiceInk-Setup-*.exe
+dist/*.exe
+
 # Models (large files, download separately)
 models/
+**/*.onnx
+**/*.bin
 
 # Python
 __pycache__/
@@ -42,3 +48,8 @@ terminals/
 
 # Model lock files
 models/.locks/
+
+# Local / tooling logs (not part of the app)
+lfs-progress.log
+lfs-push.log
+skill-pack.json
