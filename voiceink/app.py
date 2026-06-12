@@ -207,6 +207,7 @@ class App(QObject):
                     f"正在将 {name} 载入内存，请稍候（约 10–40 秒）…"
                 )
                 self._tray.set_activity_tooltip("loading")
+                self._sync_settings_runtime_status()
             self._recognizer.configure(model_id, num_threads)
         else:
             info = get_model_info(model_id) if model_id else None
@@ -259,11 +260,13 @@ class App(QObject):
     def _on_model_load_progress(self, msg: str):
         if "就绪" in msg:
             self._floating.clear_model_loading_lock()
+            self._sync_settings_runtime_status()
             return
         if "失败" in msg:
             self._floating.clear_model_loading_lock()
             self._tray.set_activity_tooltip(None)
             self._floating.show_error(self._friendly_error(msg))
+            self._sync_settings_runtime_status()
             return
         if self._recorder.is_continuous:
             log.info("模型重新加载，暂停持续监听")
@@ -272,6 +275,7 @@ class App(QObject):
             f"{msg}\n模型已下载，正在载入内存，完成前请勿开始录音"
         )
         self._tray.set_activity_tooltip("loading")
+        self._sync_settings_runtime_status()
 
     def _on_no_speech_warning(self):
         log.warning("持续监听长时间未检测到有效语音")
@@ -550,6 +554,7 @@ class App(QObject):
     def _on_stt_ready(self):
         self._floating.clear_model_loading_lock()
         self._tray.set_activity_tooltip(None)
+        self._sync_settings_runtime_status()
         if self._segment_queue and not self._is_transcribing:
             log.info("模型就绪，处理排队语音 %d 段", len(self._segment_queue))
             self._pump_segment_queue()
@@ -646,7 +651,23 @@ class App(QObject):
 
     # ── Settings ──────────────────────────────────────
 
+    def _sync_settings_runtime_status(self) -> None:
+        if self._settings_win is None:
+            return
+        if self._recognizer.is_loading:
+            status = "模型加载中…"
+        elif self._recognizer.is_ready:
+            status = "就绪"
+        else:
+            status = "模型未就绪"
+        self._settings_win.set_runtime_status(status)
+
     def _show_settings(self):
+        if self._settings_win is not None and self._settings_win.isVisible():
+            self._settings_win.raise_()
+            self._settings_win.activateWindow()
+            return
+
         if self._settings_win is None:
             self._settings_win = SettingsWindow(
                 self._config,
@@ -654,19 +675,22 @@ class App(QObject):
             )
             self._settings_win.hotkey_updated.connect(self._on_hotkey_updated)
             self._settings_win.settings_changed.connect(self._on_settings_changed)
+            self._settings_win.auto_start_changed.connect(self._on_auto_start_toggled)
+            self._settings_win.sound_enabled_changed.connect(self._on_sound_enabled_changed)
             self._settings_win.models_changed.connect(self._on_models_changed)
             self._settings_win.finished.connect(self._on_settings_closed)
             self._settings_win.hotkey_capture_started.connect(self._hotkey_mgr.pause)
             self._settings_win.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
 
-        self._settings_win._load_settings()
+        self._settings_win.reload_settings()
+        self._sync_settings_runtime_status()
         self._settings_win.show()
         self._settings_win.raise_()
         self._settings_win.activateWindow()
 
     def _on_settings_closed(self):
         if self._settings_win is not None:
-            self._settings_win._hotkey_edit.cancel_capture_if_active()
+            self._settings_win.cancel_hotkey_capture()
         self._hotkey_mgr.resume()
         self._update_tray_models()
 
@@ -725,7 +749,12 @@ class App(QObject):
 
     def _on_auto_start_toggled(self, enabled: bool):
         self._config.set("auto_start", enabled)
+        self._tray.set_auto_start(enabled)
         self._setup_auto_start(enabled)
+
+    def _on_sound_enabled_changed(self, enabled: bool):
+        self._config.set("sound_enabled", enabled)
+        self._sound.enabled = enabled
 
     def _setup_auto_start(self, enabled: bool):
         if sys.platform != "win32":

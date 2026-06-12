@@ -7,6 +7,12 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+# Windows: AppUserModelID must be set before Qt creates any window.
+if sys.platform == "win32":
+    from voiceink.platform.windows_identity import set_windows_app_user_model_id
+
+    set_windows_app_user_model_id()
+
 def _check_runtime() -> None:
     try:
         import PyQt6  # noqa: F401

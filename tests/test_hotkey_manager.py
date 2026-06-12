@@ -85,13 +85,21 @@ class TestHotKeyManagerInit:
 
 class TestHotKeyManagerStartStop:
     def test_start_creates_listener(self):
-        mgr = HotKeyManager()
+        from PyQt6.QtWidgets import QApplication
+        import sys
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        mgr = HotKeyManager(parent=app)
         mgr.start()
         assert mgr._listener is not None
         mgr.stop()
 
     def test_double_start_ignored(self):
-        mgr = HotKeyManager()
+        from PyQt6.QtWidgets import QApplication
+        import sys
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        mgr = HotKeyManager(parent=app)
         mgr.start()
         first_listener = mgr._listener
         mgr.start()

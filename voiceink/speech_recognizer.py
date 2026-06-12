@@ -630,11 +630,12 @@ class SpeechRecognizer(QObject):
         if self._current_worker and self._current_worker.isRunning():
             log.warning("上一次转写仍在进行中，取消旧任务...")
             self._current_worker.cancel()
-            self._current_worker.wait(1000)  # 等待最多1秒
+            self._current_worker.wait(3000)
             if self._current_worker.isRunning():
                 log.warning("Worker 未响应取消，强制终止")
+                self._current_worker.requestInterruption()
                 self._current_worker.terminate()
-                self._current_worker.wait()
+                self._current_worker.wait(1000)
             # 断开信号连接
             try:
                 self._current_worker.disconnect()

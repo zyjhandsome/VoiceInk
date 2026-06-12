@@ -126,45 +126,29 @@ def main():
     _install_exception_hooks(log)
     log.info("VoiceInk 启动中...")
 
+    if sys.platform == "win32":
+        from voiceink.platform.windows_identity import set_windows_app_user_model_id
+
+        set_windows_app_user_model_id()
+
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtGui import QIcon
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("VoiceInk")
+
+    from voiceink.ui.tray_icon import create_microphone_icon
+    app.setWindowIcon(create_microphone_icon(recording=False, size=64))
+
+    # Windows: AppUserModelID + Start Menu shortcut for taskbar icon and friendly toast title
+    from voiceink.platform.windows_identity import configure_windows_app_identity
+    configure_windows_app_identity(app)
+
     app.setStyle("Fusion")
 
-    # 设置应用图标，让 Windows 任务栏显示正确的图标
-    from voiceink.ui.tray_icon import create_microphone_icon
-    app_icon = create_microphone_icon(recording=False, size=64)
-    app.setWindowIcon(app_icon)
-
-    # Windows: 设置 AppUserModelID 让任务栏显示正确的图标
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("VoiceInk.VoiceInkApp")
-        except Exception:
-            pass
-
-    app.setStyleSheet("""
-        QWidget {
-            font-family: "Microsoft YaHei", "Segoe UI", "PingFang SC",
-                         "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
-        }
-        QGroupBox {
-            font-weight: bold;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            margin-top: 12px;
-            padding-top: 16px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 12px;
-            padding: 0 6px;
-        }
-    """)
+    from voiceink.ui.app_styles import GLOBAL_APP_STYLESHEET
+    app.setStyleSheet(GLOBAL_APP_STYLESHEET)
 
     from voiceink.app import App
     voice_ink = App()

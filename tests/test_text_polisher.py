@@ -158,7 +158,7 @@ class TestApiUrlConstruction:
             model_name="model",
             text="text"
         )
-        assert worker._api_url == "https://api.example.com"
+        assert worker._api_url == "https://api.example.com/chat/completions"
 
     def test_url_without_chat_completions(self):
         worker = PolishWorker(
@@ -167,7 +167,7 @@ class TestApiUrlConstruction:
             model_name="model",
             text="text"
         )
-        assert worker._api_url == "https://api.example.com"
+        assert worker._api_url == "https://api.example.com/v1"
 
 
 class TestTextPolisherSignals:

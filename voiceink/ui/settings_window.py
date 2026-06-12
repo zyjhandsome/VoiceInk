@@ -1,18 +1,18 @@
-import base64
-import math
+import logging
 import shutil
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget,
-    QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
-    QFormLayout, QMessageBox, QFrame, QScrollArea,
-    QProgressBar, QListWidget, QListWidgetItem, QStackedWidget,
-    QFileDialog,     QGraphicsDropShadowEffect, QTextEdit,
+    QLabel, QLineEdit, QPushButton, QComboBox,
+    QMessageBox, QFrame, QScrollArea,
+    QStackedWidget,
+    QFileDialog, QTextEdit,
     QSizePolicy, QRadioButton, QButtonGroup,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QSize, QTimer
-from PyQt6.QtGui import QFont, QPainter, QColor, QIcon, QPixmap, QPen
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
+
+log = logging.getLogger("VoiceInk")
 
 from voiceink.config import (
     Config,
@@ -32,566 +32,55 @@ from voiceink.audio_devices import (
     sanitize_system_device_index,
 )
 
-# ── Design Tokens (Light) ────────────────────────────────────────
-
-_BG        = "#FAFAFA"
-_NAV_BG    = "#F0F0F2"
-_SURFACE   = "#FFFFFF"
-_BORDER    = "#D5D5DA"
-_INPUT_BG  = "#F3F3F6"
-_TEXT      = "#1D1D1F"
-_TEXT_SEC  = "#6E6E73"
-_TEXT_DIM  = "#AEAEB2"
-_ACCENT    = "#007AFF"
-_ACCENT_HV = "#0062CC"
-_ACCENT_BG = "#EBF3FF"
-_GREEN     = "#34C759"
-_GREEN_BG  = "#E4F8EB"
-_RED       = "#FF3B30"
-_RED_BG    = "#FFEBE9"
-_BAR_ON    = "#007AFF"
-_BAR_OFF   = "#E5E5EA"
-_FONT      = '"Microsoft YaHei", "Segoe UI", sans-serif'
-
-
-def _svg_data_uri(svg: str) -> str:
-    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    return f"url(data:image/svg+xml;base64,{encoded})"
-
-
-_CHECKMARK_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">'
-    '<path d="M2.5 6l2.5 2.5 4.5-5.5" fill="none" stroke="#ffffff"'
-    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
-    "</svg>"
+from voiceink.ui.settings_components import (
+    AudioSourcePicker,
+    PAGE_SUBTITLE,
+    PageHero,
+    SettingsPage,
+    SettingsSidebar,
+    ToggleOptionRow,
+    TriggerModePicker,
+    WideTestButton,
+    device_selection_link,
+    elide_middle,
+    empty_state,
+    footnote,
+    group_divider,
+    info_callout,
+    inline_action_row,
+    kv_row,
+    kv_row_elided,
+    labeled_row,
+    polish_preview_content,
+    settings_group,
+    settings_section,
+    stacked_field_row,
+    usage_tip_bar,
 )
-_CHECKMARK_URI = _svg_data_uri(_CHECKMARK_SVG)
-
-_INDICATOR_BOX = f"""
-    width: 18px; height: 18px;
-    border-radius: 5px;
-    border: 1.5px solid {_BORDER};
-    background: {_SURFACE};
-"""
-_INDICATOR_CHECKED = f"""
-    background: {_ACCENT};
-    border: 1.5px solid {_ACCENT};
-    image: {_CHECKMARK_URI};
-"""
-
-WINDOW_CSS = f"""
-    QDialog {{
-        background: {_BG};
-        color: {_TEXT};
-        font-family: {_FONT};
-        font-size: 13px;
-    }}
-    QLabel {{
-        color: {_TEXT};
-        background: transparent;
-    }}
-    QLineEdit {{
-        background: {_INPUT_BG};
-        color: {_TEXT};
-        border: 1px solid {_BORDER};
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-size: 13px;
-        selection-background-color: {_ACCENT};
-    }}
-    QLineEdit:focus {{
-        border: 2px solid {_ACCENT};
-        padding: 7px 11px;
-    }}
-    QCheckBox {{
-        color: {_TEXT};
-        spacing: 10px;
-        font-size: 13px;
-    }}
-    QCheckBox::indicator {{
-        {_INDICATOR_BOX}
-    }}
-    QCheckBox::indicator:checked {{
-        {_INDICATOR_CHECKED}
-    }}
-    QCheckBox::indicator:unchecked:hover {{
-        border-color: {_ACCENT};
-    }}
-    QCheckBox::indicator:checked:hover {{
-        background: {_ACCENT_HV};
-        border-color: {_ACCENT_HV};
-    }}
-    QRadioButton {{
-        color: {_TEXT};
-        spacing: 10px;
-        font-size: 13px;
-    }}
-    QRadioButton::indicator {{
-        {_INDICATOR_BOX}
-    }}
-    QRadioButton::indicator:checked {{
-        {_INDICATOR_CHECKED}
-    }}
-    QRadioButton::indicator:unchecked:hover {{
-        border-color: {_ACCENT};
-    }}
-    QRadioButton::indicator:checked:hover {{
-        background: {_ACCENT_HV};
-        border-color: {_ACCENT_HV};
-    }}
-    QScrollArea {{
-        border: none;
-        background: transparent;
-    }}
-    QComboBox {{
-        background: {_INPUT_BG};
-        color: {_TEXT};
-        border: 1px solid {_BORDER};
-        border-radius: 8px;
-        padding: 6px 10px;
-        font-size: 12px;
-        min-height: 28px;
-    }}
-    QComboBox:focus {{
-        border: 2px solid {_ACCENT};
-        padding: 5px 9px;
-    }}
-    QComboBox::drop-down {{
-        border: none;
-        width: 24px;
-    }}
-    QScrollBar:vertical {{
-        background: transparent;
-        width: 6px;
-        margin: 0;
-    }}
-    QScrollBar::handle:vertical {{
-        background: {_BORDER};
-        border-radius: 3px;
-        min-height: 30px;
-    }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-        height: 0;
-    }}
-"""
-
-NAV_CSS = f"""
-    QListWidget {{
-        background: {_NAV_BG};
-        border: none;
-        outline: none;
-        padding: 8px 8px 0 8px;
-    }}
-    QScrollBar:horizontal {{
-        height: 0px;
-    }}
-    QListWidget::item {{
-        color: {_TEXT_SEC};
-        padding: 10px 12px;
-        border: none;
-        border-radius: 8px;
-        margin-bottom: 2px;
-        font-size: 13px;
-    }}
-    QListWidget::item:selected {{
-        color: {_TEXT};
-        background: rgba(0, 0, 0, 0.06);
-        font-weight: 500;
-    }}
-    QListWidget::item:hover:!selected {{
-        background: rgba(0, 0, 0, 0.03);
-    }}
-"""
-
-_BTN_PRIMARY = f"""
-    QPushButton {{
-        background: {_ACCENT}; color: white; border: none;
-        border-radius: 8px; padding: 9px 22px; font-size: 13px;
-    }}
-    QPushButton:hover {{ background: {_ACCENT_HV}; }}
-    QPushButton:disabled {{ background: {_BAR_OFF}; color: {_TEXT_DIM}; }}
-"""
-
-_BTN_GHOST = f"""
-    QPushButton {{
-        background: transparent; color: {_TEXT_SEC}; border: 1px solid {_BORDER};
-        border-radius: 8px; padding: 9px 22px; font-size: 13px;
-    }}
-    QPushButton:hover {{ background: {_INPUT_BG}; color: {_TEXT}; }}
-"""
-
-_BTN_GHOST_SM = f"""
-    QPushButton {{
-        background: transparent; color: {_TEXT_SEC}; border: 1px solid {_BORDER};
-        border-radius: 8px; padding: 4px 14px; font-size: 12px;
-    }}
-    QPushButton:hover {{ background: {_INPUT_BG}; color: {_TEXT}; }}
-"""
-
-_BTN_DANGER_SM = f"""
-    QPushButton {{
-        background: transparent; color: {_RED}; border: 1px solid {_RED_BG};
-        border-radius: 8px; padding: 4px 14px; font-size: 12px;
-    }}
-    QPushButton:hover {{ background: {_RED_BG}; color: {_RED}; }}
-"""
-
-_BTN_GREEN_SM = f"""
-    QPushButton {{
-        background: {_GREEN_BG}; color: {_GREEN}; border: none;
-        border-radius: 8px; padding: 4px 14px; font-size: 12px; font-weight: 500;
-    }}
-    QPushButton:hover {{ background: #D0F4DC; }}
-    QPushButton:disabled {{ background: {_BAR_OFF}; color: {_TEXT_DIM}; }}
-"""
-
-_BTN_ACCENT_SM = f"""
-    QPushButton {{
-        background: {_ACCENT}; color: white; border: none;
-        border-radius: 8px; padding: 4px 14px; font-size: 12px;
-    }}
-    QPushButton:hover {{ background: {_ACCENT_HV}; }}
-"""
-
-_SECTION = f"color: {_TEXT_SEC}; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;"
-
-
-# ── Nav Icons ────────────────────────────────────────────────────
-
-
-def _nav_icon(shape: str) -> QIcon:
-    sz = 18
-    pm = QPixmap(sz, sz)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    c = QColor(_TEXT_SEC)
-    pen = QPen(c, 1.5)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-
-    if shape == "general":
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(3, 3, 12, 12)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(c)
-        p.drawEllipse(7, 7, 4, 4)
-        notch = QPen(c, 2.5)
-        notch.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(notch)
-        for deg in range(0, 360, 45):
-            rad = math.radians(deg)
-            p.drawLine(
-                int(9 + 5.5 * math.cos(rad)), int(9 + 5.5 * math.sin(rad)),
-                int(9 + 7.5 * math.cos(rad)), int(9 + 7.5 * math.sin(rad)),
-            )
-
-    elif shape == "model":
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(c)
-        for x, y, w, h in [(2, 10, 3, 6), (6, 4, 3, 12), (10, 7, 3, 9), (14, 5, 3, 11)]:
-            p.drawRoundedRect(x, y, w, h, 1, 1)
-
-    elif shape == "polish":
-        pen2 = QPen(c, 1.8)
-        pen2.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(pen2)
-        p.drawLine(3, 15, 12, 3)
-        p.drawLine(12, 3, 15, 6)
-        p.drawLine(15, 6, 6, 15)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(c)
-        p.drawEllipse(1, 1, 3, 3)
-        p.drawEllipse(13, 0, 2, 2)
-
-    elif shape == "about":
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(2, 2, 14, 14)
-        thick = QPen(c, 2)
-        thick.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(thick)
-        p.drawLine(9, 8, 9, 13)
-        p.drawPoint(9, 5)
-
-    p.end()
-    return QIcon(pm)
-
-
-# ── Helpers ──────────────────────────────────────────────────────
-
-
-_MODIFIER_KEYS = set()
-
-
-def _init_modifier_keys():
-    global _MODIFIER_KEYS
-    _MODIFIER_KEYS = {
-        Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt,
-        Qt.Key.Key_AltGr, Qt.Key.Key_Meta,
-    }
-
-
-_format_hotkey = format_hotkey
-
-
-def _qt_key_to_name(key: int) -> str:
-    from PyQt6.QtCore import Qt
-    mapping = {
-        Qt.Key.Key_Space: "space", Qt.Key.Key_Tab: "tab",
-        Qt.Key.Key_Return: "enter", Qt.Key.Key_Enter: "enter",
-        Qt.Key.Key_Escape: "esc",
-    }
-    if key in mapping:
-        return mapping[key]
-    if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
-        return chr(key).lower()
-    if Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
-        return chr(key)
-    if Qt.Key.Key_F1 <= key <= Qt.Key.Key_F12:
-        return f"f{key - Qt.Key.Key_F1 + 1}"
-    return ""
-
-
-# ── Hotkey Edit ──────────────────────────────────────────────────
-
-
-class HotkeyEdit(QLineEdit):
-    hotkey_changed = pyqtSignal(str)
-    capture_started = pyqtSignal()
-    capture_ended = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        _init_modifier_keys()
-        self.setReadOnly(True)
-        self.setPlaceholderText("点击此处，然后按下快捷键...")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._capturing = False
-        self._value = ""
-
-    @property
-    def value(self) -> str:
-        return self._value
-
-    def set_value(self, hotkey: str):
-        self._value = hotkey
-        self.setText(_format_hotkey(hotkey))
-
-    def mousePressEvent(self, event):
-        if self._capturing:
-            self.capture_ended.emit()
-        self._capturing = True
-        self.setText("请按下组合键...")
-        self.setStyleSheet(f"border: 2px solid {_ACCENT}; background: {_ACCENT_BG};")
-        self.capture_started.emit()
-        super().mousePressEvent(event)
-
-    def keyPressEvent(self, event):
-        if not self._capturing:
-            return
-
-        key = event.key()
-        modifiers = event.modifiers()
-
-        mod_parts = []
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
-            mod_parts.append("Ctrl")
-        if modifiers & Qt.KeyboardModifier.AltModifier:
-            mod_parts.append("Alt")
-        if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            mod_parts.append("Shift")
-
-        if key in _MODIFIER_KEYS:
-            if mod_parts:
-                self.setText(" + ".join(mod_parts) + " + ...")
-            return
-
-        key_name = _qt_key_to_name(key)
-        if not key_name:
-            return
-
-        display_key = key_name.capitalize() if len(key_name) > 1 else key_name.upper()
-        all_parts = mod_parts + [display_key]
-
-        display = " + ".join(all_parts)
-        value = "+".join(p.lower() for p in all_parts)
-
-        self.setText(display)
-        self._value = value
-        self._capturing = False
-        self.setStyleSheet("")
-        self.hotkey_changed.emit(value)
-        self.capture_ended.emit()
-
-    def focusOutEvent(self, event):
-        if self._capturing:
-            self._capturing = False
-            self.setStyleSheet("")
-            self.setText(_format_hotkey(self._value))
-            self.capture_ended.emit()
-        super().focusOutEvent(event)
-
-    def cancel_capture_if_active(self):
-        """If user closes settings while recording a new shortcut, release global hotkey pause."""
-        if not self._capturing:
-            return
-        self._capturing = False
-        self.setStyleSheet("")
-        self.setText(_format_hotkey(self._value))
-        self.capture_ended.emit()
-
-
-# ── Model Card ───────────────────────────────────────────────────
-
-
-class _BarWidget(QWidget):
-    def __init__(self, level: int, parent=None):
-        super().__init__(parent)
-        self._level = max(1, min(5, level))
-        self.setFixedSize(70, 6)
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        seg_w = 12
-        gap = 2
-        for i in range(5):
-            x = i * (seg_w + gap)
-            color = QColor(_BAR_ON) if i < self._level else QColor(_BAR_OFF)
-            p.setBrush(color)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(x, 0, seg_w, 6, 3, 3)
-        p.end()
-
-
-class ModelCard(QFrame):
-    action_clicked = pyqtSignal(str, str)
-
-    def __init__(self, model_info: dict, is_downloaded: bool,
-                 is_active: bool, parent=None):
-        super().__init__(parent)
-        self._model_id = model_info["id"]
-        self._info = model_info
-        self._is_downloaded = is_downloaded
-        self._is_active = is_active
-        self._progress_bar = None
-        self._action_btn = None
-        self._setup_ui()
-
-    def _setup_ui(self):
-        if self._is_active:
-            bg = _ACCENT_BG
-        else:
-            bg = _SURFACE
-        self.setStyleSheet(
-            f"ModelCard {{ background: {bg}; border: none; border-radius: 12px; }}"
-        )
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setColor(QColor(0, 0, 0, 30 if not self._is_active else 45))
-        shadow.setBlurRadius(20)
-        shadow.setOffset(0, 2)
-        self.setGraphicsEffect(shadow)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(6)
-
-        top = QHBoxLayout()
-        top.setSpacing(8)
-
-        name_lbl = QLabel(self._info["name"])
-        name_lbl.setFont(QFont("Microsoft YaHei", 12, QFont.Weight.DemiBold))
-        name_lbl.setStyleSheet(f"color: {_TEXT};")
-        top.addWidget(name_lbl)
-
-        if self._is_active:
-            badge = QLabel(" 使用中 ")
-            badge.setStyleSheet(
-                f"background: {_ACCENT}; color: white; border-radius: 8px;"
-                "padding: 2px 10px; font-size: 10px;"
-            )
-            top.addWidget(badge)
-
-        top.addStretch()
-
-        bars = QVBoxLayout()
-        bars.setSpacing(3)
-        for text, level in [("准确率", self._info["accuracy"]),
-                             ("速度", self._info["speed"])]:
-            row = QHBoxLayout()
-            row.setSpacing(6)
-            lbl = QLabel(text)
-            lbl.setFixedWidth(36)
-            lbl.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 10px;")
-            row.addWidget(lbl)
-            row.addWidget(_BarWidget(level))
-            bars.addLayout(row)
-        top.addLayout(bars)
-        layout.addLayout(top)
-
-        meta = QHBoxLayout()
-        desc = QLabel(self._info["description"])
-        desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        meta.addWidget(desc)
-        meta.addStretch()
-        lang = QLabel(self._info["languages"])
-        lang.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        meta.addWidget(lang)
-        layout.addLayout(meta)
-
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
-
-        self._progress_bar = QProgressBar()
-        self._progress_bar.setFixedSize(120, 8)
-        self._progress_bar.setTextVisible(False)
-        self._progress_bar.setVisible(False)
-        self._progress_bar.setStyleSheet(f"""
-            QProgressBar {{ background: {_BAR_OFF}; border-radius: 4px; border: none; }}
-            QProgressBar::chunk {{ background: {_GREEN}; border-radius: 4px; }}
-        """)
-        actions.addWidget(self._progress_bar)
-        actions.addStretch()
-
-        if self._is_downloaded:
-            if not self._is_active:
-                sel_btn = QPushButton("设为当前")
-                sel_btn.setFixedHeight(28)
-                sel_btn.setStyleSheet(_BTN_ACCENT_SM)
-                sel_btn.clicked.connect(lambda: self.action_clicked.emit(self._model_id, "select"))
-                actions.addWidget(sel_btn)
-
-            del_btn = QPushButton("删除")
-            del_btn.setFixedHeight(28)
-            del_btn.setStyleSheet(_BTN_DANGER_SM)
-            del_btn.clicked.connect(lambda: self.action_clicked.emit(self._model_id, "delete"))
-            actions.addWidget(del_btn)
-        else:
-            self._action_btn = QPushButton(f"下载  {self._info['size_mb']} MB")
-            self._action_btn.setFixedHeight(28)
-            self._action_btn.setStyleSheet(_BTN_GREEN_SM)
-            self._action_btn.clicked.connect(lambda: self.action_clicked.emit(self._model_id, "download"))
-            actions.addWidget(self._action_btn)
-
-        layout.addLayout(actions)
-
-    def set_download_progress(self, pct: int):
-        if self._progress_bar:
-            self._progress_bar.setVisible(True)
-            self._progress_bar.setValue(pct)
-        if self._action_btn:
-            self._action_btn.setEnabled(False)
-            self._action_btn.setText(f"{pct}%")
-
-    def set_download_error(self, msg: str):
-        if self._progress_bar:
-            self._progress_bar.setVisible(False)
-        if self._action_btn:
-            self._action_btn.setEnabled(True)
-            self._action_btn.setText("重试")
-
+from voiceink.ui.hotkey_edit import HotkeyEdit
+from voiceink.ui.model_card import ModelCard
+from voiceink.ui.nav_icons import nav_icon
+from voiceink.ui.settings_styles import (
+    BTN_GHOST as _BTN_GHOST,
+    BTN_GHOST_SM as _BTN_GHOST_SM,
+    BTN_PRIMARY as _BTN_PRIMARY,
+    WINDOW_CSS,
+)
+from voiceink.ui.design_tokens import (
+    ACCENT as _ACCENT,
+    ACCENT_FOCUS as _ACCENT_FOCUS,
+    BAR_OFF as _BAR_OFF,
+    BG as _BG,
+    DIVIDER_SOFT as _DIVIDER_SOFT,
+    FONT as _FONT,
+    FONT_DISPLAY as _FONT_DISPLAY,
+    HAIRLINE as _HAIRLINE,
+    INPUT_BG as _INPUT_BG,
+    RADIUS_MD as _RADIUS_MD,
+    TEXT as _TEXT,
+    TEXT_DIM as _TEXT_DIM,
+    TEXT_SEC as _TEXT_SEC,
+)
 
 # ── Settings Window ──────────────────────────────────────────────
 
@@ -599,6 +88,8 @@ class ModelCard(QFrame):
 class SettingsWindow(QDialog):
     hotkey_updated = pyqtSignal(str)
     settings_changed = pyqtSignal()
+    auto_start_changed = pyqtSignal(bool)
+    sound_enabled_changed = pyqtSignal(bool)
     models_changed = pyqtSignal()
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
@@ -612,14 +103,16 @@ class SettingsWindow(QDialog):
         self._mic_test_recorder = AudioRecorder(self)
         self._mic_probe_active = False
         self._mic_probe_max = 0.0
+        self._loading = False
+        self._runtime_status_hint = "就绪"
         self._setup_window()
         self._setup_ui()
         self._load_settings()
 
     def _setup_window(self):
-        self.setWindowTitle("VoiceInk")
-        self.setMinimumSize(580, 440)
-        self.resize(700, 520)
+        self.setWindowTitle("设置")
+        self.setMinimumSize(720, 560)
+        self.resize(860, 620)
         self.setWindowFlags(
             Qt.WindowType.Window
             | Qt.WindowType.WindowCloseButtonHint
@@ -627,6 +120,13 @@ class SettingsWindow(QDialog):
             | Qt.WindowType.WindowMaximizeButtonHint
         )
         self.setStyleSheet(WINDOW_CSS)
+
+    def _on_nav_changed(self, row: int):
+        self._pages.setCurrentIndex(row)
+
+    def _open_about_from_general(self) -> None:
+        self._sidebar.set_active(3)
+        self._pages.setCurrentIndex(3)
 
     # ── Layout ─────────────────────────────────────────
 
@@ -639,346 +139,275 @@ class SettingsWindow(QDialog):
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        self._nav = QListWidget()
-        self._nav.setFixedWidth(136)
-        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._nav.setStyleSheet(NAV_CSS)
-
-        for shape, label in [("general", "通用"), ("model", "模型"),
-                              ("polish", "润色"), ("about", "关于")]:
-            item = QListWidgetItem(_nav_icon(shape), label)
-            item.setSizeHint(QSize(136, 42))
-            self._nav.addItem(item)
-
-        self._nav.setCurrentRow(0)
-        body.addWidget(self._nav)
+        self._sidebar = SettingsSidebar(nav_icon)
+        self._sidebar.page_changed.connect(self._on_nav_changed)
+        body.addWidget(self._sidebar)
 
         div = QFrame()
         div.setFixedWidth(1)
-        div.setStyleSheet(f"background: {_BAR_OFF};")
+        div.setStyleSheet(f"background: {_HAIRLINE};")
         body.addWidget(div)
 
+        content_wrap = QWidget()
+        content_wrap.setStyleSheet(f"background: {_BG};")
+        content_lay = QHBoxLayout(content_wrap)
+        content_lay.setContentsMargins(16, 0, 16, 0)
+        content_lay.setSpacing(0)
+
         self._pages = QStackedWidget()
+        self._pages.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
+        )
         self._pages.setStyleSheet(f"background: {_BG};")
         self._pages.addWidget(self._create_general_page())
         self._pages.addWidget(self._create_model_page())
         self._pages.addWidget(self._create_polish_page())
         self._pages.addWidget(self._create_about_page())
-        body.addWidget(self._pages, 1)
-
-        self._nav.currentRowChanged.connect(self._pages.setCurrentIndex)
+        content_lay.addWidget(self._pages, 1)
+        body.addWidget(content_wrap, 1)
 
         root.addLayout(body, 1)
 
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {_BAR_OFF};")
+        sep.setStyleSheet(f"background: {_DIVIDER_SOFT};")
         root.addWidget(sep)
 
         footer = QWidget()
         footer.setObjectName("settingsFooter")
         footer.setStyleSheet(f"""
             QWidget#settingsFooter {{
-                background: {_SURFACE};
-                border-top: 1px solid {_BAR_OFF};
+                background: {_BG};
+                border-top: 1px solid {_HAIRLINE};
             }}
         """)
         btn_bar = QHBoxLayout(footer)
-        btn_bar.setContentsMargins(24, 14, 24, 14)
+        btn_bar.setContentsMargins(16, 12, 16, 12)
         btn_bar.setSpacing(12)
-        btn_bar.addStretch()
 
-        cancel_btn = QPushButton("取消")
-        cancel_btn.setFixedHeight(34)
-        cancel_btn.setMinimumWidth(88)
-        cancel_btn.setStyleSheet(_BTN_GHOST)
-        cancel_btn.clicked.connect(self.close)
-        btn_bar.addWidget(cancel_btn)
+        self._footer_hint = QLabel("更改会即时生效")
+        self._footer_hint.setStyleSheet(
+            f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;"
+            f" padding-left: 4px;"
+        )
+        btn_bar.addWidget(self._footer_hint, 1)
 
-        save_btn = QPushButton("保存设置")
-        save_btn.setFixedHeight(34)
-        save_btn.setMinimumWidth(108)
-        save_btn.setStyleSheet(_BTN_PRIMARY)
-        save_btn.clicked.connect(self._save_settings)
-        btn_bar.addWidget(save_btn)
+        done_btn = QPushButton("完成")
+        done_btn.setFixedHeight(38)
+        done_btn.setMinimumWidth(96)
+        done_btn.setStyleSheet(_BTN_PRIMARY)
+        done_btn.setDefault(True)
+        done_btn.setAutoDefault(True)
+        done_btn.setAccessibleName("完成并关闭设置")
+        done_btn.clicked.connect(self._on_done)
+        btn_bar.addWidget(done_btn)
 
         root.addWidget(footer)
 
     # ── Page: General ──────────────────────────────────
 
+    def set_runtime_status(self, hint: str) -> None:
+        self._runtime_status_hint = hint.strip() or "就绪"
+        self._refresh_sidebar_status()
+
     def _create_general_page(self) -> QWidget:
-        page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
+        page = SettingsPage()
+        self._general_hero = PageHero(
+            "通用设置",
+            subtitle="快捷键、触发方式与音频输入",
+        )
+        page.add(self._general_hero)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        trig_group = settings_group()
+        trig_lay = QVBoxLayout(trig_group)
+        trig_lay.setContentsMargins(0, 0, 0, 0)
+        trig_lay.setSpacing(0)
+        self._trigger_group = QButtonGroup(self)
+        self._trigger_continuous_rb = QRadioButton()
+        self._trigger_hotkey_rb = QRadioButton()
+        for rb in (self._trigger_continuous_rb, self._trigger_hotkey_rb):
+            self._trigger_group.addButton(rb)
+        trig_lay.addWidget(TriggerModePicker(
+            self._trigger_continuous_rb,
+            self._trigger_hotkey_rb,
+        ))
+        page.add(settings_section("触发方式", trig_group))
 
-        content = QWidget()
-        lay = QVBoxLayout(content)
-        lay.setContentsMargins(32, 28, 32, 20)
-        lay.setSpacing(16)
-
-        t = QLabel("通用设置")
-        t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
-        lay.addWidget(t)
-        lay.addSpacing(4)
-
-        s1 = QLabel("快捷键")
-        s1.setStyleSheet(_SECTION)
-        lay.addWidget(s1)
-
-        row = QHBoxLayout()
-        desc = QLabel("按住快捷键录音，松开结束")
-        desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        row.addWidget(desc)
-        row.addStretch()
+        hk_group = settings_group()
+        hk_lay = QVBoxLayout(hk_group)
+        hk_lay.setContentsMargins(0, 0, 0, 0)
+        hk_lay.setSpacing(0)
         self._hotkey_edit = HotkeyEdit()
-        self._hotkey_edit.setFixedWidth(200)
+        self._hotkey_edit.setObjectName("HotkeyEdit")
+        self._hotkey_edit.setMinimumHeight(48)
         self._hotkey_edit.capture_started.connect(self.hotkey_capture_started.emit)
         self._hotkey_edit.capture_ended.connect(self.hotkey_capture_ended.emit)
-        row.addWidget(self._hotkey_edit)
-        lay.addLayout(row)
+        self._hotkey_edit.hotkey_changed.connect(self._apply_hotkey_setting)
+        hk_lay.addWidget(stacked_field_row(
+            "录音快捷键", self._hotkey_edit,
+            "点击输入框后按下组合键绑定；按住该键开始录音，松开结束",
+        ))
+        page.add(settings_section("快捷键", hk_group))
 
-        self._add_sep(lay)
+        pref_group = settings_group()
+        pref_lay = QVBoxLayout(pref_group)
+        pref_lay.setContentsMargins(0, 0, 0, 0)
+        pref_lay.setSpacing(0)
+        self._auto_start_row = ToggleOptionRow(
+            "开机时自动启动", "登录 Windows 后自动在托盘运行",
+        )
+        self._sound_row = ToggleOptionRow(
+            "录音提示音", "开始和结束录音时播放短促提示音",
+        )
+        self._auto_start_row.toggled.connect(self._on_auto_start_toggled)
+        self._sound_row.toggled.connect(self._on_sound_toggled)
+        pref_lay.addWidget(self._auto_start_row)
+        pref_lay.addWidget(group_divider())
+        pref_lay.addWidget(self._sound_row)
+        page.add(settings_section("开机与提示音", pref_group))
 
-        s2 = QLabel("偏好")
-        s2.setStyleSheet(_SECTION)
-        lay.addWidget(s2)
-
-        pref_frame = QFrame()
-        pref_frame.setObjectName("prefPanel")
-        pref_frame.setStyleSheet(f"""
-            QFrame#prefPanel {{
-                background: {_SURFACE};
-                border: 1px solid {_BORDER};
-                border-radius: 10px;
-            }}
-        """)
-        pref_lay = QVBoxLayout(pref_frame)
-        pref_lay.setContentsMargins(14, 12, 14, 12)
-        pref_lay.setSpacing(10)
-
-        self._auto_start_cb = QCheckBox("开机时自动启动 VoiceInk")
-        self._sound_cb = QCheckBox("录音开始和结束时播放提示音")
-        pref_lay.addWidget(self._auto_start_cb)
-        pref_lay.addWidget(self._sound_cb)
-        lay.addWidget(pref_frame)
-
-        self._add_sep(lay)
-
-        s_audio = QLabel("声音收录")
-        s_audio.setStyleSheet(_SECTION)
-        lay.addWidget(s_audio)
-
-        src_lbl = QLabel("音频来源")
-        src_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        lay.addWidget(src_lbl)
-
+        src_group = settings_group()
+        src_lay = QVBoxLayout(src_group)
+        src_lay.setContentsMargins(0, 0, 0, 0)
+        src_lay.setSpacing(0)
         self._source_group = QButtonGroup(self)
-        self._src_mic_rb = QRadioButton("仅麦克风（你的说话）")
-        self._src_sys_rb = QRadioButton("仅电脑播放（视频、会议里传来的声音）")
-        self._src_mixed_rb = QRadioButton("麦克风 + 电脑播放（开会：远端 + 自己）")
+        self._src_mic_rb = QRadioButton()
+        self._src_sys_rb = QRadioButton()
+        self._src_mixed_rb = QRadioButton()
         for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
             self._source_group.addButton(rb)
-            lay.addWidget(rb)
+        src_lay.addWidget(AudioSourcePicker(
+            self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb,
+        ))
+        self._mixed_audio_callout = info_callout(
+            "混合模式会同时收录麦克风与电脑播放声。若背景有视频、音乐或会议远端声音，"
+            "识别结果可能混杂中英或乱码。日常口述建议选「仅麦克风」。"
+        )
+        self._mixed_audio_callout.setVisible(False)
+        callout_wrap = QWidget()
+        callout_lay = QHBoxLayout(callout_wrap)
+        callout_lay.setContentsMargins(16, 0, 16, 12)
+        callout_lay.addWidget(self._mixed_audio_callout)
+        src_lay.addWidget(callout_wrap)
         self._src_mic_rb.toggled.connect(self._sync_source_device_widgets)
         self._src_sys_rb.toggled.connect(self._sync_source_device_widgets)
         self._src_mixed_rb.toggled.connect(self._sync_source_device_widgets)
+        page.add(settings_section("音频来源", src_group))
 
-        trig_lbl = QLabel("触发方式")
-        trig_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        lay.addWidget(trig_lbl)
-
-        self._trigger_group = QButtonGroup(self)
-        self._trigger_continuous_rb = QRadioButton(
-            "自动持续转写（按住快捷键开始，浮窗 × 结束）"
-        )
-        self._trigger_hotkey_rb = QRadioButton("按住快捷键录音（松开结束）")
-        for rb in (self._trigger_continuous_rb, self._trigger_hotkey_rb):
-            self._trigger_group.addButton(rb)
-            lay.addWidget(rb)
-        self._trigger_save_hint = QLabel(
-            "修改触发方式或音频来源后，必须点右下角「保存设置」才会生效。"
-        )
-        self._trigger_save_hint.setStyleSheet(f"color: {_ACCENT}; font-size: 11px;")
-        self._trigger_save_hint.setWordWrap(True)
-        lay.addWidget(self._trigger_save_hint)
-
-        self._audio_desc = QLabel(
-            "建议先点「测试声音」验证设备。开会请选「麦克风 + 电脑播放」。"
-            "持续模式下按住快捷键开始监听，说完一段会自动出字；"
-            "需停止时点击浮窗右上角 ×。"
-        )
-        self._audio_desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        self._platform_audio_hint = QLabel(platform_audio_hint())
-        self._platform_audio_hint.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
-        self._platform_audio_hint.setWordWrap(True)
-        self._audio_desc.setWordWrap(True)
-        lay.addWidget(self._audio_desc)
-        lay.addWidget(self._platform_audio_hint)
-
-        hk_hint = QLabel(
-            "提示：若 Ctrl+Space 无反应，可能是输入法占用了该组合键，可改为 Alt+Space。"
-        )
-        hk_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        hk_hint.setWordWrap(True)
-        lay.addWidget(hk_hint)
-
-        self._mic_test_btn = QPushButton("测试声音（约 2 秒）")
-        self._mic_test_btn.setStyleSheet(_BTN_GHOST)
+        test_group = settings_group()
+        test_lay = QVBoxLayout(test_group)
+        test_lay.setContentsMargins(0, 0, 0, 0)
+        test_lay.setSpacing(0)
+        self._mic_test_btn = WideTestButton("测试声音（约 2 秒）")
         self._mic_test_btn.clicked.connect(self._run_mic_probe)
-        lay.addWidget(self._mic_test_btn)
+        test_lay.addWidget(self._mic_test_btn)
+        self._mic_test_status = QLabel("")
+        self._mic_test_status.setStyleSheet(
+            f"color: {_TEXT_SEC}; font-size: 12px; background: transparent;"
+            f" padding: 0 16px 10px 16px;"
+        )
+        self._mic_test_status.setWordWrap(True)
+        test_lay.addWidget(self._mic_test_status)
+        page.add(settings_section("检测音频", test_group))
 
-        self._advanced_audio_btn = QPushButton("出问题了再改设备 ▼")
-        self._advanced_audio_btn.setStyleSheet(_BTN_GHOST_SM)
-        self._advanced_audio_btn.setCheckable(True)
-        self._advanced_audio_btn.setFixedWidth(120)
+        adv_toggle_row = QHBoxLayout()
+        adv_toggle_row.setContentsMargins(16, 0, 16, 0)
+        self._advanced_audio_btn = device_selection_link("手动选择音频设备")
         self._advanced_audio_btn.toggled.connect(self._toggle_advanced_audio)
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(self._advanced_audio_btn)
-        lay.addLayout(btn_row)
+        adv_toggle_row.addWidget(self._advanced_audio_btn)
+        adv_toggle_row.addStretch()
+        page.add_layout(adv_toggle_row)
 
-        self._advanced_audio_panel = QFrame()
-        self._advanced_audio_panel.setObjectName("advancedAudioPanel")
-        self._advanced_audio_panel.setStyleSheet(f"""
-            QFrame#advancedAudioPanel {{
-                background: {_SURFACE};
-                border: 1px solid {_BORDER};
-                border-radius: 10px;
-            }}
-        """)
+        self._advanced_audio_panel = settings_group()
         self._advanced_audio_panel.setVisible(False)
         self._advanced_audio_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
         adv_lay = QVBoxLayout(self._advanced_audio_panel)
-        adv_lay.setContentsMargins(14, 12, 14, 12)
-        adv_lay.setSpacing(10)
-
-        mic_dev_row = QHBoxLayout()
-        mic_dev_lbl = QLabel("麦克风")
-        mic_dev_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        mic_dev_lbl.setFixedWidth(52)
-        mic_dev_row.addWidget(mic_dev_lbl)
+        adv_lay.setContentsMargins(0, 0, 0, 0)
+        adv_lay.setSpacing(0)
         self._mic_device_combo = QComboBox()
-        self._mic_device_combo.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self._mic_device_combo.setMinimumWidth(180)
-        mic_dev_row.addWidget(self._mic_device_combo, 1)
-        refresh_btn = QPushButton("刷新")
+        self._system_device_combo = QComboBox()
+        adv_lay.addWidget(labeled_row("麦克风", self._mic_device_combo))
+        adv_lay.addWidget(group_divider())
+        adv_lay.addWidget(labeled_row("电脑声", self._system_device_combo))
+
+        dev_btn_row = QHBoxLayout()
+        dev_btn_row.setContentsMargins(16, 8, 16, 12)
+        dev_btn_row.setSpacing(8)
+        refresh_btn = QPushButton("刷新列表")
         refresh_btn.setStyleSheet(_BTN_GHOST_SM)
-        refresh_btn.setFixedHeight(28)
         refresh_btn.clicked.connect(self._refresh_audio_device_lists)
-        mic_dev_row.addWidget(refresh_btn)
         reset_btn = QPushButton("恢复自动选择")
         reset_btn.setStyleSheet(_BTN_GHOST_SM)
-        reset_btn.setFixedHeight(28)
-        reset_btn.setToolTip("推荐：让程序自动挑选麦克风与扬声器，避免选到打不开的设备")
+        reset_btn.setToolTip("让程序自动挑选设备，避免选到打不开的声卡")
         reset_btn.clicked.connect(self._reset_audio_devices_to_auto)
-        mic_dev_row.addWidget(reset_btn)
-        adv_lay.addLayout(mic_dev_row)
+        dev_btn_row.addWidget(refresh_btn)
+        dev_btn_row.addWidget(reset_btn)
+        dev_btn_row.addStretch()
+        adv_lay.addLayout(dev_btn_row)
+        page.add(settings_section("", self._advanced_audio_panel))
 
-        sys_dev_row = QHBoxLayout()
-        sys_dev_lbl = QLabel("电脑声")
-        sys_dev_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        sys_dev_lbl.setFixedWidth(52)
-        sys_dev_row.addWidget(sys_dev_lbl)
-        self._system_device_combo = QComboBox()
-        self._system_device_combo.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self._system_device_combo.setMinimumWidth(180)
-        sys_dev_row.addWidget(self._system_device_combo, 1)
-        adv_lay.addLayout(sys_dev_row)
+        for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
+            rb.toggled.connect(self._on_input_source_radio_toggled)
+        self._trigger_continuous_rb.toggled.connect(self._on_trigger_mode_radio_toggled)
+        self._trigger_hotkey_rb.toggled.connect(self._on_trigger_mode_radio_toggled)
+        self._mic_device_combo.currentIndexChanged.connect(self._on_audio_device_changed)
+        self._system_device_combo.currentIndexChanged.connect(self._on_audio_device_changed)
 
-        adv_hint = QLabel(
-            "两项都请保持「自动选择」。只有测试失败时再改：电脑声优先选带 Realtek 的扬声器，"
-            "不要选名称含糊的「Audio Device」或网易等虚拟声卡。"
-        )
-        adv_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        adv_hint.setWordWrap(True)
-        adv_lay.addWidget(adv_hint)
-
-        lay.addWidget(self._advanced_audio_panel)
-
-        self._mic_test_status = QLabel("")
-        self._mic_test_status.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 11px;")
-        self._mic_test_status.setWordWrap(True)
-        lay.addWidget(self._mic_test_status)
-
-        lay.addStretch(1)
-
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
+        page.add(footnote(
+            f"{platform_audio_hint()}\n"
+            "若 Ctrl+Space 无反应，可改为 Alt+Space。"
+        ))
+        page.set_compact()
         return page
 
     # ── Page: Model ────────────────────────────────────
 
     def _create_model_page(self) -> QWidget:
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(0, 20, 0, 0)
-        lay.setSpacing(0)
+        page = SettingsPage()
+        self._model_hero = PageHero("语音识别")
+        page.add(self._model_hero)
 
-        t = QLabel("语音识别模型")
-        t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
-        t.setContentsMargins(28, 8, 0, 0)
-        lay.addWidget(t)
+        self._model_hero_host = settings_group()
+        self._model_hero_layout = QVBoxLayout(self._model_hero_host)
+        self._model_hero_layout.setContentsMargins(0, 0, 0, 0)
+        self._model_hero_layout.setSpacing(0)
+        page.add(settings_section("当前引擎", self._model_hero_host))
 
-        sub = QLabel("模型越大准确率越高，但需要更多存储空间")
-        sub.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        sub.setContentsMargins(28, 2, 0, 0)
-        lay.addWidget(sub)
-
-        dir_w = QWidget()
-        dl = QHBoxLayout(dir_w)
-        dl.setContentsMargins(28, 12, 28, 4)
-        dl.setSpacing(8)
-
-        dl_lbl = QLabel("存储位置")
-        dl_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        dl_lbl.setFixedWidth(56)
-        dl.addWidget(dl_lbl)
-
-        self._dir_path_label = QLabel()
-        self._dir_path_label.setStyleSheet(
-            f"color: {_TEXT_SEC}; font-size: 11px; background: {_INPUT_BG};"
-            f"border: none; border-radius: 6px; padding: 5px 10px;"
+        storage_group = settings_group()
+        storage_lay = QHBoxLayout(storage_group)
+        storage_lay.setContentsMargins(16, 12, 12, 12)
+        storage_lay.setSpacing(10)
+        self._storage_summary_label = QLabel()
+        self._storage_summary_label.setStyleSheet(
+            f"color: {_TEXT_SEC}; font-size: 13px; background: transparent;"
         )
-        self._dir_path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        dl.addWidget(self._dir_path_label, 1)
-
-        chg = QPushButton("更改")
-        chg.setFixedHeight(26)
+        self._storage_summary_label.setWordWrap(True)
+        storage_lay.addWidget(self._storage_summary_label, 1)
+        chg = QPushButton("更改存储…")
+        chg.setFixedHeight(32)
         chg.setStyleSheet(_BTN_GHOST_SM)
         chg.clicked.connect(self._change_model_dir)
-        dl.addWidget(chg)
+        storage_lay.addWidget(chg)
+        page.add(settings_section("存储", storage_group))
 
-        lay.addWidget(dir_w)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._dir_path_label = QLabel()
+        self._dir_path_label.setVisible(False)
 
         self._cards_container = QWidget()
         self._cards_layout = QVBoxLayout(self._cards_container)
-        self._cards_layout.setContentsMargins(28, 12, 28, 28)
-        self._cards_layout.setSpacing(12)
-        scroll.setWidget(self._cards_container)
-        lay.addWidget(scroll, 1)
-
+        self._cards_layout.setContentsMargins(0, 0, 0, 0)
+        self._cards_layout.setSpacing(24)
+        page.add(self._cards_container)
+        page.set_compact()
         return page
 
     def _refresh_dir_label(self):
         p = str(self._config.models_dir)
         self._dir_path_label.setText(p)
         self._dir_path_label.setToolTip(p)
+        self._refresh_storage_summary()
 
     def _change_model_dir(self):
         cur = str(self._config.models_dir)
@@ -991,6 +420,7 @@ class SettingsWindow(QDialog):
             return
         new_p.mkdir(parents=True, exist_ok=True)
         moved = 0
+        failed: list[str] = []
         if old_p.exists():
             for item in old_p.iterdir():
                 if item.is_dir():
@@ -999,8 +429,9 @@ class SettingsWindow(QDialog):
                         try:
                             shutil.move(str(item), str(target))
                             moved += 1
-                        except Exception:
-                            pass
+                        except OSError as e:
+                            log.warning("模型目录迁移失败 %s: %s", item.name, e)
+                            failed.append(item.name)
         self._config.set("stt.models_dir", str(new_p))
         from voiceink.speech_recognizer import set_models_dir
         set_models_dir(new_p)
@@ -1008,9 +439,87 @@ class SettingsWindow(QDialog):
         self._rebuild_model_cards()
         if moved > 0:
             QMessageBox.information(self, "完成", f"已将 {moved} 个模型迁移到新目录。")
+        if failed:
+            QMessageBox.warning(
+                self,
+                "部分迁移失败",
+                "以下模型未能迁移，请手动复制后重试：\n" + "\n".join(failed),
+            )
+
+    def _refresh_storage_summary(self) -> None:
+        if not hasattr(self, "_storage_summary_label"):
+            return
+        from voiceink.speech_recognizer import MODEL_REGISTRY, is_model_downloaded
+
+        downloaded = [m for m in MODEL_REGISTRY if is_model_downloaded(m["id"])]
+        total_mb = sum(m["size_mb"] for m in downloaded)
+        path = elide_middle(str(self._config.models_dir), 36)
+        count = len(downloaded)
+        self._storage_summary_label.setText(
+            f"已下载 {count} 个 · 约 {total_mb} MB · {path}"
+        )
+        self._storage_summary_label.setToolTip(str(self._config.models_dir))
+
+    def _refresh_active_model_hero(self) -> None:
+        if not hasattr(self, "_model_hero_layout"):
+            return
+        while self._model_hero_layout.count():
+            item = self._model_hero_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        from voiceink.speech_recognizer import DEFAULT_MODEL_ID, get_model_info, is_model_downloaded
+
+        active_id = self._config.get("stt.model_id", DEFAULT_MODEL_ID)
+        info = get_model_info(active_id) if active_id else None
+        if not info or not is_model_downloaded(active_id):
+            empty_wrap = QWidget()
+            empty_lay = QVBoxLayout(empty_wrap)
+            empty_lay.setContentsMargins(0, 8, 0, 8)
+            empty_lay.addWidget(empty_state("尚未选择已下载的模型，请从下方下载并启用。"))
+            self._model_hero_layout.addWidget(empty_wrap)
+            return
+
+        card = QWidget()
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(18, 16, 18, 16)
+        lay.setSpacing(8)
+
+        head = QHBoxLayout()
+        title = QLabel(info["name"])
+        title.setStyleSheet(
+            f"color: {_TEXT}; font-family: {_FONT_DISPLAY}; font-size: 18px;"
+            f" font-weight: 600; background: transparent;"
+        )
+        head.addWidget(title)
+        badge = QLabel("当前引擎")
+        badge.setStyleSheet(
+            f"background: {_ACCENT}; color: white; border-radius: 10px;"
+            f" padding: 3px 10px; font-size: 11px; font-weight: 600;"
+        )
+        head.addWidget(badge)
+        head.addStretch()
+        size = QLabel(f"{info['size_mb']} MB")
+        size.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;")
+        head.addWidget(size)
+        lay.addLayout(head)
+
+        desc = QLabel(info["description"])
+        desc.setWordWrap(True)
+        desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 13px; background: transparent;")
+        lay.addWidget(desc)
+
+        meta = QLabel(f"{info['languages']} · 准确率 {info['accuracy']}/5 · 速度 {info['speed']}/5")
+        meta.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;")
+        lay.addWidget(meta)
+
+        self._model_hero_layout.addWidget(card)
 
     def _rebuild_model_cards(self):
         from voiceink.speech_recognizer import MODEL_REGISTRY, DEFAULT_MODEL_ID, is_model_downloaded
+        self._refresh_active_model_hero()
+        self._refresh_storage_summary()
+
         while self._cards_layout.count():
             item = self._cards_layout.takeAt(0)
             if item.widget():
@@ -1018,43 +527,53 @@ class SettingsWindow(QDialog):
         self._model_cards.clear()
         active_id = self._config.get("stt.model_id", DEFAULT_MODEL_ID)
 
-        lbl_dl = QLabel("已下载")
-        lbl_dl.setStyleSheet(_SECTION)
-        self._cards_layout.addWidget(lbl_dl)
+        def _add_section(title: str, models: list, downloaded: bool) -> None:
+            section = QWidget()
+            section_lay = QVBoxLayout(section)
+            section_lay.setContentsMargins(0, 0, 0, 0)
+            section_lay.setSpacing(10)
 
-        has_dl = False
-        for info in MODEL_REGISTRY:
-            if is_model_downloaded(info["id"]):
-                has_dl = True
-                card = ModelCard(info, True, info["id"] == active_id)
-                card.action_clicked.connect(self._on_card_action)
-                self._model_cards[info["id"]] = card
-                self._cards_layout.addWidget(card)
+            if title:
+                hdr = QLabel(title)
+                hdr.setStyleSheet(
+                    f"color: {_TEXT_SEC}; font-size: 12px; font-weight: 600;"
+                    f" padding: 0 4px; background: transparent;"
+                    f" letter-spacing: 0.02em;"
+                )
+                section_lay.addWidget(hdr)
 
-        if not has_dl:
-            e = QLabel("尚未下载任何模型，请从下方选择一个开始")
-            e.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px; padding: 12px 4px;")
-            self._cards_layout.addWidget(e)
+            if not models:
+                msg = "暂无其他已下载模型" if downloaded else "所有模型均已下载"
+                empty_group = settings_group()
+                empty_lay = QVBoxLayout(empty_group)
+                empty_lay.setContentsMargins(0, 0, 0, 0)
+                empty_lay.addWidget(empty_state(msg))
+                section_lay.addWidget(empty_group)
+            else:
+                list_host = QWidget()
+                list_lay = QVBoxLayout(list_host)
+                list_lay.setContentsMargins(0, 0, 0, 0)
+                list_lay.setSpacing(12)
+                for m_info in models:
+                    card = ModelCard(
+                        m_info, downloaded, downloaded and m_info["id"] == active_id,
+                    )
+                    card.action_clicked.connect(self._on_card_action)
+                    self._model_cards[m_info["id"]] = card
+                    list_lay.addWidget(card)
+                section_lay.addWidget(list_host)
 
-        lbl_av = QLabel("可下载")
-        lbl_av.setStyleSheet(f"{_SECTION} padding-top: 12px;")
-        self._cards_layout.addWidget(lbl_av)
+            self._cards_layout.addWidget(section)
 
-        has_av = False
-        for info in MODEL_REGISTRY:
-            if not is_model_downloaded(info["id"]):
-                has_av = True
-                card = ModelCard(info, False, False)
-                card.action_clicked.connect(self._on_card_action)
-                self._model_cards[info["id"]] = card
-                self._cards_layout.addWidget(card)
-
-        if not has_av:
-            d = QLabel("所有模型已下载")
-            d.setStyleSheet(f"color: {_GREEN}; font-size: 12px; padding: 12px 4px;")
-            self._cards_layout.addWidget(d)
-
-        self._cards_layout.addStretch()
+        downloaded_models = [
+            m for m in MODEL_REGISTRY
+            if is_model_downloaded(m["id"]) and m["id"] != active_id
+        ]
+        available_models = [m for m in MODEL_REGISTRY if not is_model_downloaded(m["id"])]
+        if downloaded_models:
+            _add_section("其他已下载", downloaded_models, True)
+        _add_section("可下载", available_models, False)
+        self._refresh_model_hero_status()
 
     def _on_card_action(self, model_id: str, action: str):
         if action == "select":
@@ -1117,148 +636,134 @@ class SettingsWindow(QDialog):
     # ── Page: Polish (LLM) ─────────────────────────────
 
     def _create_polish_page(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"""
-            QScrollArea {{ background: transparent; border: none; }}
-            QScrollBar:vertical {{
-                background: transparent; width: 6px; margin: 0;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {_BORDER}; border-radius: 3px; min-height: 30px;
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-        """)
+        page = SettingsPage()
+        self._polish_hero = PageHero("文字润色")
+        page.add(self._polish_hero)
 
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(32, 28, 32, 28)
-        lay.setSpacing(16)
-
-        t = QLabel("文字润色")
-        t.setFont(QFont("Microsoft YaHei", 20, QFont.Weight.DemiBold))
-        lay.addWidget(t)
-        lay.addSpacing(4)
-
-        self._llm_enable_cb = QCheckBox("启用润色（自动去除口语词、添加标点）")
-        self._llm_enable_cb.toggled.connect(self._on_llm_toggle)
-        lay.addWidget(self._llm_enable_cb)
-
-        self._llm_off_hint = QLabel("启用后可配置 LLM 接口与润色提示词。")
-        self._llm_off_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px;")
-        lay.addWidget(self._llm_off_hint)
+        polish_card = settings_group()
+        polish_card_lay = QVBoxLayout(polish_card)
+        polish_card_lay.setContentsMargins(0, 0, 0, 0)
+        polish_card_lay.setSpacing(0)
+        self._llm_enable_row = ToggleOptionRow(
+            "启用文字润色", "关闭时直接输出语音转写原文",
+        )
+        self._llm_enable_row.toggled.connect(self._on_llm_enable_toggled)
+        polish_card_lay.addWidget(self._llm_enable_row)
+        self._llm_preview_divider = group_divider()
+        polish_card_lay.addWidget(self._llm_preview_divider)
+        self._llm_preview_card = polish_preview_content()
+        polish_card_lay.addWidget(self._llm_preview_card)
+        page.add(settings_section("", polish_card))
 
         self._llm_container = QWidget()
         c_lay = QVBoxLayout(self._llm_container)
         c_lay.setContentsMargins(0, 0, 0, 0)
         c_lay.setSpacing(16)
 
-        self._add_sep(c_lay)
-
-        self._llm_form = QWidget()
-        form = QFormLayout(self._llm_form)
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
+        conn_group = settings_group()
+        conn_lay = QVBoxLayout(conn_group)
+        conn_lay.setContentsMargins(0, 0, 0, 0)
+        conn_lay.setSpacing(0)
         self._llm_url_edit = QLineEdit()
         self._llm_url_edit.setPlaceholderText("https://api.deepseek.com/v1")
-        form.addRow("接口地址", self._llm_url_edit)
+        conn_lay.addWidget(stacked_field_row("接口地址", self._llm_url_edit))
 
-        kr = QHBoxLayout()
+        key_wrap = QWidget()
+        key_row = QHBoxLayout(key_wrap)
+        key_row.setContentsMargins(0, 0, 0, 0)
+        key_row.setSpacing(8)
         self._llm_key_edit = QLineEdit()
         self._llm_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._llm_key_edit.setPlaceholderText("sk-...")
         self._llm_key_toggle = QPushButton("显示")
-        self._llm_key_toggle.setFixedWidth(48)
+        self._llm_key_toggle.setFixedWidth(52)
         self._llm_key_toggle.setCheckable(True)
-        self._llm_key_toggle.setStyleSheet(f"""
-            QPushButton {{ background: {_INPUT_BG}; color: {_TEXT_SEC}; border: 1px solid {_BORDER};
-                border-radius: 8px; font-size: 11px; padding: 6px; }}
-            QPushButton:checked {{ background: {_ACCENT}; color: white; border: 1px solid {_ACCENT}; }}
-        """)
+        self._llm_key_toggle.setStyleSheet(_BTN_GHOST_SM)
         self._llm_key_toggle.toggled.connect(
             lambda on: self._llm_key_edit.setEchoMode(
                 QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
             )
         )
-        kr.addWidget(self._llm_key_edit)
-        kr.addWidget(self._llm_key_toggle)
-        form.addRow("密钥", kr)
-
+        key_row.addWidget(self._llm_key_edit, 1)
+        key_row.addWidget(self._llm_key_toggle)
+        conn_lay.addWidget(group_divider())
+        conn_lay.addWidget(stacked_field_row("API 密钥", key_wrap))
         self._llm_model_edit = QLineEdit()
         self._llm_model_edit.setPlaceholderText("deepseek-chat")
-        form.addRow("模型名称", self._llm_model_edit)
+        conn_lay.addWidget(group_divider())
+        conn_lay.addWidget(stacked_field_row("模型名称", self._llm_model_edit))
 
-        c_lay.addWidget(self._llm_form)
-
-        tr = QHBoxLayout()
-        tr.addStretch()
+        test_inner = QWidget()
+        test_row = QHBoxLayout(test_inner)
+        test_row.setContentsMargins(0, 0, 0, 0)
+        test_row.addStretch()
         self._llm_test_btn = QPushButton("测试连接")
-        self._llm_test_btn.setStyleSheet(_BTN_GHOST)
+        self._llm_test_btn.setStyleSheet(_BTN_GHOST_SM)
+        self._llm_test_btn.setFixedHeight(32)
         self._llm_test_btn.clicked.connect(self._test_llm)
-        tr.addWidget(self._llm_test_btn)
-        c_lay.addLayout(tr)
+        test_row.addWidget(self._llm_test_btn)
+        conn_lay.addWidget(group_divider())
+        conn_lay.addWidget(inline_action_row(test_inner, margins=(16, 8, 16, 12)))
+        c_lay.addWidget(settings_section("接口配置", conn_group))
 
-        self._add_sep(c_lay)
-
-        prompt_header = QHBoxLayout()
-        prompt_lbl = QLabel("润色提示词")
-        prompt_lbl.setStyleSheet(_SECTION)
-        prompt_header.addWidget(prompt_lbl)
-        prompt_header.addStretch()
+        prompt_group = settings_group()
+        prompt_lay = QVBoxLayout(prompt_group)
+        prompt_lay.setContentsMargins(16, 12, 16, 12)
+        prompt_lay.setSpacing(8)
+        ph = QHBoxLayout()
+        ph.setContentsMargins(0, 0, 0, 0)
+        ph.addStretch()
         self._prompt_reset_btn = QPushButton("恢复默认")
-        self._prompt_reset_btn.setFixedHeight(24)
         self._prompt_reset_btn.setStyleSheet(_BTN_GHOST_SM)
+        self._prompt_reset_btn.setFixedHeight(28)
         self._prompt_reset_btn.clicked.connect(self._reset_prompt)
-        prompt_header.addWidget(self._prompt_reset_btn)
-        c_lay.addLayout(prompt_header)
-
-        prompt_hint = QLabel("自定义发送给大模型的 System Prompt，留空则使用内置默认提示词")
-        prompt_hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        c_lay.addWidget(prompt_hint)
-
+        ph.addWidget(self._prompt_reset_btn)
+        prompt_lay.addLayout(ph)
         self._llm_prompt_edit = QTextEdit()
-        self._llm_prompt_edit.setFixedHeight(120)
+        self._llm_prompt_edit.setFixedHeight(128)
         self._llm_prompt_edit.setStyleSheet(f"""
             QTextEdit {{
-                background: {_INPUT_BG};
-                color: {_TEXT};
-                border: 1px solid {_BORDER};
-                border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 12px;
-                font-family: {_FONT};
+                background: {_INPUT_BG}; color: {_TEXT};
+                border: 1px solid {_HAIRLINE}; border-radius: {_RADIUS_MD}px;
+                padding: 10px 12px; font-size: 13px; font-family: {_FONT};
             }}
             QTextEdit:focus {{
-                border: 2px solid {_ACCENT};
-                padding: 7px 11px;
+                border: 2px solid {_ACCENT_FOCUS};
+                padding: 9px 11px;
             }}
         """)
-        self._llm_prompt_edit.setPlaceholderText(
-            "留空使用默认提示词。默认行为：去除口语赘词、补全标点、理顺语序，保持原意不变。"
+        self._llm_prompt_edit.setPlaceholderText("留空则使用内置默认提示词")
+        prompt_lay.addWidget(self._llm_prompt_edit)
+        c_lay.addWidget(settings_section("提示词", prompt_group))
+        c_lay.addWidget(footnote(
+            "支持 OpenAI、DeepSeek、通义千问、Ollama 等 OpenAI 兼容接口。"
+        ))
+        page.add(self._llm_container)
+
+        self._llm_url_edit.editingFinished.connect(self._flush_llm_fields)
+        self._llm_key_edit.editingFinished.connect(self._flush_llm_fields)
+        self._llm_model_edit.editingFinished.connect(self._flush_llm_fields)
+        self._llm_prompt_timer = QTimer(self)
+        self._llm_prompt_timer.setSingleShot(True)
+        self._llm_prompt_timer.timeout.connect(self._flush_llm_fields)
+        self._llm_prompt_edit.textChanged.connect(
+            lambda: self._llm_prompt_timer.start(600)
         )
-        c_lay.addWidget(self._llm_prompt_edit)
 
-        hint = QLabel(
-            "支持 OpenAI、DeepSeek、通义千问、Ollama 等兼容接口。\n"
-            "未启用时将直接输出语音转写的原始文字。"
-        )
-        hint.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        hint.setWordWrap(True)
-        c_lay.addWidget(hint)
+        page.set_compact()
+        page.set_spacing(10)
+        return page
 
-        lay.addWidget(self._llm_container)
-        lay.addStretch()
-
-        scroll.setWidget(page)
-        return scroll
-
-    def _on_llm_toggle(self, enabled: bool):
+    def _on_llm_enable_toggled(self, enabled: bool):
         self._llm_container.setVisible(enabled)
-        self._llm_off_hint.setVisible(not enabled)
+        self._llm_preview_card.setVisible(not enabled)
+        if hasattr(self, "_llm_preview_divider"):
+            self._llm_preview_divider.setVisible(not enabled)
+        self._refresh_polish_hero_status()
+        if self._loading:
+            return
+        self._config.set("llm.enabled", enabled)
+        self._flush_llm_fields()
 
     def _reset_prompt(self):
         from voiceink.text_polisher import POLISH_PROMPT
@@ -1267,43 +772,52 @@ class SettingsWindow(QDialog):
     # ── Page: About ────────────────────────────────────
 
     def _create_about_page(self) -> QWidget:
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(32, 28, 32, 28)
-        lay.setSpacing(8)
+        page = SettingsPage()
+        self._about_hero = PageHero("关于 VoiceInk")
+        page.add(self._about_hero)
 
-        t = QLabel("VoiceInk")
-        t.setFont(QFont("Microsoft YaHei", 22, QFont.Weight.Bold))
-        lay.addWidget(t)
-
-        ver = QLabel(f"版本 {VERSION}")
-        ver.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
-        lay.addWidget(ver)
-
-        lay.addSpacing(8)
-        self._add_sep(lay)
-        lay.addSpacing(8)
-
-        self._about_form = QFormLayout()
-        self._about_form.setSpacing(14)
-        self._about_form.setHorizontalSpacing(16)
-        self._about_form.setLabelAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
+        brand_group = settings_group()
+        brand_lay = QHBoxLayout(brand_group)
+        brand_lay.setContentsMargins(18, 16, 18, 16)
+        brand_lay.setSpacing(14)
+        from voiceink.ui.tray_icon import create_microphone_icon
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(
+            create_microphone_icon(recording=False, size=96).pixmap(48, 48)
         )
-        lay.addLayout(self._about_form)
+        icon_lbl.setStyleSheet("background: transparent;")
+        brand_lay.addWidget(icon_lbl)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(4)
+        t = QLabel("VoiceInk")
+        t.setStyleSheet(
+            f"color: {_TEXT}; font-family: {_FONT_DISPLAY}; font-size: 20px;"
+            f" font-weight: 600; letter-spacing: -0.3px; background: transparent;"
+        )
+        brand_text.addWidget(t)
+        self._about_version_label = QLabel(f"版本 {VERSION}")
+        self._about_version_label.setStyleSheet(PAGE_SUBTITLE)
+        brand_text.addWidget(self._about_version_label)
+        brand_lay.addLayout(brand_text)
+        brand_lay.addStretch()
+        page.add(settings_section("", brand_group))
 
-        lay.addStretch()
+        self._about_usage_tip = usage_tip_bar("")
+        page.add(self._about_usage_tip)
 
-        self._about_footer = QLabel("")
-        self._about_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._about_footer.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 11px;")
-        lay.addWidget(self._about_footer)
-
+        self._about_info_group = settings_group()
+        self._about_info_lay = QVBoxLayout(self._about_info_group)
+        self._about_info_lay.setContentsMargins(0, 0, 0, 0)
+        self._about_info_lay.setSpacing(0)
+        page.add(settings_section("运行信息", self._about_info_group))
+        page.set_compact()
         return page
 
     def _refresh_about_info(self):
-        while self._about_form.rowCount() > 0:
-            self._about_form.removeRow(0)
+        while self._about_info_lay.count():
+            item = self._about_info_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
         from voiceink.speech_recognizer import MODEL_REGISTRY, is_model_downloaded, get_model_info
 
@@ -1316,37 +830,112 @@ class SettingsWindow(QDialog):
 
         items = [
             ("当前模型", active_name),
-            ("已下载", f"{len(downloaded)} 个模型，约 {total_mb} MB"),
+            ("已下载", f"{len(downloaded)} 个 · 约 {total_mb} MB"),
             ("模型目录", str(self._config.models_dir)),
             ("配置文件", str(self._config.config_dir / "config.json")),
-            ("快捷键", _format_hotkey(self._config.get("hotkey", "alt+space"))),
+            ("快捷键", format_hotkey(self._config.get("hotkey", "alt+space"))),
         ]
 
-        for label_text, value_text in items:
-            lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 12px;")
+        for i, (key, val) in enumerate(items):
+            if i > 0:
+                self._about_info_lay.addWidget(group_divider())
+            if key in ("模型目录", "配置文件"):
+                self._about_info_lay.addWidget(kv_row_elided(key, val))
+            else:
+                self._about_info_lay.addWidget(kv_row(key, val))
 
-            val = QLabel(value_text)
-            val.setStyleSheet(f"color: {_TEXT}; font-size: 12px;")
-            val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            val.setWordWrap(True)
+        self._refresh_about_hero_status()
 
-            self._about_form.addRow(lbl, val)
+    def _config_source_label(self, source: str | None = None) -> str:
+        src = source or self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
+        return {
+            INPUT_SOURCE_MICROPHONE: "仅麦克风",
+            INPUT_SOURCE_SYSTEM: "仅电脑播放",
+            INPUT_SOURCE_MIXED: "混合音频",
+        }.get(src, "仅麦克风")
 
-        self._refresh_about_footer()
+    def _config_trigger_label(self, mode: str | None = None) -> str:
+        m = mode or self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
+        return "持续转写" if m == TRIGGER_MODE_CONTINUOUS else "按住录音"
 
-    def _refresh_about_footer(self) -> None:
-        if not hasattr(self, "_about_footer"):
+    def _active_model_name(self) -> str:
+        from voiceink.speech_recognizer import get_model_info
+        active_id = self._config.get("stt.model_id", "")
+        info = get_model_info(active_id) if active_id else None
+        return info["name"] if info else "未选择"
+
+    def _refresh_general_hero_status(self) -> None:
+        if not hasattr(self, "_general_header"):
             return
-        from voiceink.config import TRIGGER_MODE_CONTINUOUS, format_hotkey
+        # General page uses a static reference header; status lives in sidebar.
 
-        hotkey = format_hotkey(self._config.get("hotkey", "alt+space"))
-        if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
-            self._about_footer.setText(
-                f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；Esc 或浮窗 × 结束"
+    def _refresh_model_hero_status(self) -> None:
+        if not hasattr(self, "_model_hero"):
+            return
+        from voiceink.speech_recognizer import get_model_info, is_model_downloaded
+
+        active_id = self._config.get("stt.model_id", "")
+        info = get_model_info(active_id) if active_id else None
+        if info and is_model_downloaded(active_id):
+            self._model_hero.set_subtitle(
+                f"{info['name']} · {info['size_mb']} MB · {info['languages']}"
             )
+            self._model_hero.set_tags([])
         else:
-            self._about_footer.setText(f"按住 {hotkey} 说话，松开后识别并粘贴")
+            self._model_hero.set_subtitle("尚未下载或未启用模型")
+            self._model_hero.set_tags([])
+
+    def _refresh_polish_hero_status(self) -> None:
+        if not hasattr(self, "_polish_hero"):
+            return
+        enabled = self._config.get("llm.enabled", False)
+        if hasattr(self, "_llm_enable_row"):
+            enabled = self._llm_enable_row.isChecked()
+        if enabled:
+            model = self._config.get("llm.model_name", "") or "未配置"
+            self._polish_hero.set_inline_status(f"已开启 · {model}")
+            self._polish_hero.set_subtitle("")
+        else:
+            self._polish_hero.set_inline_status("已关闭")
+            self._polish_hero.set_subtitle("")
+
+    def _refresh_about_hero_status(self) -> None:
+        if not hasattr(self, "_about_hero"):
+            return
+        self._about_hero.set_tags([])
+        self._about_hero.set_subtitle("")
+        if hasattr(self, "_about_usage_tip"):
+            hotkey = format_hotkey(self._config.get("hotkey", "alt+space"))
+            if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
+                tip = (
+                    f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；"
+                    f"Esc 或浮窗 × 结束"
+                )
+            else:
+                tip = f"按住 {hotkey} 说话，松开后识别并粘贴"
+            labels = self._about_usage_tip.findChildren(QLabel)
+            if labels:
+                labels[0].setText(tip)
+
+    def _refresh_sidebar_status(self) -> None:
+        if not hasattr(self, "_sidebar"):
+            return
+        llm_on = self._config.get("llm.enabled", False)
+        if hasattr(self, "_llm_enable_row"):
+            llm_on = self._llm_enable_row.isChecked()
+        llm = "润色已开启" if llm_on else "润色已关闭"
+        model = elide_middle(self._active_model_name(), 20)
+        self._sidebar.set_status_line(
+            f"{self._runtime_status_hint} · {model}",
+            llm,
+        )
+
+    def _refresh_all_heroes(self) -> None:
+        self._refresh_general_hero_status()
+        self._refresh_model_hero_status()
+        self._refresh_polish_hero_status()
+        self._refresh_about_hero_status()
+        self._refresh_sidebar_status()
 
     # ── Shared ─────────────────────────────────────────
 
@@ -1377,6 +966,8 @@ class SettingsWindow(QDialog):
         sys_on = src in (INPUT_SOURCE_SYSTEM, INPUT_SOURCE_MIXED)
         self._mic_device_combo.setEnabled(mic_on)
         self._system_device_combo.setEnabled(sys_on)
+        if hasattr(self, "_mixed_audio_callout"):
+            self._mixed_audio_callout.setVisible(src == INPUT_SOURCE_MIXED)
 
     def _apply_input_source_radios(self, source: str):
         if source == INPUT_SOURCE_SYSTEM:
@@ -1394,9 +985,10 @@ class SettingsWindow(QDialog):
             self._trigger_continuous_rb.setChecked(True)
 
     def _load_settings(self):
+        self._loading = True
         self._hotkey_edit.set_value(self._config.get("hotkey", "alt+space"))
-        self._auto_start_cb.setChecked(self._config.get("auto_start", False))
-        self._sound_cb.setChecked(self._config.get("sound_enabled", True))
+        self._auto_start_row.setChecked(self._config.get("auto_start", False))
+        self._sound_row.setChecked(self._config.get("sound_enabled", True))
 
         self._apply_input_source_radios(
             self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
@@ -1419,15 +1011,19 @@ class SettingsWindow(QDialog):
         self._rebuild_model_cards()
 
         llm_on = self._config.get("llm.enabled", False)
-        self._llm_enable_cb.setChecked(llm_on)
+        self._llm_enable_row.setChecked(llm_on)
         self._llm_container.setVisible(llm_on)
-        self._llm_off_hint.setVisible(not llm_on)
+        self._llm_preview_card.setVisible(not llm_on)
+        if hasattr(self, "_llm_preview_divider"):
+            self._llm_preview_divider.setVisible(not llm_on)
         self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
         self._llm_key_edit.setText(self._config.get("llm.api_key", ""))
         self._llm_model_edit.setText(self._config.get("llm.model_name", ""))
         self._llm_prompt_edit.setPlainText(self._config.get("llm.prompt", ""))
 
         self._refresh_about_info()
+        self._refresh_all_heroes()
+        self._loading = False
 
     def _set_combo_by_data(self, combo: QComboBox, value: int) -> bool:
         idx = combo.findData(value)
@@ -1471,8 +1067,9 @@ class SettingsWindow(QDialog):
     def _toggle_advanced_audio(self, visible: bool):
         self._advanced_audio_panel.setVisible(visible)
         self._advanced_audio_btn.setText(
-            "出问题了再改设备 ▲" if visible else "出问题了再改设备 ▼"
+            "收起设备选择  ›" if visible else "手动选择音频设备  ›"
         )
+        self._advanced_audio_btn.setChecked(visible)
         if visible and self._mic_device_combo.count() <= 1:
             self._refresh_audio_device_lists()
 
@@ -1572,54 +1169,140 @@ class SettingsWindow(QDialog):
             self._mic_test_recorder.cancel()
         self._mic_test_btn.setEnabled(True)
 
-    def _save_settings(self):
-        self._cancel_mic_probe_if_active()
+    # ── Instant apply ──────────────────────────────────
 
-        if self._pending_segment_count is not None:
-            pending = int(self._pending_segment_count())
-            if pending > 0:
-                reply = QMessageBox.question(
-                    self,
-                    "待识别语音",
-                    f"仍有 {pending} 段语音等待识别，保存设置将丢弃这些片段。\n是否继续？",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
+    def _confirm_discard_pending(self) -> bool:
+        if self._pending_segment_count is None:
+            return True
+        pending = int(self._pending_segment_count())
+        if pending <= 0:
+            return True
+        reply = QMessageBox.question(
+            self,
+            "待识别语音",
+            f"仍有 {pending} 段语音等待识别，应用此更改将丢弃这些片段。\n是否继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
-        hotkey = self._hotkey_edit.value
-        if hotkey:
-            parts = hotkey.lower().split("+")
-            has_modifier = any(p.strip() in ("ctrl", "alt", "shift", "win", "cmd") for p in parts)
-            if not has_modifier:
-                QMessageBox.warning(self, "提示", "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。")
-                return
-            old = self._config.get("hotkey")
-            self._config.set("hotkey", hotkey)
-            if hotkey != old:
-                self.hotkey_updated.emit(hotkey)
+    def _revert_input_source_radios(self):
+        self._loading = True
+        self._apply_input_source_radios(
+            self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
+        )
+        self._loading = False
 
-        self._config.set("auto_start", self._auto_start_cb.isChecked())
-        self._config.set("sound_enabled", self._sound_cb.isChecked())
+    def _revert_trigger_mode_radios(self):
+        self._loading = True
+        self._apply_trigger_mode_radios(
+            self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
+        )
+        self._loading = False
 
+    def _persist_runtime_settings(self):
         self._config.set("audio.input_source", self._selected_input_source())
         self._config.set("audio.trigger_mode", self._selected_trigger_mode())
-        self._config.set("audio.mic_device_index", int(self._mic_device_combo.currentData() or -1))
+        self._config.set(
+            "audio.mic_device_index",
+            int(self._mic_device_combo.currentData() or -1),
+        )
         sys_idx = sanitize_system_device_index(
             int(self._system_device_combo.currentData() or -1)
         )
         self._config.set("audio.system_device_index", sys_idx)
         if sys_idx < 0:
             self._set_combo_by_data(self._system_device_combo, -1)
+        self._config.save_immediate()
+        self.settings_changed.emit()
+        self._refresh_about_info()
+        self._refresh_all_heroes()
 
-        self._config.set("llm.enabled", self._llm_enable_cb.isChecked())
-        self._config.set("llm.api_url", self._llm_url_edit.text().strip())
+    def _on_auto_start_toggled(self, checked: bool):
+        if self._loading:
+            return
+        self._config.set("auto_start", checked)
+        self.auto_start_changed.emit(checked)
+
+    def _on_sound_toggled(self, checked: bool):
+        if self._loading:
+            return
+        self._config.set("sound_enabled", checked)
+        self.sound_enabled_changed.emit(checked)
+
+    def _apply_hotkey_setting(self, hotkey: str):
+        if self._loading or not hotkey:
+            return
+        parts = hotkey.lower().split("+")
+        has_modifier = any(
+            p.strip() in ("ctrl", "alt", "shift", "win", "cmd") for p in parts
+        )
+        if not has_modifier:
+            QMessageBox.warning(self, "提示", "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。")
+            self._loading = True
+            self._hotkey_edit.set_value(self._config.get("hotkey", "alt+space"))
+            self._loading = False
+            return
+        old = self._config.get("hotkey")
+        self._config.set("hotkey", hotkey)
+        if hotkey != old:
+            self.hotkey_updated.emit(hotkey)
+        self._refresh_about_info()
+        self._refresh_all_heroes()
+
+    def _on_input_source_radio_toggled(self, checked: bool):
+        if not checked or self._loading:
+            return
+        if not self._confirm_discard_pending():
+            self._revert_input_source_radios()
+            return
+        self._persist_runtime_settings()
+
+    def _on_trigger_mode_radio_toggled(self, checked: bool):
+        if not checked or self._loading:
+            return
+        if not self._confirm_discard_pending():
+            self._revert_trigger_mode_radios()
+            return
+        self._persist_runtime_settings()
+
+    def _on_audio_device_changed(self, _index: int):
+        if self._loading:
+            return
+        if not self._confirm_discard_pending():
+            self._loading = True
+            self._set_combo_by_data(
+                self._mic_device_combo,
+                int(self._config.get("audio.mic_device_index", -1)),
+            )
+            self._set_combo_by_data(
+                self._system_device_combo,
+                int(self._config.get("audio.system_device_index", -1)),
+            )
+            self._loading = False
+            return
+        self._persist_runtime_settings()
+
+    def _flush_llm_fields(self):
+        if self._loading:
+            return
+        llm_enabled = self._llm_enable_row.isChecked()
+        llm_url = self._llm_url_edit.text().strip()
+        if llm_enabled and llm_url and not llm_url.startswith("https://"):
+            QMessageBox.warning(self, "提示", "LLM 接口地址必须使用 HTTPS。")
+            self._loading = True
+            self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
+            self._loading = False
+            return
+        self._config.set("llm.enabled", llm_enabled)
+        self._config.set("llm.api_url", llm_url)
         self._config.set("llm.api_key", self._llm_key_edit.text().strip())
         self._config.set("llm.model_name", self._llm_model_edit.text().strip())
         self._config.set("llm.prompt", self._llm_prompt_edit.toPlainText().strip())
 
-        self.settings_changed.emit()
+    def _on_done(self):
+        self._cancel_mic_probe_if_active()
+        self._flush_llm_fields()
         self.close()
 
     # ── LLM Test ───────────────────────────────────────
@@ -1660,6 +1343,14 @@ class SettingsWindow(QDialog):
 
     # ── Cleanup ────────────────────────────────────────
 
+    def reload_settings(self) -> None:
+        """Reload form fields from the current config."""
+        self._load_settings()
+
+    def cancel_hotkey_capture(self) -> None:
+        """Stop in-progress shortcut capture and resume global hotkey listening."""
+        self._hotkey_edit.cancel_capture_if_active()
+
     def cancel_all_downloads(self):
         """Wait for any in-progress download workers to finish."""
         for model_id, worker in list(self._dl_workers.items()):
@@ -1669,6 +1360,7 @@ class SettingsWindow(QDialog):
 
     def closeEvent(self, event):
         self._cancel_mic_probe_if_active()
-        self._hotkey_edit.cancel_capture_if_active()
+        self.cancel_hotkey_capture()
+        self._flush_llm_fields()
         self.cancel_all_downloads()
         super().closeEvent(event)

@@ -106,15 +106,13 @@ class TestReadmeHotkeyManagerToApp:
 
     def test_ctrl_space_hold_emits_recording_start(self):
         app = QApplication.instance() or QApplication(sys.argv)
-        mgr = HotKeyManager("ctrl+space")
+        mgr = HotKeyManager("ctrl+space", parent=app)
         started = []
         mgr.recording_start.connect(lambda: started.append(True))
-
         mgr._on_press(keyboard.Key.ctrl_l)
         mgr._on_press(keyboard.Key.space)
-        QTimer.singleShot(MIN_HOLD_MS + 200, app.quit)
-        app.exec()
-
+        assert mgr._hold_pending
+        mgr._on_hold_timeout()
         assert started
 
     def test_app_connects_hotkey_recording_start_signal(self):
@@ -252,7 +250,7 @@ class TestReadmeSettingsLifecycle:
 
     def test_settings_closed_resumes_hotkey_listener(self):
         with app_harness({"audio.trigger_mode": "hotkey"}) as h:
-            h["app"]._settings_win = type("W", (), {"_hotkey_edit": type("E", (), {"cancel_capture_if_active": lambda self: None})()})()
+            h["app"]._settings_win = type("W", (), {"cancel_hotkey_capture": lambda self: None})()
             h["hotkey"].pause()
             h["app"]._on_settings_closed()
             h["hotkey"].resume.assert_called_once()

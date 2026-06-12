@@ -16,6 +16,9 @@ log = logging.getLogger("VoiceInk")
 # Bump when adding one-time STT default migrations for existing installs.
 STT_MODEL_MIGRATION_VERSION = 1
 
+# Keys left in user configs by older test runs (stripped on load).
+_TEST_POLLUTION_KEYS = frozenset({"test_key", "atomic_test"})
+
 
 def _get_default_models_dir() -> Path:
     """Return default models directory. Packaged exe uses install dir."""
@@ -76,8 +79,11 @@ DEFAULT_CONFIG = {
 
 
 class Config:
-    def __init__(self):
-        self._config_dir = Path.home() / ".voiceink"
+    def __init__(self, config_dir: Path | str | None = None):
+        if config_dir is not None:
+            self._config_dir = Path(config_dir)
+        else:
+            self._config_dir = Path.home() / ".voiceink"
         self._config_file = self._config_dir / "config.json"
         self._models_dir = _get_default_models_dir()
         self._config: dict = {}
@@ -110,10 +116,19 @@ class Config:
                 raw = {}
         self._extra_keys = {k: v for k, v in raw.items() if k not in DEFAULT_CONFIG}
         self._config = self._merge_defaults(DEFAULT_CONFIG, raw)
+        if self._strip_test_pollution():
+            self.save_immediate()
         # True = 不写欢迎弹窗（升级用户或未配置时用默认 True）；首次本无配置文件时单独打开欢迎
         if not config_existed:
             self._config["first_run_welcome_seen"] = False
         self._migrate_stt_model()
+
+    def _strip_test_pollution(self) -> bool:
+        """Remove keys accidentally written by un-isolated tests."""
+        dirty = [k for k in self._extra_keys if k in _TEST_POLLUTION_KEYS]
+        for k in dirty:
+            del self._extra_keys[k]
+        return bool(dirty)
 
     def _migrate_stt_model(self) -> None:
         """One-time upgrade: former app defaults → FireRedASR2."""
@@ -194,14 +209,20 @@ class Config:
     def get(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
         value = self._config
-        for k in keys:
+        for i, k in enumerate(keys):
             if isinstance(value, dict) and k in value:
                 value = value[k]
+            elif i == 0 and len(keys) == 1 and k in self._extra_keys:
+                return self._extra_keys[k]
             else:
                 return default
         return value
 
     def set(self, key: str, value: Any):
+        if "." not in key and key not in DEFAULT_CONFIG:
+            self._extra_keys[key] = value
+            self._save_timer.start(500)
+            return
         keys = key.split(".")
         config = self._config
         for k in keys[:-1]:

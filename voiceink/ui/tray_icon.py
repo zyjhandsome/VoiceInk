@@ -1,3 +1,5 @@
+import sys
+
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import (
     QIcon, QPixmap, QPainter, QColor, QBrush, QPen,
@@ -5,40 +7,58 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF, QPointF
 
+from voiceink.ui.design_tokens import (
+    ACCENT,
+    ACCENT_FOCUS,
+    ACCENT_SOFT,
+    FONT,
+    HAIRLINE,
+    RADIUS_MD,
+    SURFACE,
+    TEXT,
+    TEXT_DIM,
+)
 
-_MENU_CSS = """
-    QMenu {
-        background-color: #FFFFFF;
-        color: #1A1A1A;
-        border: 1px solid #E0E0E0;
+
+def _menu_stylesheet() -> str:
+    return f"""
+    QMenu {{
+        background-color: {SURFACE};
+        color: {TEXT};
+        border: 1px solid {HAIRLINE};
+        border-radius: {RADIUS_MD}px;
+        padding: 8px 0px;
+        font-family: {FONT};
+        font-size: 14px;
+    }}
+    QMenu::item {{
+        padding: 10px 40px 10px 18px;
+        margin: 0px 8px;
         border-radius: 8px;
-        padding: 6px 0px;
-        font-family: "Microsoft YaHei", "Segoe UI";
-        font-size: 13px;
-    }
-    QMenu::item {
-        padding: 8px 32px 8px 16px;
-        margin: 0px 4px;
-        border-radius: 4px;
-    }
-    QMenu::item:selected {
-        background-color: #F0F0F0;
-        color: #1A1A1A;
-    }
-    QMenu::item:disabled {
-        color: #AAAAAA;
-    }
-    QMenu::separator {
+    }}
+    QMenu::item:selected {{
+        background-color: {ACCENT_SOFT};
+        color: {ACCENT};
+    }}
+    QMenu::item:disabled {{
+        color: {TEXT_DIM};
+    }}
+    QMenu::separator {{
         height: 1px;
-        background: #EBEBEB;
-        margin: 6px 12px;
-    }
-    QMenu::indicator {
+        background: {HAIRLINE};
+        margin: 8px 16px;
+    }}
+    QMenu::indicator {{
         width: 14px;
         height: 14px;
-        margin-left: 6px;
-    }
-"""
+        margin-left: 8px;
+    }}
+    QMenu::indicator:checked {{
+        image: none;
+        background: {ACCENT};
+        border-radius: 7px;
+    }}
+    """
 
 
 def create_microphone_icon(color: str = "#888888", recording: bool = False, size: int = 64) -> QIcon:
@@ -53,12 +73,12 @@ def create_microphone_icon(color: str = "#888888", recording: bool = False, size
 
     if recording:
         bg_grad = QRadialGradient(QPointF(cx, cx), s * 0.45)
-        bg_grad.setColorAt(0, QColor("#FF5252"))
-        bg_grad.setColorAt(1, QColor("#D32F2F"))
+        bg_grad.setColorAt(0, QColor("#FF6961"))
+        bg_grad.setColorAt(1, QColor("#D64545"))
     else:
         bg_grad = QRadialGradient(QPointF(cx, cx), s * 0.45)
-        bg_grad.setColorAt(0, QColor("#5C6BC0"))
-        bg_grad.setColorAt(1, QColor("#3949AB"))
+        bg_grad.setColorAt(0, QColor(ACCENT_FOCUS))
+        bg_grad.setColorAt(1, QColor(ACCENT))
 
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QBrush(bg_grad))
@@ -75,17 +95,17 @@ def create_microphone_icon(color: str = "#888888", recording: bool = False, size
 
     mic_path = QPainterPath()
     mic_path.addRoundedRect(QRectF(mic_x, mic_y, mic_w, mic_h), mic_w / 2, mic_w / 2)
-    painter.setBrush(QBrush(QColor(255, 255, 255, 240)))
+    painter.setBrush(QBrush(QColor(255, 255, 255, 245)))
     painter.drawPath(mic_path)
 
-    painter.setPen(QPen(QColor(180, 180, 200, 120), 1))
+    painter.setPen(QPen(QColor(255, 255, 255, 80), 1))
     grille_top = mic_y + mic_h * 0.3
     grille_bottom = mic_y + mic_h * 0.7
     for i in range(3):
         y = grille_top + (grille_bottom - grille_top) * i / 2
         painter.drawLine(QPointF(mic_x + mic_w * 0.25, y), QPointF(mic_x + mic_w * 0.75, y))
 
-    arc_pen = QPen(QColor(255, 255, 255, 200), s * 0.035)
+    arc_pen = QPen(QColor(255, 255, 255, 220), s * 0.035)
     arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     painter.setPen(arc_pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -136,7 +156,7 @@ class TrayIcon(QSystemTrayIcon):
         self._recording_icon = create_microphone_icon(recording=True)
 
         self.setIcon(self._normal_icon)
-        self._idle_tooltip = "VoiceInk — 就绪"
+        self._idle_tooltip = "VoiceInk - 就绪"
         self.setToolTip(self._idle_tooltip)
 
         self._model_menu = None
@@ -145,8 +165,9 @@ class TrayIcon(QSystemTrayIcon):
         self.activated.connect(self._on_activated)
 
     def _setup_menu(self):
+        menu_css = _menu_stylesheet()
         menu = QMenu()
-        menu.setStyleSheet(_MENU_CSS)
+        menu.setStyleSheet(menu_css)
 
         settings_action = menu.addAction("打开设置")
         settings_action.triggered.connect(self.open_settings.emit)
@@ -154,7 +175,7 @@ class TrayIcon(QSystemTrayIcon):
         menu.addSeparator()
 
         self._model_menu = menu.addMenu("切换模型")
-        self._model_menu.setStyleSheet(_MENU_CSS)
+        self._model_menu.setStyleSheet(menu_css)
         empty = self._model_menu.addAction("加载中...")
         empty.setEnabled(False)
 
@@ -202,8 +223,13 @@ class TrayIcon(QSystemTrayIcon):
 
     @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def _on_activated(self, reason):
-        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
-                      QSystemTrayIcon.ActivationReason.DoubleClick):
+        # Windows emits Trigger on the first click of a double-click, then DoubleClick.
+        # Handling both opens settings twice; on Windows only respond to double-click.
+        if sys.platform == "win32":
+            if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+                self.open_settings.emit()
+            return
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.open_settings.emit()
 
     def set_recording(self, is_recording: bool):
@@ -223,7 +249,7 @@ class TrayIcon(QSystemTrayIcon):
         }
         label = lines.get(state, "")
         if label:
-            self.setToolTip(f"VoiceInk — {label}")
+            self.setToolTip(f"VoiceInk - {label}")
         else:
             self.setToolTip(self._idle_tooltip)
 
