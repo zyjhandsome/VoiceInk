@@ -565,6 +565,11 @@ class SpeechRecognizer(QObject):
         self._is_ready = False
         self._model_id = ""
         self._num_threads = 4
+        # Monotonic request id: results from superseded/cancelled workers are
+        # ignored instead of force-terminating C++/ONNX threads (see SD-05).
+        self._request_seq = 0
+        self._active_seq = 0
+        self._workers: list[TranscribeWorker] = []
 
     def configure(self, model_id: str, num_threads: int = 4):
         if not model_id:
@@ -626,31 +631,47 @@ class SpeechRecognizer(QObject):
             self.error.emit("语音模型未就绪，请等待模型加载完成")
             return
 
-        # 正确处理正在运行的 Worker，避免线程泄漏
-        if self._current_worker and self._current_worker.isRunning():
-            log.warning("上一次转写仍在进行中，取消旧任务...")
+        # Supersede any in-flight worker without force-terminating it: mark it
+        # cancelled and bump the active sequence so its (late) result is ignored.
+        # This avoids QThread.terminate() corrupting the shared sherpa-onnx /
+        # ONNX Runtime state (SD-05).
+        if self._current_worker is not None and self._current_worker.isRunning():
+            log.warning("上一次转写仍在进行中，标记取消并忽略其过时结果...")
             self._current_worker.cancel()
-            self._current_worker.wait(3000)
-            if self._current_worker.isRunning():
-                log.warning("Worker 未响应取消，强制终止")
-                self._current_worker.requestInterruption()
-                self._current_worker.terminate()
-                self._current_worker.wait(1000)
-            # 断开信号连接
-            try:
-                self._current_worker.disconnect()
-            except TypeError:
-                pass
-            self._current_worker = None
+
+        self._request_seq += 1
+        seq = self._request_seq
+        self._active_seq = seq
 
         worker = TranscribeWorker(self._recognizer, full_audio)
-        worker.result_ready.connect(self._on_final_result)
-        worker.error.connect(lambda e: self.error.emit(e))
+        worker.result_ready.connect(
+            lambda text, s=seq: self._on_final_result(text, s)
+        )
+        worker.error.connect(lambda e, s=seq: self._on_worker_error(e, s))
+        worker.finished.connect(lambda w=worker: self._reap_worker(w))
         self._current_worker = worker
+        self._workers.append(worker)
         worker.start()
 
-    def _on_final_result(self, text: str):
+    def _reap_worker(self, worker: "TranscribeWorker") -> None:
+        try:
+            self._workers.remove(worker)
+        except ValueError:
+            pass
+        if worker is self._current_worker and not worker.isRunning():
+            self._current_worker = None
+
+    def _on_final_result(self, text: str, seq: int):
+        if seq != self._active_seq:
+            log.debug("忽略过时识别结果 (seq=%d, active=%d)", seq, self._active_seq)
+            return
         self.final_result.emit(text)
+
+    def _on_worker_error(self, error_msg: str, seq: int):
+        if seq != self._active_seq:
+            log.debug("忽略过时识别错误 (seq=%d, active=%d)", seq, self._active_seq)
+            return
+        self.error.emit(error_msg)
 
     def shutdown(self):
         """Stop all running workers for clean app exit."""
@@ -661,13 +682,12 @@ class SpeechRecognizer(QObject):
                 pass
             self._load_worker.wait(1000)
 
-        if self._current_worker and self._current_worker.isRunning():
-            self._current_worker.cancel()
-            try:
-                self._current_worker.disconnect()
-            except TypeError:
-                pass
-            self._current_worker.wait(1000)
+        # Ignore any pending results and let running workers finish cooperatively.
+        self._active_seq = -1
+        for worker in list(self._workers):
+            if worker.isRunning():
+                worker.cancel()
+                worker.wait(1000)
 
     @property
     def is_ready(self) -> bool:

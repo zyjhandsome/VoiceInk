@@ -11,7 +11,7 @@ from voiceink.config import (
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
 )
-from voiceink.hotkey_manager import HotKeyManager
+from voiceink.hotkey_manager import HotKeyManager, MIN_HOLD_MS
 from voiceink.audio_recorder import AudioRecorder
 from voiceink.speech_recognizer import (
     DEFAULT_MODEL_ID,
@@ -364,7 +364,7 @@ class App(QObject):
             return
 
         hotkey = self._continuous_hotkey_label()
-        hint = f"请按住 {hotkey} 约 0.2 秒以上"
+        hint = f"请按住 {hotkey} 约 {MIN_HOLD_MS / 1000:.2f} 秒以上"
         hotkey_raw = self._config.get("hotkey", "").lower()
         if "ctrl+space" in hotkey_raw.replace(" ", ""):
             hint += "。Ctrl+Space 常被输入法占用，请在设置中改为 Alt+Space"

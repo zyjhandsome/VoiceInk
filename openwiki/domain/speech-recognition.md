@@ -41,7 +41,7 @@
 
 - 配置：`llm.enabled`、`llm.api_url`、`llm.api_key`、`llm.model_name`、`llm.prompt`（在 `~/.voiceink/config.json`；API key 为用户机密 — 切勿记录或提交）。
 - `PolishWorker(QThread)` POST 到 `<api_url>/chat/completions`（OpenAI 兼容：DeepSeek、Qwen/通义、Ollama 等），经 httpx。
-- **强制 HTTPS** — 非 HTTPS URL 在任何请求前以安全错误拒绝。
+- **HTTPS 策略**：远程 API 必须 HTTPS；**本地端点允许 HTTP**（`is_secure_or_local_url`：`localhost` / `127.0.0.1` / `::1` / 回环 IP），以兼容 Ollama（`http://localhost:11434/v1`）、LM Studio 等本地 OpenAI 兼容服务。非法 URL 在任何请求前以 `INSECURE_URL_ERROR` 拒绝（`PolishWorker.run` 与 `TextPolisher.test_connection` 共用同一校验）。
 - `POLISH_PROMPT` 是精心措辞的默认系统提示：仅做最小编辑（去口语填充词、修正标点/语序），绝不回答或评论内容，保留原意和语言混用。用户可在设置中覆盖。
 - **失败降级为原始 ASR 文本**（`App._on_polish_error`）— 润色绝不能阻塞输出，错误应安静展示而非吓人红闪（P1 清单项）。
 - 禁用时直接输出 ASR 文本，无网络流量。

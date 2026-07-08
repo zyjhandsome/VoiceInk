@@ -16,6 +16,10 @@ models/
 # Python
 __pycache__/
 *.py[cod]
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
 *.egg-info/
 *.egg
 .eggs/

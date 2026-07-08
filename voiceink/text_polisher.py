@@ -1,7 +1,39 @@
+import ipaddress
 import logging
+from urllib.parse import urlparse
+
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
 log = logging.getLogger("VoiceInk")
+
+# Local endpoints that are allowed to use plain HTTP (e.g. Ollama, LM Studio,
+# litellm running on the same machine). Everything else must use HTTPS.
+_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+
+INSECURE_URL_ERROR = (
+    "安全错误: 远程 API URL 必须使用 HTTPS 协议（本地 localhost / 127.0.0.1 可用 HTTP）"
+)
+
+
+def is_secure_or_local_url(url: str) -> bool:
+    """Allow HTTPS anywhere, and plain HTTP only for loopback/local endpoints.
+
+    This reconciles the "强制 HTTPS" security policy with the product promise of
+    supporting local OpenAI-compatible servers such as Ollama
+    (``http://localhost:11434/v1``).
+    """
+    url = (url or "").strip()
+    if url.startswith("https://"):
+        return True
+    if url.startswith("http://"):
+        host = (urlparse(url).hostname or "").strip("[]")
+        if host in _LOCAL_HOSTNAMES:
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+    return False
 
 POLISH_PROMPT = (
     "你是一个纯文本润色工具，不是对话助手。\n"
@@ -45,10 +77,10 @@ class PolishWorker(QThread):
         try:
             import httpx
 
-            # HTTPS 安全检查
-            if not self._api_url.startswith("https://"):
-                log.warning("API URL 未使用 HTTPS，存在安全风险")
-                self.error.emit("安全错误: API URL 必须使用 HTTPS 协议")
+            # HTTPS 安全检查（本地 localhost 端点允许 HTTP，兼容 Ollama 等）
+            if not is_secure_or_local_url(self._api_url):
+                log.warning("API URL 未使用 HTTPS 且非本地端点，存在安全风险")
+                self.error.emit(INSECURE_URL_ERROR)
                 return
 
             url = self._api_url
@@ -152,9 +184,9 @@ class TextPolisher(QObject):
 
     @staticmethod
     def test_connection(api_url: str, api_key: str, model_name: str) -> tuple[bool, str]:
-        # HTTPS 安全检查
-        if not api_url.startswith("https://"):
-            return False, "安全错误: API URL 必须使用 HTTPS 协议"
+        # HTTPS 安全检查（本地 localhost 端点允许 HTTP，兼容 Ollama 等）
+        if not is_secure_or_local_url(api_url):
+            return False, INSECURE_URL_ERROR
 
         try:
             import httpx

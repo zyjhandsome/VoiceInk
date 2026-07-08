@@ -1,6 +1,9 @@
-import pytest
-from voiceink.text_paster import TextPaster, get_foreground_window_info
 import sys
+
+import pytest
+
+import voiceink.text_paster as tp
+from voiceink.text_paster import TextPaster, get_foreground_window_info
 
 
 class TestTextPasterInit:
@@ -86,3 +89,102 @@ class TestPasteShortcut:
 class TestCrossPlatformSupport:
     def test_platform_detection(self):
         assert sys.platform in ["win32", "darwin", "linux"]
+
+
+@pytest.fixture
+def paste_env(monkeypatch):
+    """Drive paste_async deterministically without a Qt event loop."""
+    state = {
+        "copied": [],
+        "shortcut_calls": 0,
+        "clipboard": "OLD",
+        "fg_sequence": None,
+    }
+
+    monkeypatch.setattr(tp.QTimer, "singleShot", lambda ms, fn: fn())
+
+    def _copy(text):
+        state["copied"].append(text)
+        state["clipboard"] = text
+
+    monkeypatch.setattr(tp.pyperclip, "copy", _copy)
+    monkeypatch.setattr(tp.pyperclip, "paste", lambda: state["clipboard"])
+
+    def _shortcut():
+        state["shortcut_calls"] += 1
+
+    monkeypatch.setattr(tp, "_paste_shortcut", _shortcut)
+
+    def set_foreground(sequence):
+        seq = list(sequence)
+
+        def _fg():
+            return seq.pop(0) if len(seq) > 1 else seq[0]
+
+        monkeypatch.setattr(tp, "get_foreground_window_info", _fg)
+
+    state["set_foreground"] = set_foreground
+    return state
+
+
+class TestPasteAsyncFlow:
+    def test_verified_paste_returns_pasted(self, paste_env):
+        # Same foreground window before and after → verified paste.
+        paste_env["set_foreground"]([(1234, "Notepad", 4242)])
+        paster = TextPaster()
+        results = []
+        paster.paste_async("你好", results.append)
+        assert results == ["pasted"]
+        assert paste_env["shortcut_calls"] == 1
+        assert "你好" in paste_env["copied"]
+
+    def test_focus_changed_downgrades_to_clipboard(self, paste_env):
+        # Foreground changes after paste → cannot confirm → clipboard.
+        paste_env["set_foreground"]([(1234, "Editor", 1), (9999, "Other", 2)])
+        paster = TextPaster()
+        results = []
+        paster.paste_async("文本", results.append)
+        assert results == ["clipboard"]
+
+    def test_own_window_skips_paste(self, paste_env):
+        paste_env["set_foreground"]([(1, "VoiceInk", 1)])
+        paster = TextPaster()
+        results = []
+        paster.paste_async("文本", results.append)
+        assert results == ["clipboard"]
+        assert paste_env["shortcut_calls"] == 0
+
+    def test_no_target_wayland_hwnd_zero(self, paste_env):
+        # hwnd == 0 (e.g. Wayland/no xdotool) → honest clipboard fallback.
+        paste_env["set_foreground"]([(0, "", 0)])
+        paster = TextPaster()
+        results = []
+        paster.paste_async("文本", results.append)
+        assert results == ["clipboard"]
+        assert paste_env["shortcut_calls"] == 0
+
+    def test_shortcut_exception_downgrades_to_clipboard(self, paste_env, monkeypatch):
+        paste_env["set_foreground"]([(1234, "Editor", 1)])
+
+        def _boom():
+            raise RuntimeError("blocked")
+
+        monkeypatch.setattr(tp, "_paste_shortcut", _boom)
+        paster = TextPaster()
+        results = []
+        paster.paste_async("文本", results.append)
+        assert results == ["clipboard"]
+
+    def test_restore_clipboard_after_verified_paste(self, paste_env):
+        paste_env["set_foreground"]([(1234, "Editor", 1)])
+        paster = TextPaster(restore_clipboard=True)
+        results = []
+        paster.paste_async("新文本", results.append)
+        assert results == ["pasted"]
+        # Original clipboard restored after a verified paste.
+        assert paste_env["clipboard"] == "OLD"
+
+
+class TestVerifyPasteTarget:
+    def test_hwnd_zero_is_not_verified(self):
+        assert tp._verify_paste_target(0) is False

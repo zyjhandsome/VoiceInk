@@ -1,5 +1,75 @@
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from voiceink.text_polisher import TextPolisher, PolishWorker, POLISH_PROMPT
+
+from voiceink.text_polisher import (
+    INSECURE_URL_ERROR,
+    POLISH_PROMPT,
+    PolishWorker,
+    TextPolisher,
+    is_secure_or_local_url,
+)
+
+
+class TestSecureOrLocalUrl:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://api.deepseek.com/v1",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:11434/v1",
+            "http://[::1]:11434/v1",
+            "http://localhost/chat/completions",
+        ],
+    )
+    def test_allowed_urls(self, url):
+        assert is_secure_or_local_url(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://api.example.com/v1",
+            "http://8.8.8.8/v1",测试文本测试文本
+            "http://insecure-remote.com/chat/completions",
+            "ftp://localhost/x",
+            "",
+            "   ",
+        ],
+    )
+    def test_rejected_urls(self, url):
+        assert is_secure_or_local_url(url) is False
+
+    def test_ollama_default_endpoint_allowed(self):
+        # Regression for SD-03: Ollama's default HTTP endpoint must be usable.
+        assert is_secure_or_local_url("http://localhost:11434/v1") is True
+
+
+def _fake_httpx_module(response=None, raise_exc=None):
+    """Build a fake ``httpx`` module usable as ``import httpx`` inside run()."""
+    fake = MagicMock()
+
+    class _Timeout(Exception):
+        pass
+
+    class _HTTPStatusError(Exception):
+        def __init__(self, resp):
+            self.response = resp
+
+    fake.TimeoutException = _Timeout
+    fake.HTTPStatusError = _HTTPStatusError
+
+    client = MagicMock()
+    ctx = MagicMock()
+    ctx.__enter__.return_value = client
+    ctx.__exit__.return_value = False
+    fake.Client.return_value = ctx
+    if raise_exc is not None:
+        client.post.side_effect = raise_exc
+    else:
+        client.post.return_value = response
+    return fake, client
 
 
 class TestPolishPrompt:
@@ -175,3 +245,116 @@ class TestTextPolisherSignals:
         polisher = TextPolisher()
         assert hasattr(polisher, "polish_complete")
         assert hasattr(polisher, "polish_error")
+
+
+def _make_response(payload, status_ok=True):
+    resp = MagicMock()
+    resp.json.return_value = payload
+    if status_ok:
+        resp.raise_for_status.return_value = None
+    else:
+        resp.raise_for_status.side_effect = RuntimeError("HTTP 500")
+    return resp
+
+
+class TestPolishWorkerRun:
+    def _run_worker(self, worker, fake_httpx):
+        results, errors = [], []
+        worker.result_ready.connect(results.append)
+        worker.error.connect(errors.append)
+        with patch.dict(sys.modules, {"httpx": fake_httpx}):
+            worker.run()
+        return results, errors
+
+    def test_run_success_emits_polished_text(self):
+        payload = {"choices": [{"message": {"content": " 润色后的文本 "}}]}
+        fake, client = _fake_httpx_module(_make_response(payload))
+        worker = PolishWorker("https://api.example.com/v1", "k", "m", "原始文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == ["润色后的文本"]
+        assert errors == []
+        # URL gets /chat/completions appended
+        assert client.post.call_args[0][0].endswith("/chat/completions")
+
+    def test_run_allows_local_http_endpoint(self):
+        payload = {"choices": [{"message": {"content": "本地润色"}}]}
+        fake, _ = _fake_httpx_module(_make_response(payload))
+        worker = PolishWorker("http://localhost:11434/v1", "", "m", "文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == ["本地润色"]
+        assert errors == []
+
+    def test_run_rejects_remote_http(self):
+        fake, client = _fake_httpx_module(_make_response({}))
+        worker = PolishWorker("http://api.example.com/v1", "k", "m", "文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == []
+        assert errors == [INSECURE_URL_ERROR]
+        client.post.assert_not_called()
+
+    def test_run_cancelled_before_start_does_nothing(self):
+        fake, client = _fake_httpx_module(_make_response({}))
+        worker = PolishWorker("https://api.example.com/v1", "k", "m", "文本")
+        worker.cancel()
+        results, errors = self._run_worker(worker, fake)
+        assert results == [] and errors == []
+        client.post.assert_not_called()
+
+    def test_run_timeout_emits_friendly_error(self):
+        fake, client = _fake_httpx_module()
+        client.post.side_effect = fake.TimeoutException()
+        worker = PolishWorker("https://api.example.com/v1", "k", "m", "文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == []
+        assert errors and "超时" in errors[0]
+
+    def test_run_empty_choices_emits_error(self):
+        fake, _ = _fake_httpx_module(_make_response({"choices": []}))
+        worker = PolishWorker("https://api.example.com/v1", "k", "m", "文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == []
+        assert errors and "响应格式异常" in errors[0]
+
+    def test_run_empty_content_emits_error(self):
+        payload = {"choices": [{"message": {"content": "   "}}]}
+        fake, _ = _fake_httpx_module(_make_response(payload))
+        worker = PolishWorker("https://api.example.com/v1", "k", "m", "文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == []
+        assert errors and "空内容" in errors[0]
+
+    def test_run_generic_exception_emits_error(self):
+        fake, client = _fake_httpx_module()
+        client.post.side_effect = ValueError("boom")
+        worker = PolishWorker("https://api.example.com/v1", "k", "m", "文本")
+        results, errors = self._run_worker(worker, fake)
+        assert results == []
+        assert errors and "润色失败" in errors[0]
+
+
+class TestTestConnectionRun:
+    def test_local_http_accepted(self):
+        fake, client = _fake_httpx_module(_make_response({}))
+        with patch.dict(sys.modules, {"httpx": fake}):
+            ok, msg = TextPolisher.test_connection(
+                "http://localhost:11434/v1", "k", "m"
+            )
+        assert ok is True
+        assert "成功" in msg
+
+    def test_remote_http_rejected_without_request(self):
+        fake, client = _fake_httpx_module(_make_response({}))
+        with patch.dict(sys.modules, {"httpx": fake}):
+            ok, msg = TextPolisher.test_connection(
+                "http://api.example.com/v1", "k", "m"
+            )
+        assert ok is False
+        client.post.assert_not_called()
+
+    def test_https_success(self):
+        fake, _ = _fake_httpx_module(_make_response({}))
+        with patch.dict(sys.modules, {"httpx": fake}):
+            ok, msg = TextPolisher.test_connection(
+                "https://api.example.com/v1", "k", "m"
+            )
+        assert ok is True

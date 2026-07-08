@@ -26,7 +26,7 @@ startup → config load → ASR model async load → global hotkey ready
 | 设备 | `voiceink/audio_devices.py` | 设备枚举、自动选择启发式、录音计划构建 |
 | VAD | `voiceink/vad_segmenter.py` | 基于 RMS 的语音分段，含 `flush()` 处理收尾句 |
 | 识别 | `voiceink/speech_recognizer.py` | sherpa-onnx 加载器、模型注册表、HF 断点续传下载、后台加载线程、输出规范化 |
-| 润色 | `voiceink/text_polisher.py` | 可选 OpenAI 兼容 LLM 改写，在 `QThread` 中运行；强制 HTTPS |
+| 润色 | `voiceink/text_polisher.py` | 可选 OpenAI 兼容 LLM 改写，在 `QThread` 中运行；远程强制 HTTPS，本地 localhost 端点允许 HTTP |
 | 粘贴 | `voiceink/text_paster.py` | 异步剪贴板 + Ctrl/Cmd+V 粘贴，带前景窗口校验；降级为「已复制到剪贴板」 |
 | 音效 | `voiceink/sound_manager.py` | 开始/停止/错误提示音 |
 | UI | `voiceink/ui/*` | `floating_window.py`（状态 HUD）、`tray_icon.py`、`settings_window.py` + `settings_components.py`（4 页设置）、共享样式/token |

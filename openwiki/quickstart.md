@@ -20,7 +20,7 @@
 | `voiceink/` | 应用源码（全部运行时逻辑） |
 | `voiceink/ui/` | PyQt6 UI：浮窗、托盘图标、设置窗口、样式 |
 | `voiceink/platform/` | Windows 专用辅助（AppUserModelID） |
-| `tests/` | pytest 测试套件（约 20 个文件）+ 测试报告 |
+| `tests/` | pytest 测试套件（约 27 个文件）+ 测试报告 |
 | `build.py`, `build_release.py` | PyInstaller 便携版构建 / 一键安装包构建 |
 | `installer/` | Inno Setup 脚本 + 安装包构建辅助 |
 | `voiceink_build/` | PyInstaller 运行时 hook、版本信息生成、捆绑模型下载脚本 |

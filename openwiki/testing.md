@@ -1,6 +1,6 @@
 # 测试
 
-VoiceInk 在 `tests/` 下有约 20 个文件的 pytest 套件，设计为**无需真实音频硬件、模型或可见 UI** 即可运行。测试与项目的文档纪律紧密耦合：README 变更审查清单要求在合并行为变更前运行测试（至少 `test_readme_features.py`）。
+VoiceInk 在 `tests/` 下有约 27 个文件的 pytest 套件，设计为**无需真实音频硬件、模型或可见 UI** 即可运行。测试与项目的文档纪律紧密耦合：README 变更审查清单要求在合并行为变更前运行测试（至少 `test_readme_features.py`）。
 
 ## 运行
 
@@ -15,6 +15,8 @@ py -3.10 -m pytest tests/ -q
 ## 关键 fixtures 与 harness
 
 - `tests/conftest.py`
+  - `_qapp_session`（session 级 autouse）— 全程保持单一 `QApplication` 存活，避免跨模块创建 Qt 对象时出现 `wrapped C/C++ object ... has been deleted` 的不稳定失败。
+  - `_isolate_registry_auto_start`（autouse，仅 Windows）— 模拟空的注册表 `Run` 键，防止开发机上已注册的开机自启泄漏进隔离配置。
   - `config_home` / `config` — 以临时目录为后端的 `Config`（不会触碰真实 `~/.voiceink`）。注意 `config.py` 甚至会从真实用户配置中剥离已知测试污染键（`_TEST_POLLUTION_KEYS`）。
   - `mock_recording_hardware` — 替换 `build_recording_plan` 和 `AudioRecorder._open_lane_stream`，使 `AudioRecorder.start()` 针对假麦克风运行。
 - `tests/helpers/app_harness.py` — `app_harness(config_overrides)` 构建**真实 `App`**，将 `Config`、`HotKeyManager`、`AudioRecorder`、`SpeechRecognizer`、UI 类等 patch 为 `MagicMock`，并使用 dict 后端配置存储。这是测试 `app.py` 中协调逻辑的标准方式。

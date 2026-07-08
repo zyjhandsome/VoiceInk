@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,6 +10,38 @@ import pytest
 from voiceink.audio_devices import AudioDeviceInfo, RecordingPlan, StreamEndpoint
 from voiceink.audio_recorder import AudioRecorder
 from voiceink.config import Config
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _qapp_session():
+    """Keep a single QApplication alive for the whole test session.
+
+    Prevents ``wrapped C/C++ object ... has been deleted`` flakiness when Qt
+    objects (HotKeyManager, SettingsWindow, ...) are created across modules
+    without a persistent application instance.
+    """
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    yield app
+
+
+@pytest.fixture(autouse=True)
+def _isolate_registry_auto_start(monkeypatch):
+    """Stop tests from reading the real machine's Windows ``Run`` key.
+
+    Without this, a developer machine that has VoiceInk registered for
+    auto-start would leak ``auto_start=True`` into every isolated Config,
+    making toggle/signal assertions non-deterministic. We simulate an empty
+    ``Run`` key so the real sync code path still runs (and stays covered).
+    """
+    if sys.platform == "win32":
+        import winreg
+
+        def _no_entry(*_args, **_kwargs):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(winreg, "QueryValueEx", _no_entry)
 
 
 @pytest.fixture
