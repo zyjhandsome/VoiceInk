@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFrame, QScrollArea,
     QStackedWidget,
     QFileDialog, QTextEdit,
-    QSizePolicy, QRadioButton, QButtonGroup,
+    QSizePolicy, QRadioButton, QButtonGroup, QSpinBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
 
@@ -265,6 +265,41 @@ class SettingsWindow(QDialog):
         pref_lay.addWidget(group_divider())
         pref_lay.addWidget(self._sound_row)
         page.add(settings_section("开机与提示音", pref_group))
+
+        history_group = settings_group()
+        history_lay = QVBoxLayout(history_group)
+        history_lay.setContentsMargins(0, 0, 0, 0)
+        history_lay.setSpacing(0)
+        self._history_enabled_row = ToggleOptionRow(
+            "保存语音历史",
+            "记录未来识别结果；关闭后不会删除已有历史",
+        )
+        self._history_retention_days_spin = QSpinBox()
+        self._history_retention_days_spin.setRange(1, 3650)
+        self._history_retention_days_spin.setSuffix(" 天")
+        self._history_retention_days_spin.setAccessibleName("历史保留天数")
+        self._history_max_entries_spin = QSpinBox()
+        self._history_max_entries_spin.setRange(1, 100000)
+        self._history_max_entries_spin.setSingleStep(100)
+        self._history_max_entries_spin.setSuffix(" 场")
+        self._history_max_entries_spin.setAccessibleName("最多保留会话数")
+        self._history_enabled_row.toggled.connect(self._on_history_enabled_toggled)
+        self._history_retention_days_spin.valueChanged.connect(self._on_history_limits_changed)
+        self._history_max_entries_spin.valueChanged.connect(self._on_history_limits_changed)
+        history_lay.addWidget(self._history_enabled_row)
+        history_lay.addWidget(group_divider())
+        history_lay.addWidget(labeled_row(
+            "保留天数",
+            self._history_retention_days_spin,
+            "超过天数的旧会话会在清理时删除，当前会话不会被半删。",
+        ))
+        history_lay.addWidget(group_divider())
+        history_lay.addWidget(labeled_row(
+            "最大会话数",
+            self._history_max_entries_spin,
+            "按整场会话计数，超出后优先清理最旧会话。",
+        ))
+        page.add(settings_section("历史", history_group))
 
         src_group = settings_group()
         src_lay = QVBoxLayout(src_group)
@@ -989,6 +1024,13 @@ class SettingsWindow(QDialog):
         self._hotkey_edit.set_value(self._config.get("hotkey", "alt+space"))
         self._auto_start_row.setChecked(self._config.get("auto_start", False))
         self._sound_row.setChecked(self._config.get("sound_enabled", True))
+        self._history_enabled_row.setChecked(self._config.get("history.enabled", True))
+        self._history_retention_days_spin.setValue(
+            int(self._config.get("history.retention_days", 90))
+        )
+        self._history_max_entries_spin.setValue(
+            int(self._config.get("history.max_entries", 5000))
+        )
 
         self._apply_input_source_radios(
             self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
@@ -1229,6 +1271,17 @@ class SettingsWindow(QDialog):
             return
         self._config.set("sound_enabled", checked)
         self.sound_enabled_changed.emit(checked)
+
+    def _on_history_enabled_toggled(self, checked: bool):
+        if self._loading:
+            return
+        self._config.set("history.enabled", checked)
+
+    def _on_history_limits_changed(self, _value: int):
+        if self._loading:
+            return
+        self._config.set("history.retention_days", self._history_retention_days_spin.value())
+        self._config.set("history.max_entries", self._history_max_entries_spin.value())
 
     def _apply_hotkey_setting(self, hotkey: str):
         if self._loading or not hotkey:
