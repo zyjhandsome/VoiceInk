@@ -31,7 +31,7 @@ class TestSecureOrLocalUrl:
         "url",
         [
             "http://api.example.com/v1",
-            "http://8.8.8.8/v1",测试文本测试文本
+            "http://8.8.8.8/v1",
             "http://insecure-remote.com/chat/completions",
             "ftp://localhost/x",
             "",
