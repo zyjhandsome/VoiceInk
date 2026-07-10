@@ -74,7 +74,13 @@ DEFAULT_CONFIG = {
         "api_key": "",
         "model_name": "",
         "prompt": ""
-    }
+    },
+    "history": {
+        "enabled": True,
+        "onboarded": False,
+        "retention_days": 90,
+        "max_entries": 5000,
+    },
 }
 
 

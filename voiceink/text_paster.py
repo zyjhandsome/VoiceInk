@@ -65,6 +65,41 @@ def get_foreground_window_info():
         return _get_foreground_window_linux()
 
 
+def get_foreground_process_name() -> str:
+    """Return foreground process basename only (D4 privacy: no window title).
+
+    Windows: resolve PID via win32api/win32process. Elsewhere: best-effort "" .
+    """
+    try:
+        info = get_foreground_window_info()
+        if sys.platform != "win32":
+            return ""
+        if len(info) < 3:
+            return ""
+        pid = info[2]
+        if not pid:
+            return ""
+        import win32api
+        import win32con
+        import win32process
+
+        handle = win32api.OpenProcess(
+            win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ,
+            False,
+            pid,
+        )
+        try:
+            path = win32process.GetModuleFileNameEx(handle, 0)
+        finally:
+            try:
+                win32api.CloseHandle(handle)
+            except Exception:
+                pass
+        return os.path.basename(path) if path else ""
+    except Exception:
+        return ""
+
+
 def _paste_shortcut():
     """Trigger the system paste shortcut, platform-aware."""
     if sys.platform == "darwin":
