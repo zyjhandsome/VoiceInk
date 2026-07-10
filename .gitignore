@@ -46,6 +46,7 @@ agent-transcripts/
 agent-tools/
 mcps/
 terminals/
+.worktrees/
 
 # App data
 *.lock
