@@ -127,6 +127,23 @@ class TestCleanup:
 
 
 class TestEnqueueSemantics:
+    def test_search_sessions_builds_summaries_for_all_matches(self, store):
+        store.enqueue(
+            _record("hit", 0, raw_text="今天天气很好", polished_text="", created_at=1)
+        )
+        store.close(timeout=2.0)
+        results = store.search_sessions("天气")
+        assert len(results) == 1
+        assert results[0].session_id == "hit"
+        assert "天气" in results[0].preview
+
+    def test_close_flushes_queued_writes(self, tmp_path):
+        s = HistoryStore(db_path=tmp_path / "flush.db")
+        for i in range(30):
+            s.enqueue(_record("s", i, raw_text=f"t{i}", created_at=1000 + i))
+        s.close(timeout=5.0)
+        assert len(s.get_session_segments("s")) == 30
+
     def test_enqueue_is_nonblocking_and_flush_preserves_queue(self, store):
         start = time.perf_counter()
         for i in range(50):

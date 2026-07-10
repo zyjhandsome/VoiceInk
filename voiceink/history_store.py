@@ -31,6 +31,33 @@ CREATE INDEX IF NOT EXISTS idx_history_session ON history(session_id);
 CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at);
 """
 
+_SESSION_SUMMARY_SQL = """
+SELECT
+  h.session_id,
+  MIN(h.created_at) AS session_created,
+  COUNT(*) AS segment_count,
+  (
+    SELECT source FROM history h2
+    WHERE h2.session_id = h.session_id
+    ORDER BY h2.seq ASC LIMIT 1
+  ) AS source,
+  (
+    SELECT target_app FROM history h2
+    WHERE h2.session_id = h.session_id
+    ORDER BY h2.seq ASC LIMIT 1
+  ) AS target_app,
+  (
+    SELECT CASE
+      WHEN polished_text != '' THEN polished_text
+      ELSE raw_text
+    END
+    FROM history h2
+    WHERE h2.session_id = h.session_id
+    ORDER BY h2.seq ASC LIMIT 1
+  ) AS preview
+FROM history h
+"""
+
 
 @dataclass(frozen=True)
 class SegmentRecord:
@@ -56,6 +83,20 @@ class SessionSummary:
     preview: str
 
 
+def _rows_to_summaries(rows: list[tuple]) -> list[SessionSummary]:
+    return [
+        SessionSummary(
+            session_id=r[0],
+            created_at=r[1],
+            segment_count=r[2],
+            source=r[3] or "",
+            target_app=r[4] or "",
+            preview=r[5] or "",
+        )
+        for r in rows
+    ]
+
+
 class HistoryStore:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
@@ -63,16 +104,18 @@ class HistoryStore:
         self._queue: queue.Queue[Any] = queue.Queue()
         self._stop = object()
         self._thread: threading.Thread | None = None
-        self._write_conn: sqlite3.Connection | None = None
+        self._ready = threading.Event()
+        self._init_error: BaseException | None = None
 
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.executescript(_DDL)
-            conn.execute("PRAGMA user_version=1;")
-            conn.commit()
-            self._write_conn = conn
+            # Bootstrap schema on a short-lived connection, then hand exclusive
+            # write ownership to the daemon writer thread.
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.executescript(_DDL)
+                conn.execute("PRAGMA user_version=1;")
+                conn.commit()
         except Exception:
             logger.exception("HistoryStore init failed; disabling history")
             self.disabled = True
@@ -82,6 +125,16 @@ class HistoryStore:
             target=self._writer_loop, name="HistoryStoreWriter", daemon=True
         )
         self._thread.start()
+        if not self._ready.wait(timeout=5.0):
+            logger.error("HistoryStore writer thread failed to start")
+            self.disabled = True
+            return
+        if self._init_error is not None:
+            logger.exception(
+                "HistoryStore writer connection failed; disabling history",
+                exc_info=self._init_error,
+            )
+            self.disabled = True
 
     def enqueue(self, record: SegmentRecord) -> None:
         if self.disabled:
@@ -119,12 +172,12 @@ class HistoryStore:
         self._thread = None
         self._queue.put(self._stop)
         thread.join(timeout=timeout)
-        if self._write_conn is not None:
-            try:
-                self._write_conn.close()
-            except Exception:
-                logger.exception("HistoryStore close connection failed")
-            self._write_conn = None
+        if thread.is_alive():
+            logger.warning(
+                "HistoryStore writer did not finish within %.1fs; "
+                "leaving connection with writer thread",
+                timeout,
+            )
 
     def list_sessions(self, limit: int = 50, offset: int = 0) -> list[SessionSummary]:
         if self.disabled:
@@ -132,48 +185,15 @@ class HistoryStore:
         try:
             with self._readonly_conn() as conn:
                 rows = conn.execute(
-                    """
-                    SELECT
-                      h.session_id,
-                      MIN(h.created_at) AS session_created,
-                      COUNT(*) AS segment_count,
-                      (
-                        SELECT source FROM history h2
-                        WHERE h2.session_id = h.session_id
-                        ORDER BY h2.seq ASC LIMIT 1
-                      ) AS source,
-                      (
-                        SELECT target_app FROM history h2
-                        WHERE h2.session_id = h.session_id
-                        ORDER BY h2.seq ASC LIMIT 1
-                      ) AS target_app,
-                      (
-                        SELECT CASE
-                          WHEN polished_text != '' THEN polished_text
-                          ELSE raw_text
-                        END
-                        FROM history h2
-                        WHERE h2.session_id = h.session_id
-                        ORDER BY h2.seq ASC LIMIT 1
-                      ) AS preview
-                    FROM history h
+                    _SESSION_SUMMARY_SQL
+                    + """
                     GROUP BY h.session_id
                     ORDER BY session_created DESC
                     LIMIT ? OFFSET ?
                     """,
                     (limit, offset),
                 ).fetchall()
-            return [
-                SessionSummary(
-                    session_id=r[0],
-                    created_at=r[1],
-                    segment_count=r[2],
-                    source=r[3] or "",
-                    target_app=r[4] or "",
-                    preview=r[5] or "",
-                )
-                for r in rows
-            ]
+            return _rows_to_summaries(rows)
         except Exception:
             logger.exception("HistoryStore list_sessions failed")
             return []
@@ -184,22 +204,19 @@ class HistoryStore:
         pattern = f"%{q}%"
         try:
             with self._readonly_conn() as conn:
-                session_ids = [
-                    r[0]
-                    for r in conn.execute(
-                        """
-                        SELECT DISTINCT session_id
-                        FROM history
-                        WHERE raw_text LIKE ? OR polished_text LIKE ?
-                        """,
-                        (pattern, pattern),
-                    ).fetchall()
-                ]
-            if not session_ids:
-                return []
-            all_sessions = self.list_sessions(limit=10_000, offset=0)
-            wanted = set(session_ids)
-            return [s for s in all_sessions if s.session_id in wanted]
+                rows = conn.execute(
+                    _SESSION_SUMMARY_SQL
+                    + """
+                    WHERE h.session_id IN (
+                      SELECT DISTINCT session_id FROM history
+                      WHERE raw_text LIKE ? OR polished_text LIKE ?
+                    )
+                    GROUP BY h.session_id
+                    ORDER BY session_created DESC
+                    """,
+                    (pattern, pattern),
+                ).fetchall()
+            return _rows_to_summaries(rows)
         except Exception:
             logger.exception("HistoryStore search_sessions failed")
             return []
@@ -239,27 +256,43 @@ class HistoryStore:
             return []
 
     def _readonly_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL;")
+        # Short-lived read-only URI connection (WAL allows concurrent readers).
+        uri = self.db_path.resolve().as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        conn.execute("PRAGMA query_only=ON;")
         return conn
 
     def _writer_loop(self) -> None:
-        assert self._write_conn is not None
-        conn = self._write_conn
-        while True:
-            item = self._queue.get()
-            if item is self._stop:
-                # Drain remaining work before exit.
-                while True:
-                    try:
-                        more = self._queue.get_nowait()
-                    except queue.Empty:
-                        break
-                    if more is self._stop:
-                        continue
-                    self._dispatch(conn, more)
-                return
-            self._dispatch(conn, item)
+        conn: sqlite3.Connection | None = None
+        try:
+            # Writer thread exclusively owns this connection for its lifetime.
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL;")
+        except Exception as exc:
+            self._init_error = exc
+            self._ready.set()
+            return
+        self._ready.set()
+
+        try:
+            while True:
+                item = self._queue.get()
+                if item is self._stop:
+                    while True:
+                        try:
+                            more = self._queue.get_nowait()
+                        except queue.Empty:
+                            break
+                        if more is self._stop:
+                            continue
+                        self._dispatch(conn, more)
+                    return
+                self._dispatch(conn, item)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                logger.exception("HistoryStore writer connection close failed")
 
     def _dispatch(self, conn: sqlite3.Connection, item: Any) -> None:
         try:
@@ -320,7 +353,6 @@ class HistoryStore:
         max_entries: int,
         active_session_id: str | None,
     ) -> None:
-        # Age-based: delete whole sessions older than retention_days by MIN(created_at).
         if retention_days > 0:
             cutoff_ms = int(time.time() * 1000 - retention_days * 86_400_000)
             rows = conn.execute(
@@ -341,7 +373,6 @@ class HistoryStore:
                 )
                 conn.commit()
 
-        # Count-based: keep newest max_entries sessions (by MIN(created_at)).
         if max_entries > 0:
             rows = conn.execute(
                 """
@@ -353,8 +384,7 @@ class HistoryStore:
             ).fetchall()
             session_ids = [r[0] for r in rows]
             if len(session_ids) > max_entries:
-                excess = session_ids[max_entries:]
-                excess = [s for s in excess if s != active_session_id]
+                excess = [s for s in session_ids[max_entries:] if s != active_session_id]
                 if excess:
                     placeholders = ",".join("?" for _ in excess)
                     conn.execute(
