@@ -1,6 +1,6 @@
 # VoiceInk Phase 1 · 语音库地基 — 实现规划(Plan)
 
-> 日期:2026-07-10 · 状态:待实现
+> 日期:2026-07-10 · 状态:已实现（已合并至 main）
 > 依据:`../specs/2026-07-10-voiceink-phase1-voice-library-design.md`(spec,已回填)
 > + `../specs/2026-07-10-voiceink-phase1-office-hours-decisions.md`(D1–D6)
 > + `../adr/0001`–`0011`(决策记录) + `../glossary.md`
