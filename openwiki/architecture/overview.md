@@ -1,13 +1,14 @@
 # 架构概览
 
-VoiceInk 是一款单进程 PyQt6 桌面应用，围绕中央协调器（`voiceink/app.py:App`）组织，通过 Qt 信号连接各独立模块。无服务器、数据库或插件系统 — 复杂度集中在音频采集、后台模型加载和 UI 状态一致性。
+VoiceInk 是一款单进程 PyQt6 桌面应用，围绕中央协调器（`voiceink/app.py:App`）组织，通过 Qt 信号连接各独立模块。无服务器或插件系统；Phase 1 语音库只使用本地 SQLite `history.db` — 复杂度集中在音频采集、后台模型加载、历史异步写入和 UI 状态一致性。
 
 ## 运行时流水线
 
 ```
-startup → config load → ASR model async load → global hotkey ready
+startup → config load (+ local history.db) → ASR model async load → global hotkey ready
   → hold hotkey → record (mic / system / mixed)
-  → VAD segmentation (continuous mode) → ASR → [LLM polish] → paste with focus verification → output
+  → VAD segmentation (continuous mode) → ASR → [LLM polish] → paste with focus verification
+  → output → optional history write
 ```
 
 ## 入口点
@@ -28,6 +29,7 @@ startup → config load → ASR model async load → global hotkey ready
 | 识别 | `voiceink/speech_recognizer.py` | sherpa-onnx 加载器、模型注册表、HF 断点续传下载、后台加载线程、输出规范化 |
 | 润色 | `voiceink/text_polisher.py` | 可选 OpenAI 兼容 LLM 改写，在 `QThread` 中运行；远程强制 HTTPS，本地 localhost 端点允许 HTTP |
 | 粘贴 | `voiceink/text_paster.py` | 异步剪贴板 + Ctrl/Cmd+V 粘贴，带前景窗口校验；降级为「已复制到剪贴板」 |
+| 历史 | `voiceink/history_store.py` | 本地 SQLite `~/.voiceink/history.db`；单后台 writer 线程；按会话搜索、删除、清理与只读查询 |
 | 音效 | `voiceink/sound_manager.py` | 开始/停止/错误提示音 |
 | UI | `voiceink/ui/*` | `floating_window.py`（状态 HUD）、`tray_icon.py`、`settings_window.py` + `settings_components.py`（4 页设置）、共享样式/token |
 
@@ -64,11 +66,18 @@ startup → config load → ASR model async load → global hotkey ready
 
 `text_paster.py` 将文本复制到剪贴板并模拟 Ctrl+V/Cmd+V，然后校验前景窗口（各平台用 win32gui / osascript / xdotool）。业务规则：**无法确认粘贴成功时，绝不声称「已粘贴」** — 管理员窗口、密码框等降级为「已复制到剪贴板，请按 Ctrl+V」（`App._handle_paste_result`）。同时避免粘贴到 VoiceInk 自身窗口。
 
+## 历史 / 语音库
+
+`App._begin_transcription` 为每段音频创建待写历史记录；`_handle_paste_result` 在输出流程结束后调用 `_enqueue_history_record`，因此历史是输出后的被动记录，不参与 ASR、润色或粘贴决策。`history.enabled=False` 只停止未来写入，不删除已有 `history.db`。
+
+`history_store.py` 使用 SQLite + WAL，并将写入、删除和清理交给单一后台 writer 线程；UI 读取使用短生命周期只读连接。清理以整场 `session_id` 为单位，受 `history.retention_days` 与 `history.max_entries` 控制，当前持续会话不会被半删。Phase 1 不保存音频、不做 FTS5、不生成摘要；只记录文本、音频来源、触发模式、模型、时长与目标应用进程名。
+
 ## 线程模型
 
 - Qt 主线程：全部 UI、配置定时器、协调逻辑。
 - pynput 监听线程：热键。最短按住定时器必须在**主线程**上启动（`HotKeyManager._arm_hold_on_main` 信号），否则在 Windows 上可能永不触发。
 - sounddevice 回调线程：音频块（`AudioRecorder` 中用锁保护）。
+- `HistoryStoreWriter` 后台线程：独占历史库写连接，串行处理插入、删除与清理。
 - `QThread` 工作线程：模型加载/识别（`speech_recognizer.py`）和 LLM 润色（`text_polisher.py`）。
 
 ## 变更指引
