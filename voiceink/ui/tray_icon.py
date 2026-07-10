@@ -145,6 +145,7 @@ def create_microphone_icon(color: str = "#888888", recording: bool = False, size
 
 class TrayIcon(QSystemTrayIcon):
     open_settings = pyqtSignal()
+    history_requested = pyqtSignal()
     quit_app = pyqtSignal()
     auto_start_toggled = pyqtSignal(bool)
     model_switched = pyqtSignal(str)
@@ -171,6 +172,9 @@ class TrayIcon(QSystemTrayIcon):
 
         settings_action = menu.addAction("打开设置")
         settings_action.triggered.connect(self.open_settings.emit)
+
+        history_action = menu.addAction("历史")
+        history_action.triggered.connect(self.history_requested.emit)
 
         menu.addSeparator()
 

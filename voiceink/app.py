@@ -36,6 +36,7 @@ from voiceink.sound_manager import SoundManager
 from voiceink.ui.floating_window import FloatingWindow
 from voiceink.ui.tray_icon import TrayIcon
 from voiceink.ui.settings_window import SettingsWindow
+from voiceink.ui.history_window import HistoryWindow
 
 log = logging.getLogger("VoiceInk")
 
@@ -122,6 +123,7 @@ class App(QObject):
         self._floating = FloatingWindow()
         self._tray = TrayIcon()
         self._settings_win = None
+        self._history_win = None
 
         self._tray.set_auto_start(self._config.get("auto_start", False))
         self._tray.show()
@@ -174,6 +176,7 @@ class App(QObject):
         self._floating.continuous_stop_requested.connect(self._stop_continuous_user_session)
 
         self._tray.open_settings.connect(self._show_settings)
+        self._tray.history_requested.connect(self._show_history_window)
         self._tray.quit_app.connect(self._quit)
         self._tray.auto_start_toggled.connect(self._on_auto_start_toggled)
         self._tray.model_switched.connect(self._on_tray_model_switch)
@@ -820,6 +823,16 @@ class App(QObject):
         self._settings_win.show()
         self._settings_win.raise_()
         self._settings_win.activateWindow()
+
+    def _show_history_window(self):
+        if self._history_win is None:
+            self._history_win = HistoryWindow(self._history)
+        else:
+            self._history_win.refresh()
+        if not self._history_win.isVisible():
+            self._history_win.show()
+        self._history_win.raise_()
+        self._history_win.activateWindow()
 
     def _on_settings_closed(self):
         if self._settings_win is not None:
