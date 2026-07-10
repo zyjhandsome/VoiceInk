@@ -157,14 +157,39 @@ def test_history_disabled_skips_enqueue_and_mid_run_disable_affects_next_segment
 def test_created_at_is_segment_finalization_time_not_begin() -> None:
     with app_harness() as h:
         app = h["app"]
-        # begin must not stamp created_at; freeze at _output_text does.
+        app._begin_transcription(_audio())
         with patch("voiceink.app.time.time", return_value=1_005.5):
-            app._begin_transcription(_audio())
             app._on_final_result("finalized later")
             h["paster"].paste_async.call_args[0][1]("pasted")
 
         record = _enqueued_records(h["history"])[0]
         assert record.created_at == 1_005_500
+
+
+def test_queued_segments_after_user_stop_keep_same_session() -> None:
+    """Late/queued segments after Esc must keep the same session_id (ADR-0009/0001)."""
+    with app_harness({"audio.trigger_mode": "continuous"}) as h:
+        app = h["app"]
+        _start_continuous_user_session(app)
+        h["recorder"].is_continuous = True
+
+        first_cb = _begin_and_finish_asr(app, h["paster"], "first")
+        queued = _audio()
+        app._segment_queue.append(queued)
+        session_before_stop = app._current_session_id
+
+        app._stop_continuous_user_session()
+        first_cb("pasted")
+
+        app._begin_transcription(app._segment_queue.pop(0))
+        app._on_final_result("late after esc")
+        h["paster"].paste_async.call_args[0][1]("pasted")
+
+        records = _enqueued_records(h["history"])
+        assert [r.raw_text for r in records] == ["first", "late after esc"]
+        assert records[0].session_id == session_before_stop
+        assert records[1].session_id == session_before_stop
+        assert [r.seq for r in records] == [0, 1]
 
 
 def test_clipboard_and_error_paste_results_enqueue_history() -> None:

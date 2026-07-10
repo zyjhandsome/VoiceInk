@@ -420,8 +420,8 @@ class App(QObject):
         log.info("用户停止持续转写会话（进行中的识别会继续完成）")
         if self._recorder.is_continuous or self._recorder.is_recording:
             self._recorder.stop_continuous()
-        self._current_session_id = None
-        self._current_seq = 0
+        # Keep _current_session_id/_current_seq for late/queued segments (ADR-0001/0009).
+        # Cleared on the next user start in _on_continuous_hotkey_start.
         self._enqueue_history_cleanup()
         self._tray.set_activity_tooltip(None)
         self._floating.show_continuous_stopped()
