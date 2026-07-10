@@ -47,7 +47,6 @@ SHORT_TAP_TRAY_COOLDOWN_S = 300  # 托盘「按过短」提示最少间隔，避
 class _PendingHistoryRecord:
     session_id: str
     seq: int
-    created_at: int
     raw_text: str
     polished_text: str
     source: str
@@ -550,7 +549,6 @@ class App(QObject):
         return _PendingHistoryRecord(
             session_id=session_id,
             seq=seq,
-            created_at=int(time.time() * 1000),
             raw_text="",
             polished_text="",
             source=source,
@@ -695,7 +693,7 @@ class App(QObject):
         return SegmentRecord(
             session_id=pending.session_id,
             seq=pending.seq,
-            created_at=pending.created_at,
+            created_at=int(time.time() * 1000),
             raw_text=raw_text,
             polished_text=polished_text,
             source=pending.source,

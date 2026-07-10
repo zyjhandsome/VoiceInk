@@ -154,6 +154,19 @@ def test_history_disabled_skips_enqueue_and_mid_run_disable_affects_next_segment
         assert h["history"].enqueue.call_count == 1
 
 
+def test_created_at_is_segment_finalization_time_not_begin() -> None:
+    with app_harness() as h:
+        app = h["app"]
+        # begin must not stamp created_at; freeze at _output_text does.
+        with patch("voiceink.app.time.time", return_value=1_005.5):
+            app._begin_transcription(_audio())
+            app._on_final_result("finalized later")
+            h["paster"].paste_async.call_args[0][1]("pasted")
+
+        record = _enqueued_records(h["history"])[0]
+        assert record.created_at == 1_005_500
+
+
 def test_clipboard_and_error_paste_results_enqueue_history() -> None:
     with app_harness() as h:
         _drive_segment(h["app"], h["paster"], "copied text", result="clipboard")
