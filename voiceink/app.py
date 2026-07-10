@@ -1,6 +1,9 @@
 import logging
 import sys
 import time
+from dataclasses import dataclass
+from uuid import uuid4
+
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
@@ -12,7 +15,13 @@ from voiceink.config import (
     TRIGGER_MODE_HOTKEY,
 )
 from voiceink.hotkey_manager import HotKeyManager, MIN_HOLD_MS
+from voiceink.audio_devices import (
+    INPUT_SOURCE_MICROPHONE,
+    INPUT_SOURCE_SYSTEM,
+    INPUT_SOURCE_MIXED,
+)
 from voiceink.audio_recorder import AudioRecorder
+from voiceink.audio_utils import TARGET_SAMPLE_RATE
 from voiceink.speech_recognizer import (
     DEFAULT_MODEL_ID,
     SpeechRecognizer,
@@ -20,8 +29,9 @@ from voiceink.speech_recognizer import (
     normalize_asr_output,
     get_model_info,
 )
+from voiceink.history_store import HistoryStore, SegmentRecord
 from voiceink.text_polisher import TextPolisher
-from voiceink.text_paster import TextPaster
+from voiceink.text_paster import TextPaster, get_foreground_process_name
 from voiceink.sound_manager import SoundManager
 from voiceink.ui.floating_window import FloatingWindow
 from voiceink.ui.tray_icon import TrayIcon
@@ -31,6 +41,19 @@ log = logging.getLogger("VoiceInk")
 
 MIN_AUDIO_SAMPLES = 1600  # 0.1s at 16kHz — ignore recordings shorter than this
 SHORT_TAP_TRAY_COOLDOWN_S = 300  # 托盘「按过短」提示最少间隔，避免输入法反复弹窗
+
+
+@dataclass
+class _PendingHistoryRecord:
+    session_id: str
+    seq: int
+    created_at: int
+    raw_text: str
+    polished_text: str
+    source: str
+    duration_ms: int
+    trigger_mode: str
+    model: str
 
 
 class App(QObject):
@@ -64,6 +87,9 @@ class App(QObject):
         self._is_transcribing = False
         self._segment_queue: list[np.ndarray] = []
         self._continuous_user_stopped = False
+        self._current_session_id: str | None = None
+        self._current_seq = 0
+        self._pending_record: _PendingHistoryRecord | None = None
         self._short_tap_tray_last_at = 0.0
         self._hotkey_conflict_warned = False
 
@@ -91,6 +117,7 @@ class App(QObject):
         self._sound = SoundManager(
             enabled=self._config.get("sound_enabled", True)
         )
+        self._history = HistoryStore(db_path=self._config.config_dir / "history.db")
 
     def _init_ui(self):
         self._floating = FloatingWindow()
@@ -356,6 +383,8 @@ class App(QObject):
             return
         log.info("快捷键触发：开始持续转写")
         self._continuous_user_stopped = False
+        self._current_session_id = None
+        self._current_seq = 0
         self._start_continuous_listening()
 
     def _on_hotkey_tap_too_short(self):
@@ -392,6 +421,9 @@ class App(QObject):
         log.info("用户停止持续转写会话（进行中的识别会继续完成）")
         if self._recorder.is_continuous or self._recorder.is_recording:
             self._recorder.stop_continuous()
+        self._current_session_id = None
+        self._current_seq = 0
+        self._enqueue_history_cleanup()
         self._tray.set_activity_tooltip(None)
         self._floating.show_continuous_stopped()
         QTimer.singleShot(1200, self._floating.dismiss_if_idle)
@@ -490,10 +522,42 @@ class App(QObject):
                 self._segment_queue.insert(0, audio)
                 self._floating.show_model_loading("模型加载中，识别已暂停…")
             return
+        self._pending_record = self._build_pending_history_record(audio)
         self._is_transcribing = True
         self._tray.set_activity_tooltip("recognizing")
         self._floating.show_recognizing()
         self._recognizer.transcribe_final(audio)
+
+    def _build_pending_history_record(self, audio: np.ndarray) -> _PendingHistoryRecord:
+        trigger_mode = self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
+        if trigger_mode == TRIGGER_MODE_CONTINUOUS:
+            if self._current_session_id is None:
+                self._current_session_id = uuid4().hex
+            session_id = self._current_session_id
+            seq = self._current_seq
+            self._current_seq += 1
+        else:
+            trigger_mode = TRIGGER_MODE_HOTKEY
+            session_id = uuid4().hex
+            seq = 0
+
+        source = {
+            INPUT_SOURCE_MICROPHONE: "mic",
+            INPUT_SOURCE_SYSTEM: "system",
+            INPUT_SOURCE_MIXED: "mixed",
+        }.get(getattr(self._recorder, "input_source", INPUT_SOURCE_MICROPHONE), "mic")
+
+        return _PendingHistoryRecord(
+            session_id=session_id,
+            seq=seq,
+            created_at=int(time.time() * 1000),
+            raw_text="",
+            polished_text="",
+            source=source,
+            duration_ms=int(len(audio) / TARGET_SAMPLE_RATE * 1000),
+            trigger_mode=trigger_mode,
+            model=self._config.get("stt.model_id", DEFAULT_MODEL_ID),
+        )
 
     def _on_final_result(self, text: str):
         text = normalize_asr_output(text)
@@ -519,6 +583,8 @@ class App(QObject):
 
         log.debug("识别结果长度: %d 字符", len(text))
         self._current_transcription = text
+        if self._pending_record is not None:
+            self._pending_record.raw_text = text
 
         llm_enabled = self._config.get("llm.enabled", False)
         api_url = self._config.get("llm.api_url", "")
@@ -603,11 +669,49 @@ class App(QObject):
             self._pump_segment_queue()
             return
 
-        self._paster.paste_async(text, lambda result: self._handle_paste_result(
-            result, degraded_from_polish=degraded_from_polish
+        record = self._freeze_pending_history_record(text, degraded_from_polish)
+        self._paster.paste_async(text, lambda result, record=record: self._handle_paste_result(
+            result,
+            degraded_from_polish=degraded_from_polish,
+            record=record,
         ))
 
-    def _handle_paste_result(self, result: str, *, degraded_from_polish: bool = False):
+    def _freeze_pending_history_record(
+        self,
+        output_text: str,
+        degraded_from_polish: bool,
+    ) -> SegmentRecord | None:
+        pending = self._pending_record
+        if pending is None:
+            return None
+        raw_text = pending.raw_text or output_text
+        if degraded_from_polish:
+            polished_text = raw_text
+        elif pending.raw_text and output_text != pending.raw_text:
+            polished_text = output_text
+        else:
+            polished_text = pending.polished_text
+        self._pending_record = None
+        return SegmentRecord(
+            session_id=pending.session_id,
+            seq=pending.seq,
+            created_at=pending.created_at,
+            raw_text=raw_text,
+            polished_text=polished_text,
+            source=pending.source,
+            duration_ms=pending.duration_ms,
+            target_app="",
+            trigger_mode=pending.trigger_mode,
+            model=pending.model,
+        )
+
+    def _handle_paste_result(
+        self,
+        result: str,
+        *,
+        degraded_from_polish: bool = False,
+        record: SegmentRecord | None = None,
+    ):
         paste_hint = "可按 Cmd+V 粘贴" if sys.platform == "darwin" else "可按 Ctrl+V 粘贴"
         success_msg = "已输入（原文）" if degraded_from_polish else "已输入"
 
@@ -647,7 +751,38 @@ class App(QObject):
             )
             self._floating.show_error(self._friendly_error("输出失败"))
 
+        self._enqueue_history_record(record)
         QTimer.singleShot(300, self._pump_segment_queue)
+
+    def _enqueue_history_record(self, record: SegmentRecord | None) -> None:
+        if record is None:
+            return
+        if not self._config.get("history.enabled", True):
+            return
+        if not (record.raw_text.strip() or record.polished_text.strip()):
+            return
+        target_app = get_foreground_process_name()
+        self._history.enqueue(
+            SegmentRecord(
+                session_id=record.session_id,
+                seq=record.seq,
+                created_at=record.created_at,
+                raw_text=record.raw_text,
+                polished_text=record.polished_text,
+                source=record.source,
+                duration_ms=record.duration_ms,
+                target_app=target_app or "",
+                trigger_mode=record.trigger_mode,
+                model=record.model,
+            )
+        )
+
+    def _enqueue_history_cleanup(self) -> None:
+        self._history.enqueue_cleanup(
+            retention_days=int(self._config.get("history.retention_days", 90)),
+            max_entries=int(self._config.get("history.max_entries", 5000)),
+            active_session_id=self._current_session_id,
+        )
 
     # ── Settings ──────────────────────────────────────
 
@@ -794,11 +929,13 @@ class App(QObject):
         self._recognizer.shutdown()
         self._polisher.cancel()
         self._tray.hide()
+        self._history.close(timeout=2.0)
         self._config.save_immediate()
         QApplication.quit()
 
     def start(self):
         self._hotkey_mgr.start()
+        self._enqueue_history_cleanup()
         if not self._config.get("first_run_welcome_seen", True):
             # 等模型加载完成后再弹欢迎框，避免挡住「模型加载中」状态
             self._recognizer.ready.connect(self._show_first_run_welcome_once)
