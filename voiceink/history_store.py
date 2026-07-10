@@ -308,6 +308,10 @@ class HistoryStore:
                 self._do_cleanup(conn, retention_days, max_entries, active_session_id)
         except Exception:
             logger.exception("HistoryStore writer op failed")
+            try:
+                conn.rollback()
+            except Exception:
+                logger.exception("HistoryStore rollback after writer failure failed")
 
     def _do_insert(self, conn: sqlite3.Connection, record: SegmentRecord) -> None:
         conn.execute(
@@ -374,21 +378,29 @@ class HistoryStore:
                 conn.commit()
 
         if max_entries > 0:
-            rows = conn.execute(
-                """
-                SELECT session_id
-                FROM history
-                GROUP BY session_id
-                ORDER BY MIN(created_at) DESC
-                """
-            ).fetchall()
-            session_ids = [r[0] for r in rows]
-            if len(session_ids) > max_entries:
-                excess = [s for s in session_ids[max_entries:] if s != active_session_id]
-                if excess:
-                    placeholders = ",".join("?" for _ in excess)
-                    conn.execute(
-                        f"DELETE FROM history WHERE session_id IN ({placeholders})",
-                        excess,
-                    )
-                    conn.commit()
+            # Delete oldest non-active sessions until within limit (ADR-0005).
+            # Active session is never deleted, even if that leaves us briefly
+            # unable to shrink further when only active remains.
+            while True:
+                rows = conn.execute(
+                    """
+                    SELECT session_id
+                    FROM history
+                    GROUP BY session_id
+                    ORDER BY MIN(created_at) ASC
+                    """
+                ).fetchall()
+                session_ids = [r[0] for r in rows]
+                if len(session_ids) <= max_entries:
+                    break
+                victim = next(
+                    (s for s in session_ids if s != active_session_id),
+                    None,
+                )
+                if victim is None:
+                    break
+                conn.execute(
+                    "DELETE FROM history WHERE session_id = ?",
+                    (victim,),
+                )
+                conn.commit()

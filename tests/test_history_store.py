@@ -125,6 +125,18 @@ class TestCleanup:
         ids = {s.session_id for s in store.list_sessions(limit=10, offset=0)}
         assert "active" in ids
 
+    def test_cleanup_deletes_newest_non_active_when_active_is_oldest(self, store):
+        # Active is oldest; max_entries=1 must still drop the newer non-active
+        # session so the store returns to the limit (ADR-0005).
+        store.enqueue(_record("active", 0, raw_text="a", created_at=1000))
+        store.enqueue(_record("newer", 0, raw_text="b", created_at=2000))
+        store.enqueue_cleanup(retention_days=0, max_entries=1, active_session_id="active")
+        store.close(timeout=2.0)
+
+        ids = [s.session_id for s in store.list_sessions(limit=10, offset=0)]
+        assert ids == ["active"]
+        assert store.get_session_segments("newer") == []
+
 
 class TestEnqueueSemantics:
     def test_search_sessions_builds_summaries_for_all_matches(self, store):
