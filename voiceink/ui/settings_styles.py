@@ -8,12 +8,12 @@ from voiceink.ui.design_tokens import (
     BAR_OFF,
     BG,
     FONT,
+    FONT_MONO,
     GREEN,
     GREEN_BG,
     HAIRLINE,
     INPUT_BG,
     RADIUS_MD,
-    RADIUS_PILL,
     RADIUS_SM,
     RED,
     RED_BG,
@@ -48,25 +48,25 @@ WINDOW_CSS = f"""
     }}
     QLineEdit:focus {{
         border: 2px solid {ACCENT_FOCUS};
-        padding: 9px 13px;
+        padding: 10px 14px;
     }}
     {ROW_RADIO_STYLE}
     {NAV_BTN_STYLE}
     HotkeyEdit {{
         background: {SURFACE_PEARL};
-        color: {ACCENT};
+        color: {TEXT};
         border: 1px solid {HAIRLINE};
         border-radius: {RADIUS_MD}px;
         padding: 12px 16px;
         font-size: 16px;
         font-weight: 600;
-        font-family: "Cascadia Mono", "Consolas", "SF Mono", monospace;
+        font-family: {FONT_MONO};
         min-height: 24px;
     }}
     HotkeyEdit:focus {{
         border: 2px solid {ACCENT_FOCUS};
-        padding: 11px 15px;
-        background: {SURFACE};
+        padding: 12px 16px;
+        background: {SURFACE_PEARL};
     }}
     QScrollArea {{
         border: none;
@@ -83,7 +83,7 @@ WINDOW_CSS = f"""
     }}
     QComboBox:focus {{
         border: 2px solid {ACCENT_FOCUS};
-        padding: 7px 11px;
+        padding: 8px 12px;
     }}
     QComboBox::drop-down {{
         border: none;
@@ -131,18 +131,18 @@ WINDOW_CSS = f"""
 BTN_PRIMARY = f"""
     QPushButton {{
         background: {ACCENT}; color: white; border: none;
-        border-radius: {RADIUS_PILL}px; padding: 11px 22px; font-size: 14px; font-weight: 600;
+        border-radius: {RADIUS_MD}px; padding: 10px 22px; font-size: 14px; font-weight: 600;
     }}
     QPushButton:hover {{ background: {ACCENT_FOCUS}; }}
     QPushButton:pressed {{ background: {ACCENT_HV}; }}
     QPushButton:disabled {{ background: {BAR_OFF}; color: {TEXT_DIM}; }}
-    QPushButton:focus {{ outline: none; }}
+    QPushButton:focus {{ border: 2px solid {ACCENT_FOCUS}; padding: 10px 22px; }}
 """
 
 BTN_GHOST = f"""
     QPushButton {{
         background: {SURFACE_PEARL}; color: {TEXT}; border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_PILL}px; padding: 11px 22px; font-size: 14px;
+        border-radius: {RADIUS_MD}px; padding: 10px 22px; font-size: 14px;
     }}
     QPushButton:hover {{ background: {SURFACE}; color: {TEXT}; border-color: {TEXT_DIM}; }}
     QPushButton:focus {{ outline: none; border: 2px solid {ACCENT_FOCUS}; }}
@@ -154,6 +154,7 @@ BTN_GHOST_SM = f"""
         border-radius: {RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
     }}
     QPushButton:hover {{ background: {SURFACE}; color: {TEXT}; }}
+    QPushButton:focus {{ border: 2px solid {ACCENT_FOCUS}; padding: 8px 15px; }}
 """
 
 BTN_DANGER_SM = f"""
@@ -162,12 +163,13 @@ BTN_DANGER_SM = f"""
         border-radius: {RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
     }}
     QPushButton:hover {{ background: {RED_BG}; color: {RED}; }}
+    QPushButton:focus {{ border: 2px solid {ACCENT_FOCUS}; padding: 8px 15px; }}
 """
 
 BTN_GREEN_SM = f"""
     QPushButton {{
         background: {GREEN_BG}; color: {GREEN}; border: none;
-        border-radius: {RADIUS_PILL}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+        border-radius: {RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
     }}
     QPushButton:hover {{ background: #D4F5DE; }}
     QPushButton:disabled {{ background: {BAR_OFF}; color: {TEXT_DIM}; }}
@@ -176,7 +178,7 @@ BTN_GREEN_SM = f"""
 BTN_ACCENT_SM = f"""
     QPushButton {{
         background: {ACCENT}; color: white; border: none;
-        border-radius: {RADIUS_PILL}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+        border-radius: {RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
     }}
     QPushButton:hover {{ background: {ACCENT_FOCUS}; }}
 """

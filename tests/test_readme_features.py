@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from tests.helpers.app_harness import app_harness
 from voiceink.app import App, MIN_AUDIO_SAMPLES
-from voiceink.hotkey_manager import HotKeyManager, MIN_HOLD_MS
+from voiceink.hotkey_manager import HotKeyManager
 
 
 class TestReadmeHoldHotkeyFlow:
@@ -102,7 +102,7 @@ class TestReadmeHoldHotkeyFlow:
 
 
 class TestReadmeHotkeyManagerToApp:
-    """README: 快捷键按住约 0.12 秒；短按不进入录音。"""
+    """README: 按住说话约 0.18 秒、持续转写约 0.30 秒；短按不进入。"""
 
     def test_ctrl_space_hold_emits_recording_start(self):
         app = QApplication.instance() or QApplication(sys.argv)
@@ -128,8 +128,19 @@ class TestReadmeContinuousMode:
             with patch.object(h["app"], "_start_continuous_listening") as start_cont:
                 h["app"]._on_stt_ready()
                 start_cont.assert_not_called()
-                h["floating"].show_continuous_idle.assert_called_once()
+                h["floating"].show_continuous_idle.assert_not_called()
+                h["floating"].clear_model_loading_lock.assert_called()
+                h["floating"].dismiss_if_idle.assert_called()
                 h["tray"].showMessage.assert_called()
+                msg = h["tray"].showMessage.call_args[0][1]
+                assert "持续转写" in msg or "监听" in msg
+
+    def test_continuous_short_tap_does_not_show_idle_float(self):
+        with app_harness({"audio.trigger_mode": "continuous", "hotkey": "ctrl+space"}) as h:
+            h["recorder"].is_continuous = False
+            h["app"]._on_hotkey_tap_too_short()
+            h["floating"].show_continuous_idle.assert_not_called()
+            h["tray"].showMessage.assert_called()
 
     def test_close_button_stops_continuous_session(self):
         with app_harness({"audio.trigger_mode": "continuous"}) as h:

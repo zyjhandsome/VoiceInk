@@ -1,4 +1,4 @@
-"""macOS System Settings–style building blocks for VoiceInk settings UI."""
+"""Stitch Desktop Pro building blocks for VoiceInk settings UI."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QSize, QPointF, Q
 from PyQt6.QtGui import QColor, QKeyEvent, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel,
-    QPushButton, QRadioButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QCheckBox, QPushButton, QRadioButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from voiceink.ui.design_tokens import (
@@ -15,12 +15,10 @@ from voiceink.ui.design_tokens import (
     ACCENT_SOFT,
     AMBER_SOFT,
     AMBER_TEXT,
-    BG,
     CONTROL_BORDER,
     CONTROL_BORDER_HOVER,
     DIVIDER_SOFT,
     FONT_DISPLAY,
-    GREEN_BG,
     HAIRLINE,
     NAV_BG,
     PAGE_MARGIN_H,
@@ -29,7 +27,8 @@ from voiceink.ui.design_tokens import (
     RADIUS_PILL,
     RADIUS_SM,
     ROW_HOVER,
-    ROW_SELECTED,
+    SECONDARY_CONTAINER,
+    SIDEBAR_WIDTH,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -47,41 +46,35 @@ from voiceink.ui.design_tokens import (
 # ── Style fragments ──────────────────────────────────────────────
 
 SECTION_LABEL = (
-    f"color: {TEXT}; font-size: 13px; font-weight: 600;"
+    f"color: {TEXT_SEC}; font-size: 13px; font-weight: 600;"
     f" padding: 12px {SPACE_MD}px 8px {SPACE_MD}px; letter-spacing: 0;"
     f" background: transparent;"
 )
 
 PAGE_TITLE = (
-    f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 20px;"
-    f" font-weight: 600; letter-spacing: -0.3px;"
+    f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 22px;"
+    f" font-weight: 600; letter-spacing: 0;"
 )
 
 PAGE_SUBTITLE = (
-    f"color: {TEXT_SEC}; font-size: 13px; padding: 0;"
-    f" line-height: 1.4; letter-spacing: -0.1px;"
+    f"color: {TEXT_SEC}; font-size: 14px; padding: 0;"
+    f" line-height: 1.4; letter-spacing: 0;"
 )
 
 FOOTNOTE = (
     f"color: {TEXT_DIM}; font-size: 11px; line-height: 1.45;"
-    f" padding: 4px 4px 0 4px; letter-spacing: -0.05px;"
+    f" padding: 4px 4px 0 4px; letter-spacing: 0;"
 )
 
 GROUP_STYLE = f"""
     QFrame#settingsGroup {{
-        background: {SURFACE};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
+        background: transparent;
+        border: none;
+        border-radius: 0;
     }}
 """
 
-HERO_CARD_STYLE = f"""
-    QFrame#settingsHeroCard {{
-        background: {SURFACE};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
-    }}
-"""
+HERO_CARD_STYLE = GROUP_STYLE.replace("settingsGroup", "settingsHeroCard")
 
 ROW_RADIO_STYLE = f"""
     QRadioButton {{
@@ -114,26 +107,28 @@ ROW_RADIO_STYLE = f"""
         border-color: {ACCENT_FOCUS};
     }}
     QRadioButton:focus {{
-        outline: none;
+        border: 2px solid {ACCENT_FOCUS};
+        border-radius: {RADIUS_SM}px;
+        padding: 8px 12px;
     }}
 """
 
 NAV_BTN_STYLE = f"""
     QPushButton#settingsNavBtn {{
         text-align: left;
-        padding: 0 10px 0 12px;
+        padding: 0 14px 0 12px;
         border: none;
-        border-left: 3px solid transparent;
+        border-left: 4px solid transparent;
         border-radius: {RADIUS_SM}px;
         color: {TEXT_SEC};
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
         background: transparent;
     }}
     QPushButton#settingsNavBtn:checked {{
-        background: {SURFACE};
-        border-left: 3px solid {ACCENT};
-        color: {ACCENT};
+        background: {SECONDARY_CONTAINER};
+        border-left: 4px solid {ACCENT};
+        color: {TEXT};
         font-weight: 600;
     }}
     QPushButton#settingsNavBtn:hover:!checked {{
@@ -141,19 +136,20 @@ NAV_BTN_STYLE = f"""
         color: {TEXT};
     }}
     QPushButton#settingsNavBtn:focus {{
-        outline: none;
+        border: 2px solid {ACCENT_FOCUS};
+        border-left: 4px solid {ACCENT_FOCUS};
     }}
 """
 
 LINK_BTN_STYLE = f"""
     QPushButton {{
-        color: {ACCENT}; background: transparent; border: none;
+        color: {TEXT_SEC}; background: transparent; border: none;
         font-size: 12px; text-align: left; padding: 4px 0;
     }}
-    QPushButton:hover {{ color: {ACCENT_FOCUS}; }}
+    QPushButton:hover {{ color: {TEXT}; }}
     QPushButton:focus {{
         outline: none;
-        border-bottom: 1px solid {ACCENT};
+        border-bottom: 1px solid {CONTROL_BORDER_HOVER};
     }}
 """
 
@@ -256,55 +252,6 @@ class PageHero(QWidget):
         self._root.setContentsMargins(0, 0, 0, 6 if visible else 2)
 
 
-class GeneralPageHeader(QWidget):
-    """Reference-style header: back · centered title · settings gear."""
-
-    back_clicked = pyqtSignal()
-    settings_clicked = pyqtSignal()
-
-    def __init__(self, title: str = "通用设置", parent=None):
-        super().__init__(parent)
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 4)
-        root.setSpacing(8)
-
-        self._back_btn = QPushButton("←")
-        self._back_btn.setFixedSize(36, 36)
-        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._back_btn.setAccessibleName("返回")
-        self._back_btn.setStyleSheet(f"""
-            QPushButton {{
-                color: {TEXT_SEC};
-                background: transparent;
-                border: none;
-                font-size: 18px;
-                border-radius: {RADIUS_SM}px;
-            }}
-            QPushButton:hover {{
-                background: {ROW_HOVER};
-                color: {TEXT};
-            }}
-        """)
-        self._back_btn.clicked.connect(self.back_clicked.emit)
-        root.addWidget(self._back_btn)
-
-        self._title = QLabel(title)
-        self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._title.setStyleSheet(
-            f"color: {ACCENT}; font-family: {FONT_DISPLAY}; font-size: 18px;"
-            f" font-weight: 700; letter-spacing: -0.2px; background: transparent;"
-        )
-        root.addWidget(self._title, 1)
-
-        self._gear_btn = QPushButton("⚙")
-        self._gear_btn.setFixedSize(36, 36)
-        self._gear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._gear_btn.setAccessibleName("设置")
-        self._gear_btn.setStyleSheet(self._back_btn.styleSheet())
-        self._gear_btn.clicked.connect(self.settings_clicked.emit)
-        root.addWidget(self._gear_btn)
-
-
 def hero_card() -> QFrame:
     frame = QFrame()
     frame.setObjectName("settingsHeroCard")
@@ -318,17 +265,17 @@ def usage_tip_bar(text: str) -> QFrame:
     frame.setObjectName("usageTipBar")
     frame.setStyleSheet(f"""
         QFrame#usageTipBar {{
-            background: {ACCENT_SOFT};
-            border: none;
-            border-radius: {RADIUS_SM}px;
+            background: {SURFACE_PEARL};
+            border: 1px solid {HAIRLINE};
+            border-radius: {RADIUS_MD}px;
         }}
     """)
     lay = QHBoxLayout(frame)
-    lay.setContentsMargins(14, 10, 14, 10)
+    lay.setContentsMargins(16, 12, 16, 12)
     lbl = QLabel(text)
     lbl.setWordWrap(True)
     lbl.setStyleSheet(
-        f"color: {ACCENT}; font-size: 12px; line-height: 1.45; background: transparent;"
+        f"color: {TEXT_SEC}; font-size: 13px; line-height: 1.45; background: transparent;"
     )
     lay.addWidget(lbl)
     return frame
@@ -339,33 +286,39 @@ def polish_preview_content() -> QWidget:
     frame = QWidget()
     lay = QVBoxLayout(frame)
     lay.setContentsMargins(SPACE_MD, 4, SPACE_MD, SPACE_MD)
-    lay.setSpacing(8)
+    lay.setSpacing(12)
 
     head = QLabel("效果预览")
     head.setStyleSheet(
-        f"color: {TEXT}; font-size: 14px; font-weight: 600; background: transparent;"
+        f"color: {TEXT}; font-size: 16px; font-weight: 600; background: transparent;"
     )
     lay.addWidget(head)
 
-    def _sample(label: str, body: str, *, muted: bool) -> None:
+    def _sample(label: str, body: str, *, polished: bool) -> None:
         box = QWidget()
         bl = QVBoxLayout(box)
         bl.setContentsMargins(0, 0, 0, 0)
-        bl.setSpacing(4)
+        bl.setSpacing(6)
         tag = QLabel(label)
         tag.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; font-weight: 600;"
+            f"color: {TEXT_SEC}; font-size: 12px; font-weight: 500;"
             f" background: transparent;"
         )
         bl.addWidget(tag)
         txt = QLabel(body)
         txt.setWordWrap(True)
-        color = TEXT_SEC if muted else TEXT
-        bg = "transparent" if muted else GREEN_BG
+        if polished:
+            color = TEXT
+            bg = SURFACE
+            border = f"1px solid {HAIRLINE}"
+        else:
+            color = TEXT_SEC
+            bg = SURFACE_PEARL
+            border = f"1px solid {HAIRLINE}"
         txt.setStyleSheet(
-            f"color: {color}; font-size: 13px; line-height: 1.5;"
-            f" background: {bg}; border-radius: {RADIUS_SM}px;"
-            f" padding: 10px 12px;"
+            f"color: {color}; font-size: 14px; line-height: 1.5;"
+            f" background: {bg}; border: {border};"
+            f" border-radius: {RADIUS_SM}px; padding: 12px 14px;"
         )
         bl.addWidget(txt)
         lay.addWidget(box)
@@ -373,17 +326,17 @@ def polish_preview_content() -> QWidget:
     _sample(
         "转写原文",
         "那个我今天嗯想去趟超市然后买点东西。",
-        muted=True,
+        polished=False,
     )
     _sample(
         "润色后",
         "我今天想去趟超市买点东西。",
-        muted=False,
+        polished=True,
     )
-    hint = QLabel("开启上方开关并配置 API 后，识别结果会自动润色。")
+    hint = QLabel("ℹ  开启上方开关并配置 API 后，识别结果会自动润色。")
     hint.setWordWrap(True)
     hint.setStyleSheet(
-        f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+        f"color: {TEXT_SEC}; font-size: 12px; background: transparent;"
     )
     lay.addWidget(hint)
     return frame
@@ -391,7 +344,7 @@ def polish_preview_content() -> QWidget:
 
 def kv_row_elided(key: str, value: str, *, max_len: int = 44) -> QWidget:
     display = elide_middle(value, max_len)
-    row = kv_row(key, display)
+    row = kv_row(key, display, mono=True)
     if display != value:
         for child in row.findChildren(QLabel):
             if child.text() == display:
@@ -569,7 +522,9 @@ def inline_action_row(widget: QWidget, *, margins: tuple[int, int, int, int] | N
     return row
 
 
-def kv_row(key: str, value: str) -> QWidget:
+def kv_row(key: str, value: str, *, mono: bool = False) -> QWidget:
+    from voiceink.ui.design_tokens import FONT_MONO
+
     row = QWidget()
     lay = QHBoxLayout(row)
     lay.setContentsMargins(SPACE_MD, 11, SPACE_MD, 11)
@@ -580,7 +535,12 @@ def kv_row(key: str, value: str) -> QWidget:
     v = QLabel(value)
     v.setWordWrap(True)
     v.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    v.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
+    if mono:
+        v.setStyleSheet(
+            f"color: {TEXT}; font-size: 12px; font-family: {FONT_MONO};"
+        )
+    else:
+        v.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
     lay.addWidget(k)
     lay.addWidget(v, 1)
     return row
@@ -655,6 +615,7 @@ class ChoiceCard(QFrame):
         super().__init__(parent)
         self._radio = radio
         self._icon_kind = icon_kind
+        self._subtitle = subtitle
         self.setObjectName("ChoiceCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -689,6 +650,10 @@ class ChoiceCard(QFrame):
         self._sync_style(radio.isChecked())
 
     def _sync_style(self, checked: bool) -> None:
+        self.setProperty("accessibleChecked", checked)
+        self.setAccessibleDescription(
+            f"{self._subtitle}，{'已选中' if checked else '未选中'}".strip("，")
+        )
         self._icon.set_active(checked)
         if checked:
             self.setStyleSheet(f"""
@@ -740,6 +705,7 @@ class VerticalChoiceCard(QFrame):
     ):
         super().__init__(parent)
         self._radio = radio
+        self._subtitle = subtitle
         self.setObjectName("VerticalChoiceCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -774,12 +740,17 @@ class VerticalChoiceCard(QFrame):
         self._sync_style(radio.isChecked())
 
     def _sync_style(self, checked: bool) -> None:
+        self.setProperty("accessibleChecked", checked)
+        self.setAccessibleDescription(
+            f"{self._subtitle}，{'已选中' if checked else '未选中'}".strip("，")
+        )
         self._icon.set_active(checked)
         if checked:
             self.setStyleSheet(f"""
                 VerticalChoiceCard {{
-                    background: {ROW_SELECTED};
-                    border: 2px solid {ACCENT};
+                    background: {ACCENT_SOFT};
+                    border: 1px solid {HAIRLINE};
+                    border-left: 3px solid {ACCENT};
                     border-radius: {RADIUS_MD}px;
                 }}
             """)
@@ -835,7 +806,7 @@ class AudioSourcePicker(QWidget):
 
 
 class TriggerModePicker(QWidget):
-    """Mutually exclusive trigger mode cards — same pattern as audio source."""
+    """Mutually exclusive trigger mode cards — side-by-side Stitch layout."""
 
     def __init__(
         self,
@@ -844,37 +815,41 @@ class TriggerModePicker(QWidget):
         parent=None,
     ):
         super().__init__(parent)
-        lay = QVBoxLayout(self)
+        lay = QHBoxLayout(self)
         lay.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
-        lay.setSpacing(8)
+        lay.setSpacing(12)
 
         specs = [
             (
                 continuous_radio,
                 "自动持续转写",
-                "按住快捷键开始，浮窗 × 结束整场监听",
+                "按住约 0.30 秒开始，浮窗 × 结束整场监听",
                 "continuous",
             ),
             (
                 hotkey_radio,
                 "按住快捷键录音",
-                "松开快捷键后结束并识别",
+                "按住约 0.18 秒录音，松开后结束并识别",
                 "hotkey",
             ),
         ]
         for rb, title, sub, kind in specs:
-            lay.addWidget(VerticalChoiceCard(title, sub, kind, rb))
+            card = VerticalChoiceCard(title, sub, kind, rb)
+            card.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
+            lay.addWidget(card, 1)
 
 
 class _PlayCircle(QWidget):
-    """Blue circular play affordance for audio test row."""
+    """Neutral circular play affordance for audio test row."""
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         d = min(self.width(), self.height())
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(ACCENT))
+        p.setBrush(QColor(TEXT_SEC))
         p.drawEllipse(0, 0, d, d)
         tri = QPolygonF([
             QPointF(d * 0.38, d * 0.28),
@@ -890,7 +865,7 @@ class _WaveformBadge(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        c = QColor(ACCENT)
+        c = QColor(TEXT_DIM)
         c.setAlpha(120)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(c)
@@ -996,7 +971,7 @@ def collapsible_toggle_btn(text: str) -> QPushButton:
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setStyleSheet(f"""
         QPushButton {{
-            color: {ACCENT};
+            color: {TEXT_SEC};
             background: transparent;
             border: none;
             font-size: 13px;
@@ -1005,7 +980,7 @@ def collapsible_toggle_btn(text: str) -> QPushButton:
             padding: 6px 4px;
         }}
         QPushButton:hover {{
-            color: {ACCENT_FOCUS};
+            color: {TEXT};
         }}
     """)
 
@@ -1018,7 +993,7 @@ def collapsible_toggle_btn(text: str) -> QPushButton:
 
 
 class SettingsSidebar(QWidget):
-    """Huawei-style settings sidebar."""
+    """Stitch-style settings sidebar with brand, status card, and nav."""
 
     page_changed = pyqtSignal(int)
 
@@ -1028,42 +1003,53 @@ class SettingsSidebar(QWidget):
     def __init__(self, nav_icon_fn, version: str = "", parent=None):
         super().__init__(parent)
         self._nav_icon_fn = nav_icon_fn
-        self.setFixedWidth(176)
-        self.setStyleSheet(f"background: {NAV_BG};")
+        self.setFixedWidth(SIDEBAR_WIDTH)
+        self.setStyleSheet(
+            f"background: {NAV_BG}; border-right: 1px solid {HAIRLINE};"
+        )
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(SPACE_SM, SPACE_MD, SPACE_SM, SPACE_SM)
+        root.setContentsMargins(SPACE_MD, SPACE_LG, SPACE_MD, SPACE_MD)
         root.setSpacing(0)
 
         from voiceink.ui.tray_icon import create_microphone_icon
 
         brand = QHBoxLayout()
-        brand.setContentsMargins(SPACE_XS, 0, SPACE_XS, 0)
-        brand.setSpacing(SPACE_XS)
+        brand.setContentsMargins(4, 0, 4, 0)
+        brand.setSpacing(10)
 
         icon = QLabel()
-        icon.setFixedSize(28, 28)
-        icon.setPixmap(create_microphone_icon(recording=False, size=56).pixmap(28, 28))
+        icon.setFixedSize(32, 32)
+        icon.setPixmap(create_microphone_icon(recording=False, size=64).pixmap(32, 32))
         icon.setStyleSheet("background: transparent;")
         icon.setAccessibleName("VoiceInk 图标")
         brand.addWidget(icon)
         name = QLabel("VoiceInk")
         name.setStyleSheet(
-            f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 15px;"
-            f" font-weight: 600; letter-spacing: -0.2px; background: transparent;"
+            f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 18px;"
+            f" font-weight: 600; letter-spacing: 0; background: transparent;"
         )
         brand.addWidget(name, 1)
         root.addLayout(brand)
 
-        status_wrap = QWidget()
-        status_lay = QVBoxLayout(status_wrap)
-        status_lay.setContentsMargins(SPACE_XS, 6, SPACE_XS, 0)
-        status_lay.setSpacing(3)
+        root.addSpacing(SPACE_MD)
+
+        status_card = QFrame()
+        status_card.setObjectName("sidebarStatusCard")
+        status_card.setStyleSheet(f"""
+            QFrame#sidebarStatusCard {{
+                background: transparent;
+                border: none;
+            }}
+        """)
+        status_lay = QVBoxLayout(status_card)
+        status_lay.setContentsMargins(12, 10, 12, 10)
+        status_lay.setSpacing(4)
 
         self._status_primary = QLabel("")
         self._status_primary.setWordWrap(True)
         self._status_primary.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; line-height: 1.4;"
+            f"color: {TEXT}; font-size: 12px; font-weight: 500;"
             f" background: transparent;"
         )
         status_lay.addWidget(self._status_primary)
@@ -1071,32 +1057,45 @@ class SettingsSidebar(QWidget):
         self._status_secondary = QLabel("")
         self._status_secondary.setWordWrap(False)
         self._status_secondary.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; line-height: 1.4;"
-            f" background: transparent;"
+            f"color: {TEXT_SEC}; font-size: 12px; background: transparent;"
         )
         status_lay.addWidget(self._status_secondary)
 
-        self._status_wrap = status_wrap
+        self._status_wrap = status_card
         self._status_wrap.setVisible(False)
         root.addWidget(self._status_wrap)
 
         root.addSpacing(SPACE_MD)
 
         self._buttons: list[QPushButton] = []
+        nav_col = QVBoxLayout()
+        nav_col.setContentsMargins(0, 0, 0, 0)
+        nav_col.setSpacing(6)
         for shape, label in zip(self._SHAPES, self._LABELS):
-            btn = QPushButton(nav_icon_fn(shape), f"  {label}")
+            btn = QPushButton(label)
             btn.setObjectName("settingsNavBtn")
             btn.setCheckable(True)
+            btn.setIcon(nav_icon_fn(shape))
             btn.setIconSize(QSize(16, 16))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(36)
+            btn.setFixedHeight(42)
             btn.setToolTip(label)
             btn.setAccessibleName(f"设置：{label}")
             btn.clicked.connect(lambda checked, i=len(self._buttons): self._select(i))
             self._buttons.append(btn)
-            root.addWidget(btn)
+            nav_col.addWidget(btn)
+        root.addLayout(nav_col)
 
         root.addStretch(1)
+
+        footer = QHBoxLayout()
+        footer.setContentsMargins(4, SPACE_SM, 4, 0)
+        self._footer_status = QLabel(version)
+        self._footer_status.setStyleSheet(
+            f"color: {TEXT_SEC}; font-size: 12px; font-weight: 500; background: transparent;"
+        )
+        footer.addWidget(self._footer_status, 1)
+        root.addLayout(footer)
 
         self.set_active(0)
 
@@ -1117,6 +1116,9 @@ class SettingsSidebar(QWidget):
         self._status_secondary.setText(secondary)
         self._status_secondary.setVisible(bool(secondary))
         self._status_wrap.setVisible(bool(primary or secondary))
+
+    def set_footer_status(self, text: str) -> None:
+        self.set_status_line((text or "就绪").strip(), self._status_secondary.text())
 
 
 def _option_text_column(title: str, subtitle: str) -> QWidget:
@@ -1163,7 +1165,7 @@ class RadioOptionRow(QWidget):
         super().keyPressEvent(event)
 
 
-class SwitchControl(QWidget):
+class SwitchControl(QCheckBox):
     """iOS/Huawei-style pill switch (reference general-settings toggles)."""
 
     toggled = pyqtSignal(bool)
@@ -1181,9 +1183,14 @@ class SwitchControl(QWidget):
         self._anim: QPropertyAnimation | None = None
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setProperty("accessibleRole", "CheckBox")
+        self.setProperty("accessibleChecked", False)
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("SwitchControl { background: transparent; border: none; }")
+        self.setStyleSheet(
+            "SwitchControl { background: transparent; border: none; }"
+            "SwitchControl::indicator { width: 0; height: 0; border: none; }"
+        )
         self.setFixedSize(self._TRACK_W, self._TRACK_H)
 
     def _track_color(self) -> QColor:
@@ -1211,6 +1218,8 @@ class SwitchControl(QWidget):
         ):
             return
         self._checked = checked
+        super().setChecked(checked)
+        self.setProperty("accessibleChecked", checked)
         target = 1.0 if checked else 0.0
         if animate and self.isVisible():
             if self._anim is not None:
@@ -1249,6 +1258,8 @@ class SwitchControl(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self.setChecked(not self._checked)
             self.setFocus()
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
@@ -1264,6 +1275,12 @@ class SwitchControl(QWidget):
 
         w, h = self._TRACK_W, self._TRACK_H
         radius = h / 2.0
+        if self.hasFocus():
+            focus_pen = QPen(QColor(ACCENT_FOCUS), 2)
+            focus_pen.setCosmetic(True)
+            p.setPen(focus_pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(1, 1, w - 2, h - 2), radius - 1, radius - 1)
         on = self._checked or self._knob_pos > 0.5
 
         # Same outer track geometry in both states — avoid 1px pen shrinking OFF state.
@@ -1304,7 +1321,11 @@ class SwitchControl(QWidget):
 
 
 class ToggleOptionRow(QWidget):
-    """Full-width toggle row with explicit title/subtitle."""
+    """Full-width toggle row with explicit title/subtitle.
+
+    Must be a QWidget (not QCheckBox): QAbstractButton sizeHint ignores child
+    layouts and uses Fixed vertical policy, which collapses the row to 0 height.
+    """
 
     def __init__(self, title: str, subtitle: str = "", parent=None):
         super().__init__(parent)
@@ -1318,6 +1339,12 @@ class ToggleOptionRow(QWidget):
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.setProperty("accessibleRole", "CheckBox")
+        self.setProperty("accessibleChecked", False)
+        self._switch.toggled.connect(
+            lambda checked: self.setProperty("accessibleChecked", checked)
+        )
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAccessibleName(title)
@@ -1329,7 +1356,7 @@ class ToggleOptionRow(QWidget):
         _set_click_through(text_col)
 
         switch_slot = QWidget()
-        switch_slot.setFixedSize(self._switch.width(), self._switch.height())
+        switch_slot.setFixedSize(SwitchControl._TRACK_W, SwitchControl._TRACK_H)
         switch_slot.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
@@ -1354,9 +1381,8 @@ class ToggleOptionRow(QWidget):
                 background: {hover_bg};
                 border-radius: {RADIUS_SM}px;
             }}
-            ToggleOptionRow SwitchControl {{
-                background: transparent;
-                border: none;
+            ToggleOptionRow:focus {{
+                border: 2px solid {ACCENT_FOCUS};
             }}
         """)
 
@@ -1381,6 +1407,7 @@ class ToggleOptionRow(QWidget):
 
     def setChecked(self, checked: bool) -> None:
         self._switch.setChecked(checked, animate=False)
+        self.setProperty("accessibleChecked", bool(checked))
 
     def blockSignals(self, block: bool) -> bool:
         return self._switch.blockSignals(block)

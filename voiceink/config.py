@@ -50,7 +50,7 @@ TRIGGER_MODE_HOTKEY = "hotkey"
 TRIGGER_MODE_CONTINUOUS = "continuous"
 
 DEFAULT_CONFIG = {
-    "hotkey": "alt+space",
+    "hotkey": "ctrl+space",
     "first_run_welcome_seen": True,
     "auto_start": False,
     "sound_enabled": True,

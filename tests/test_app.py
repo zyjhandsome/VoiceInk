@@ -149,15 +149,24 @@ class TestHandlePasteResult:
 
 
 class TestHotkeyTapTooShortHint:
-    def test_hint_uses_derived_hold_duration(self):
-        # SD-07 regression: user-facing hint must match MIN_HOLD_MS (0.12s).
-        with app_harness() as h:
+    def test_hint_uses_continuous_hold_duration_in_continuous_mode(self):
+        # Continuous mode uses the longer anti-accidental threshold; no idle float.
+        with app_harness({"audio.trigger_mode": "continuous"}) as h:
             app = h["app"]
             h["recorder"].is_continuous = False
             app._on_hotkey_tap_too_short()
             assert h["tray"].showMessage.called
             hint = h["tray"].showMessage.call_args[0][1]
-            assert "0.12" in hint
+            assert "0.30" in hint
+            h["floating"].show_continuous_idle.assert_not_called()
+
+    def test_hint_uses_hotkey_hold_duration_in_hotkey_mode(self):
+        with app_harness({"audio.trigger_mode": "hotkey"}) as h:
+            app = h["app"]
+            app._on_hotkey_tap_too_short()
+            assert h["tray"].showMessage.called
+            hint = h["tray"].showMessage.call_args[0][1]
+            assert "0.18" in hint
 
 
 class TestSettingsChangedQueue:

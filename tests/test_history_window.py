@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from voiceink.history_store import SegmentRecord, SessionSummary
 from voiceink.app import App
@@ -84,10 +85,12 @@ def test_renders_sessions_as_reverse_order_group_rows(qapp):
     second = window._session_list.item(1)
 
     assert first.data(Qt.ItemDataRole.UserRole) == "newer"
-    assert "mixed" in first.text()
-    assert "Code.exe" in first.text()
     assert "newer preview" in first.text()
     assert "2 段" in first.text()
+    assert "mixed" not in first.text()
+    assert "Code.exe" not in first.text()
+    assert "mixed" in first.toolTip()
+    assert "Code.exe" in first.toolTip()
     assert second.data(Qt.ItemDataRole.UserRole) == "older"
 
 
@@ -97,8 +100,10 @@ def test_double_click_expands_session_segments(qapp):
 
     window._expand_session(window._session_list.item(0))
 
-    assert "polished first" in window._details.toPlainText()
-    assert "raw second" in window._details.toPlainText()
+    detail = window._details.toPlainText()
+    assert "polished first" in detail
+    assert "raw second" in detail
+    assert "来源：" in detail or "触发：" in detail or "模型：" in detail
 
 
 def test_search_debounces_into_like_search(qapp):
@@ -106,9 +111,7 @@ def test_search_debounces_into_like_search(qapp):
     window = HistoryWindow(store)
 
     window._search_edit.setText("older")
-    window._search_timer.setInterval(1)
-    window._search_timer.start()
-    qapp.processEvents()
+    window._search_timer.stop()
     window._perform_search()
 
     assert store.search_terms == ["older"]
@@ -116,15 +119,116 @@ def test_search_debounces_into_like_search(qapp):
     assert window._session_list.item(0).data(Qt.ItemDataRole.UserRole) == "older"
 
 
-def test_delete_selected_sessions_uses_history_store_enqueue(qapp):
+def test_delete_selected_sessions_commits_after_undo_timeout(qapp, monkeypatch):
     store = FakeHistoryStore()
     window = HistoryWindow(store)
     window._session_list.item(0).setSelected(True)
     window._session_list.item(1).setSelected(True)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    window._delete_selected_sessions()
+    assert store.deleted_sessions == []
+    assert window._session_list.count() == 0
+
+    window._commit_pending_delete()
+    assert store.deleted_sessions == [["newer", "older"]]
+
+
+def test_delete_selected_sessions_cancel_keeps_sessions(qapp, monkeypatch):
+    store = FakeHistoryStore()
+    window = HistoryWindow(store)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.No,
+    )
 
     window._delete_selected_sessions()
 
-    assert store.deleted_sessions == [["newer", "older"]]
+    assert store.deleted_sessions == []
+    assert window._session_list.count() == 2
+
+
+def test_undo_pending_delete_restores_sessions_without_store_delete(qapp, monkeypatch):
+    store = FakeHistoryStore()
+    window = HistoryWindow(store)
+    window._session_list.item(0).setSelected(True)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    window._delete_selected_sessions()
+    window._undo_pending_delete()
+
+    assert store.deleted_sessions == []
+    assert window._session_list.count() == 2
+
+
+def test_selection_summary_disables_copy_for_multiple_items(qapp):
+    store = FakeHistoryStore()
+    window = HistoryWindow(store)
+    window._session_list.item(0).setSelected(True)
+    window._session_list.item(1).setSelected(True)
+    window._on_selection_changed()
+
+    assert "已选 2 项" in window._details.toPlainText()
+    assert "已选 2 项" in window._detail_title.text()
+    assert not window._copy_raw_btn.isEnabled()
+    assert not window._copy_polished_btn.isEnabled()
+    assert window._export_btn.isEnabled()
+    assert window._delete_btn.isEnabled()
+
+
+def test_empty_history_shows_helpful_placeholder_and_disables_actions(qapp):
+    store = FakeHistoryStore()
+    store.sessions = []
+    window = HistoryWindow(store)
+
+    assert "暂无历史" in window._details.toPlainText()
+    assert not window._copy_raw_btn.isEnabled()
+    assert not window._copy_polished_btn.isEnabled()
+    assert not window._export_btn.isEnabled()
+    assert not window._delete_btn.isEnabled()
+
+
+def test_copy_feedback_is_shown_for_single_selection(qapp):
+    store = FakeHistoryStore()
+    window = HistoryWindow(store)
+
+    window._copy_selected_raw()
+
+    assert "已复制" in window._feedback_label.text()
+
+
+def test_export_failure_shows_error_message(qapp, monkeypatch, tmp_path):
+    store = FakeHistoryStore()
+    window = HistoryWindow(store)
+    errors = []
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *args, **kwargs: (str(tmp_path / "history.md"), "Markdown (*.md)"),
+    )
+    monkeypatch.setattr(
+        Path,
+        "write_text",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "critical",
+        lambda *args, **kwargs: errors.append(args[2]),
+    )
+
+    window._export_selected()
+
+    assert errors and "disk full" in errors[0]
 
 
 def test_clear_all_history_uses_store_enqueue_after_confirmation(qapp, monkeypatch):

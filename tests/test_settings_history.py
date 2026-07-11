@@ -72,6 +72,19 @@ class TestHistoryOnboarding:
                 h["app"]._show_history_onboarding_once
             )
 
+    def test_start_defers_history_until_after_welcome_when_first_run(self):
+        with app_harness(
+            config_overrides={
+                "history.onboarded": False,
+                "first_run_welcome_seen": False,
+            }
+        ) as h:
+            h["recognizer"].ready.connect.reset_mock()
+            h["app"].start()
+            connected = [c.args[0] for c in h["recognizer"].ready.connect.call_args_list]
+            assert h["app"]._show_history_onboarding_once not in connected
+            assert h["app"]._show_first_run_welcome_once in connected
+
     def test_start_skips_history_onboarding_when_already_onboarded(self):
         with app_harness(config_overrides={"history.onboarded": True}) as h:
             h["recognizer"].ready.connect.reset_mock()

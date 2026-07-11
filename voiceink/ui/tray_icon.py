@@ -10,53 +10,60 @@ from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF, QPointF
 from voiceink.ui.design_tokens import (
     ACCENT,
     ACCENT_FOCUS,
-    ACCENT_SOFT,
     FONT,
-    HAIRLINE,
-    RADIUS_MD,
     SURFACE,
     TEXT,
-    TEXT_DIM,
+    TRAY_MENU_BORDER,
+    TRAY_MENU_DISABLED,
+    TRAY_MENU_HOVER,
+    TRAY_MENU_PAD_H,
+    TRAY_MENU_PAD_V,
+    TRAY_MENU_RADIUS,
+    TRAY_MENU_SEPARATOR,
 )
 
 
 def _menu_stylesheet() -> str:
+    # Right padding leaves room for submenu chevron / check indicator.
+    pad_right = TRAY_MENU_PAD_H + 22
     return f"""
     QMenu {{
         background-color: {SURFACE};
         color: {TEXT};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
-        padding: 8px 0px;
+        border: 1px solid {TRAY_MENU_BORDER};
+        border-radius: {TRAY_MENU_RADIUS}px;
+        padding: 4px 0px;
         font-family: {FONT};
-        font-size: 14px;
+        font-size: 13px;
     }}
     QMenu::item {{
-        padding: 10px 40px 10px 18px;
-        margin: 0px 8px;
-        border-radius: 8px;
+        padding: {TRAY_MENU_PAD_V}px {pad_right}px {TRAY_MENU_PAD_V}px {TRAY_MENU_PAD_H}px;
+        margin: 0px;
+        border-radius: 0px;
+        background: transparent;
     }}
     QMenu::item:selected {{
-        background-color: {ACCENT_SOFT};
-        color: {ACCENT};
+        background-color: {TRAY_MENU_HOVER};
+        color: {TEXT};
     }}
     QMenu::item:disabled {{
-        color: {TEXT_DIM};
+        color: {TRAY_MENU_DISABLED};
+        background: transparent;
     }}
     QMenu::separator {{
         height: 1px;
-        background: {HAIRLINE};
-        margin: 8px 16px;
+        background: {TRAY_MENU_SEPARATOR};
+        margin: 2px 0px;
     }}
     QMenu::indicator {{
         width: 14px;
         height: 14px;
-        margin-left: 8px;
+        margin-left: 4px;
     }}
-    QMenu::indicator:checked {{
-        image: none;
-        background: {ACCENT};
-        border-radius: 7px;
+    QMenu::right-arrow {{
+        width: 10px;
+        height: 10px;
+        margin-right: 10px;
     }}
     """
 
@@ -155,10 +162,14 @@ class TrayIcon(QSystemTrayIcon):
 
         self._normal_icon = create_microphone_icon(recording=False)
         self._recording_icon = create_microphone_icon(recording=True)
+        self._attention_icon = create_microphone_icon(color="#F5A623", recording=False)
 
         self.setIcon(self._normal_icon)
         self._idle_tooltip = "VoiceInk - 就绪"
+        self._status_summary = "就绪"
         self.setToolTip(self._idle_tooltip)
+        self._flash_timer = None
+        self._flash_restore_recording = False
 
         self._model_menu = None
         self._model_group = None
@@ -169,6 +180,10 @@ class TrayIcon(QSystemTrayIcon):
         menu_css = _menu_stylesheet()
         menu = QMenu()
         menu.setStyleSheet(menu_css)
+
+        self._status_action = menu.addAction(self._status_summary)
+        self._status_action.setEnabled(False)
+        menu.addSeparator()
 
         settings_action = menu.addAction("打开设置")
         settings_action.triggered.connect(self.open_settings.emit)
@@ -238,6 +253,33 @@ class TrayIcon(QSystemTrayIcon):
 
     def set_recording(self, is_recording: bool):
         self.setIcon(self._recording_icon if is_recording else self._normal_icon)
+
+    def flash_attention(self, duration_ms: int = 450) -> None:
+        """Brief tray icon flash for soft feedback (e.g. short-tap during cooldown)."""
+        from PyQt6.QtCore import QTimer
+
+        if self._flash_timer is not None:
+            self._flash_timer.stop()
+            self._flash_timer.deleteLater()
+        self._flash_restore_recording = self.icon().cacheKey() == self._recording_icon.cacheKey()
+        self.setIcon(self._attention_icon)
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+
+        def _restore():
+            self.setIcon(
+                self._recording_icon if self._flash_restore_recording else self._normal_icon
+            )
+            self._flash_timer = None
+
+        self._flash_timer.timeout.connect(_restore)
+        self._flash_timer.start(max(120, int(duration_ms)))
+
+    def set_status_summary(self, text: str) -> None:
+        self._status_summary = (text or "就绪").strip()
+        self._status_action.setText(self._status_summary)
+        self._idle_tooltip = f"VoiceInk - {self._status_summary}"
+        self.setToolTip(self._idle_tooltip)
 
     def set_activity_tooltip(self, state: str | None):
         """Brief tray hint for background work. None = idle."""

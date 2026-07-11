@@ -22,7 +22,7 @@ startup → config load (+ local history.db) → ASR model async load → global
 |------|------|------|
 | 协调器 | `voiceink/app.py` | 信号路由、状态机、录音→识别→润色→输出流程、友好错误映射（`App.ERROR_HINTS`） |
 | 配置 | `voiceink/config.py` | `~/.voiceink/config.json`；默认值合并、经 `QTimer` 防抖保存、开机自启注册表同步、一次性 STT 默认模型迁移 |
-| 热键 | `voiceink/hotkey_manager.py` | pynput 全局监听；120 ms 最短按住防误触；持续模式 vs 按住说话语义；Esc 处理 |
+| 热键 | `voiceink/hotkey_manager.py` | pynput 全局监听；按住说话 180 ms / 持续转写 300 ms 最短按住防误触；持续模式 vs 按住说话语义；Esc 处理 |
 | 录音 | `voiceink/audio_recorder.py` | 多路采集、混音、16 kHz 重采样、持续模式 VAD 分段、停止时 flush |
 | 设备 | `voiceink/audio_devices.py` | 设备枚举、自动选择启发式、录音计划构建 |
 | VAD | `voiceink/vad_segmenter.py` | 基于 RMS 的语音分段，含 `flush()` 处理收尾句 |
@@ -53,14 +53,14 @@ startup → config load (+ local history.db) → ASR model async load → global
 模式由配置中 `audio.trigger_mode` 决定（`continuous` 为默认；常量见 `voiceink/config.py`）。
 
 **持续模式（默认）：**
-1. 按住热键（Alt+Space，≥120 ms）→ `continuous_listen_start` → `App._start_continuous_listening` 打开采集，仅在通道真正打开后才显示「监听中」。
+1. 按住热键（默认 Ctrl+Space，≥300 ms）→ `continuous_listen_start` → `App._start_continuous_listening`（音效后约 50 ms）打开采集，仅在通道真正打开后才显示「监听中」。短按不弹「待开始」浮窗（托盘可限频提示；冷却期内托盘图标闪烁）。
 2. `AudioRecorder` 将音频块送入 `SpeechSegmenter`；每次停顿 ≥0.85 s 发出 `segment_ready`；分段在 `App._segment_queue` 中排队并串行识别。
 3. Esc 或浮窗 × 结束会话；`AudioRecorder._flush_continuous_segments` + `SpeechSegmenter.flush()` 确保最后未完成的句子仍被识别。
 4. **松开热键不会**结束会话。
 5. 30 s 无语音触发 `no_speech_warning`（`AudioRecorder.NO_SPEECH_WARN_SEC`）。
 
 **按住说话（`hotkey` 模式）：**
-按住 → 录音；松开 → `recording_stop` → 完整缓冲送 ASR；录音中 Esc 取消。低于 0.1 s（`MIN_AUDIO_SAMPLES`）的录音被忽略；短于按住阈值的点击发出 `hotkey_tap_too_short`，也会驱动 Ctrl+Space 输入法冲突警告（由 `SHORT_TAP_TRAY_COOLDOWN_S` 限频）。
+按住（≥180 ms）→ 录音；松开 → `recording_stop` → 完整缓冲送 ASR；录音中 Esc 取消。低于 0.1 s（`MIN_AUDIO_SAMPLES`）的录音被忽略；短于按住阈值的点击发出 `hotkey_tap_too_short`，也会驱动 Ctrl+Space 输入法冲突警告（由 `SHORT_TAP_TRAY_COOLDOWN_S` 限频）。
 
 ## 输出与粘贴校验
 
