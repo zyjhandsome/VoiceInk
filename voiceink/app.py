@@ -14,7 +14,11 @@ from voiceink.config import (
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
 )
-from voiceink.hotkey_manager import HotKeyManager, MIN_HOLD_MS
+from voiceink.hotkey_manager import (
+    HotKeyManager,
+    MIN_HOLD_MS,
+    MIN_HOLD_CONTINUOUS_MS,
+)
 from voiceink.audio_devices import (
     INPUT_SOURCE_MICROPHONE,
     INPUT_SOURCE_SYSTEM,
@@ -105,7 +109,7 @@ class App(QObject):
 
     def _init_modules(self):
         self._hotkey_mgr = HotKeyManager(
-            self._config.get("hotkey", "alt+space")
+            self._config.get("hotkey", "ctrl+space")
         )
         self._recorder = AudioRecorder()
         self._apply_audio_config()
@@ -136,13 +140,11 @@ class App(QObject):
         return self._is_continuous_mode() and self._recorder.is_continuous
 
     def _continuous_hotkey_label(self) -> str:
-        return format_hotkey(self._config.get("hotkey", "alt+space"))
+        return format_hotkey(self._config.get("hotkey", "ctrl+space"))
 
     def _refresh_continuous_ui_after_output(self) -> None:
         if self._continuous_session_active():
             self._floating.show_listening()
-        elif self._is_continuous_mode() and self._recognizer.is_ready:
-            self._floating.show_continuous_idle(self._continuous_hotkey_label())
         else:
             self._floating.dismiss_if_idle()
 
@@ -242,7 +244,10 @@ class App(QObject):
             info = get_model_info(model_id) if model_id else None
             name = info["name"] if info else (model_id or DEFAULT_MODEL_ID)
             log.warning("语音模型 %s 未下载，请在设置中下载模型", name)
-            hint = f"请下载语音模型「{name}」：右键托盘 → 设置 → 模型"
+            hint = (
+                f"请下载语音模型「{name}」。"
+                "Windows 可双击托盘打开设置 → 模型；或右键托盘 → 设置 → 模型。"
+            )
             self._floating.show_error(hint)
             self._tray.showMessage(
                 "VoiceInk",
@@ -262,8 +267,15 @@ class App(QObject):
         if self._recognizer.is_loading:
             self._floating.show_model_loading("正在加载语音模型，请稍候...")
             self._tray.set_activity_tooltip("loading")
-        else:
-            self._floating.show_error(self._friendly_error("模型未就绪"))
+            return
+        hint = self._friendly_error("模型未就绪")
+        self._floating.show_error(hint)
+        self._tray.showMessage(
+            "VoiceInk",
+            f"{hint} Windows 可双击托盘打开设置 → 模型。",
+            QSystemTrayIcon.MessageIcon.Warning,
+            6000,
+        )
 
     def _pending_segment_count(self) -> int:
         return len(self._segment_queue) + (1 if self._is_transcribing else 0)
@@ -395,10 +407,15 @@ class App(QObject):
             return
 
         hotkey = self._continuous_hotkey_label()
-        hint = f"请按住 {hotkey} 约 {MIN_HOLD_MS / 1000:.2f} 秒以上"
+        hold_ms = (
+            MIN_HOLD_CONTINUOUS_MS
+            if self._is_continuous_mode()
+            else MIN_HOLD_MS
+        )
+        hint = f"请按住 {hotkey} 约 {hold_ms / 1000:.2f} 秒以上"
         hotkey_raw = self._config.get("hotkey", "").lower()
         if "ctrl+space" in hotkey_raw.replace(" ", ""):
-            hint += "。Ctrl+Space 常被输入法占用，请在设置中改为 Alt+Space"
+            hint += "。若与输入法冲突，可在设置中改为 Alt+Space"
         log.info("快捷键按过短: %s", hint)
 
         now = time.monotonic()
@@ -409,10 +426,11 @@ class App(QObject):
             self._tray.showMessage(
                 "VoiceInk", hint, QSystemTrayIcon.MessageIcon.Information, 4000
             )
+        else:
+            # During cooldown, still give a light tray cue so short taps don't feel dead.
+            self._tray.flash_attention()
 
-        if self._is_continuous_mode() and self._recognizer.is_ready:
-            self._floating.show_continuous_idle(hotkey)
-        elif not self._is_continuous_mode():
+        if not self._is_continuous_mode():
             self._floating.show_error("录音过短\n" + hint.split("。")[0])
 
     def _stop_continuous_user_session(self):
@@ -483,7 +501,7 @@ class App(QObject):
                     5000,
                 )
 
-        QTimer.singleShot(300, _begin)
+        QTimer.singleShot(50, _begin)
 
     def _stop_continuous_listening(self):
         if self._recorder.is_continuous or self._recorder.is_recording:
@@ -627,7 +645,9 @@ class App(QObject):
             self._pump_segment_queue()
         hotkey = self._continuous_hotkey_label()
         if self._is_continuous_mode():
-            self._floating.show_continuous_idle(hotkey)
+            # Loading HUD stays visible until replaced/dismissed; continuous mode
+            # no longer shows idle float, so dismiss explicitly after ready.
+            self._floating.dismiss_if_idle()
             tray_msg = (
                 f"持续转写已就绪。按住 {hotkey} 开始监听，说完停顿后自动出字；"
                 "按 Esc 或点击浮窗右上角 × 停止。"
@@ -787,15 +807,35 @@ class App(QObject):
 
     # ── Settings ──────────────────────────────────────
 
+    def _runtime_status_label(self) -> str:
+        if self._recognizer.is_loading:
+            return "模型加载中…"
+        if self._recognizer.is_ready:
+            return "就绪"
+        return "模型未就绪"
+
+    def _active_model_display_name(self) -> str:
+        from voiceink.speech_recognizer import MODEL_REGISTRY
+
+        active_id = self._config.get("stt.model_id", "")
+        for model in MODEL_REGISTRY:
+            if model["id"] == active_id:
+                return model["name"]
+        return active_id or "未选择模型"
+
+    def _sync_tray_status_summary(self) -> None:
+        status = self._runtime_status_label()
+        if status == "就绪":
+            summary = f"{status} · {self._active_model_display_name()}"
+        else:
+            summary = status
+        self._tray.set_status_summary(summary)
+
     def _sync_settings_runtime_status(self) -> None:
+        status = self._runtime_status_label()
+        self._sync_tray_status_summary()
         if self._settings_win is None:
             return
-        if self._recognizer.is_loading:
-            status = "模型加载中…"
-        elif self._recognizer.is_ready:
-            status = "就绪"
-        else:
-            status = "模型未就绪"
         self._settings_win.set_runtime_status(status)
 
     def _show_settings(self):
@@ -842,8 +882,6 @@ class App(QObject):
 
     def _on_hotkey_updated(self, new_hotkey: str):
         self._hotkey_mgr.update_hotkey(new_hotkey)
-        if self._is_continuous_mode() and not self._recorder.is_continuous:
-            self._floating.show_continuous_idle(format_hotkey(new_hotkey))
 
     def _on_models_changed(self):
         """Reload STT after model download/select without requiring a full settings save."""
@@ -851,8 +889,6 @@ class App(QObject):
             self._stop_continuous_listening()
         self._configure_stt()
         self._update_tray_models()
-        if self._recognizer.is_ready and self._is_continuous_mode() and not self._recorder.is_continuous:
-            self._floating.show_continuous_idle(self._continuous_hotkey_label())
 
     def _on_settings_changed(self):
         was_continuous = self._recorder.is_continuous
@@ -874,9 +910,6 @@ class App(QObject):
         )
         self._sync_hotkey_trigger_mode()
 
-        if self._is_continuous_mode() and self._recognizer.is_ready and not self._recorder.is_continuous:
-            self._floating.show_continuous_idle(self._continuous_hotkey_label())
-
     def _on_tray_model_switch(self, model_id: str):
         current = self._config.get("stt.model_id", "")
         if model_id == current:
@@ -892,6 +925,7 @@ class App(QObject):
         downloaded = [m for m in MODEL_REGISTRY if is_model_downloaded(m["id"])]
         active = self._config.get("stt.model_id", "")
         self._tray.update_models(downloaded, active)
+        self._sync_tray_status_summary()
 
     def _on_auto_start_toggled(self, enabled: bool):
         self._config.set("auto_start", enabled)
@@ -951,8 +985,8 @@ class App(QObject):
             # 等模型加载完成后再弹欢迎框，避免挡住「模型加载中」状态
             self._recognizer.ready.connect(self._show_first_run_welcome_once)
             QTimer.singleShot(15000, self._show_first_run_welcome_once)
-        if not self._config.get("history.onboarded", False):
-            # 历史记录询问也等模型就绪后再弹，避免挡住加载状态。
+        elif not self._config.get("history.onboarded", False):
+            # 无欢迎框时，历史询问仍等模型就绪后再弹。
             self._recognizer.ready.connect(self._show_history_onboarding_once)
 
     def _show_first_run_welcome_once(self):
@@ -972,7 +1006,7 @@ class App(QObject):
                 "按 Esc 或点击浮窗右上角 × 停止。"
             )
         else:
-            hk = format_hotkey(self._config.get("hotkey", "alt+space"))
+            hk = format_hotkey(self._config.get("hotkey", "ctrl+space"))
             mode_tip = f"当前为「按住快捷键」：按住 {hk} 说话，松开后识别并粘贴。"
         text = (
             "VoiceInk 在本地完成语音识别（可选通过网络调用大模型润色）。\n\n"
@@ -981,12 +1015,16 @@ class App(QObject):
             "· 仅麦克风：你的说话\n"
             "· 仅电脑播放：视频/会议远端声音\n"
             "· 混合：开会时远端 + 自己都要\n\n"
-            "请先在设置 → 模型 中下载至少一个语音模型。\n\n"
-            "提示：中文 Windows 上请勿使用 Ctrl+Space（常被输入法占用），"
-            "推荐使用 Alt+Space。"
+            "请先在设置 → 模型 中下载至少一个语音模型"
+            "（若安装包已附带模型，启动后会自动载入）。\n\n"
+            "默认快捷键为 Ctrl+Space；若与输入法冲突，可在设置中改为 Alt+Space。\n"
+            "Windows：双击托盘图标可打开设置。"
         )
         QMessageBox.information(None, "欢迎使用 VoiceInk", text)
         self._config.set("first_run_welcome_seen", True)
+        # Sequence: history onboarding only after welcome is dismissed.
+        if not self._config.get("history.onboarded", False):
+            QTimer.singleShot(200, self._show_history_onboarding)
 
     def _show_history_onboarding_once(self):
         if self._config.get("history.onboarded", False):

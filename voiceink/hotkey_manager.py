@@ -8,7 +8,8 @@ from pynput import keyboard
 log = logging.getLogger("VoiceInk")
 
 # 短按防误触（毫秒）；计时器必须在 Qt 主线程启动，否则 Windows 上可能永不触发
-MIN_HOLD_MS = 120
+MIN_HOLD_MS = 180  # 按住说话
+MIN_HOLD_CONTINUOUS_MS = 300  # 持续转写：误触代价更高，门槛更长
 # 松开早于该时长视为输入法/系统误触（如 Ctrl+Space 切换输入法），不提示用户
 MIN_SHORT_TAP_MS = 50
 
@@ -67,7 +68,7 @@ class HotKeyManager(QObject):
     # 从 pynput 线程投递到 Qt 主线程，再启动 QTimer
     _arm_hold_on_main = pyqtSignal()
 
-    def __init__(self, hotkey_str: str = "alt+space", parent=None):
+    def __init__(self, hotkey_str: str = "ctrl+space", parent=None):
         super().__init__(parent)
         self._hotkey_keys = parse_hotkey(hotkey_str)
         self._hotkey_str = hotkey_str
@@ -150,6 +151,12 @@ class HotKeyManager(QObject):
             self._continuous_trigger_mode = enabled
             self._pressed_keys.clear()
             self._is_recording = False
+
+    @property
+    def hold_threshold_ms(self) -> int:
+        if self._continuous_trigger_mode:
+            return MIN_HOLD_CONTINUOUS_MS
+        return MIN_HOLD_MS
 
     def _cancel_hold_pending(self):
         self._hold_timer.stop()
@@ -273,7 +280,7 @@ class HotKeyManager(QObject):
     def _start_hold_timer_on_main_thread(self):
         """QTimer 只能在 Qt 主线程 start/stop。"""
         if self._hold_pending:
-            self._hold_timer.start(MIN_HOLD_MS)
+            self._hold_timer.start(self.hold_threshold_ms)
         else:
             self._hold_timer.stop()
 

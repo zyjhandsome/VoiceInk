@@ -5,13 +5,49 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 from pynput import keyboard
 
-from voiceink.hotkey_manager import HotKeyManager, MIN_HOLD_MS
+from voiceink.hotkey_manager import (
+    HotKeyManager,
+    MIN_HOLD_MS,
+    MIN_HOLD_CONTINUOUS_MS,
+)
 
 
-def _arm_and_wait(app, mgr, on_start):
+def _arm_and_wait(app, mgr, on_start, hold_ms=None):
     mgr.recording_start.connect(on_start)
-    QTimer.singleShot(MIN_HOLD_MS + 250, app.quit)
+    QTimer.singleShot((hold_ms or MIN_HOLD_MS) + 250, app.quit)
     app.exec()
+
+
+def test_hold_thresholds_are_mode_aware():
+    """Hold-to-talk is shorter; continuous needs a longer anti-accidental hold."""
+    assert MIN_HOLD_MS == 180
+    assert MIN_HOLD_CONTINUOUS_MS == 300
+    assert MIN_HOLD_CONTINUOUS_MS > MIN_HOLD_MS
+
+
+def test_hold_timer_uses_hotkey_threshold_by_default():
+    app = QApplication.instance() or QApplication(sys.argv)
+    mgr = HotKeyManager("ctrl+space", parent=app)
+    assert mgr.hold_threshold_ms == MIN_HOLD_MS
+
+    mgr._on_press(keyboard.Key.ctrl_l)
+    mgr._on_press(keyboard.Key.space)
+    mgr._start_hold_timer_on_main_thread()
+    assert mgr._hold_timer.interval() == MIN_HOLD_MS
+    mgr._hold_timer.stop()
+
+
+def test_hold_timer_uses_continuous_threshold_in_continuous_mode():
+    app = QApplication.instance() or QApplication(sys.argv)
+    mgr = HotKeyManager("ctrl+space", parent=app)
+    mgr.set_continuous_trigger_mode(True)
+    assert mgr.hold_threshold_ms == MIN_HOLD_CONTINUOUS_MS
+
+    mgr._on_press(keyboard.Key.ctrl_l)
+    mgr._on_press(keyboard.Key.space)
+    mgr._start_hold_timer_on_main_thread()
+    assert mgr._hold_timer.interval() == MIN_HOLD_CONTINUOUS_MS
+    mgr._hold_timer.stop()
 
 
 def test_hold_timer_fires_on_main_thread():

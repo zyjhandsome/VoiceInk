@@ -42,6 +42,7 @@ desktop.ini
 
 # Cursor / Agent artifacts
 .cursor/
+.superpowers/
 agent-transcripts/
 agent-tools/
 mcps/

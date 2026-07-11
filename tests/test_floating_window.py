@@ -110,11 +110,43 @@ class TestModelLoadingGuard:
         assert win._model_loading_active is False
         win.show_error("识别失败")
         assert win._status_label.text() == "识别失败"
+        assert win.toolTip() == "识别失败"
+        assert win._hide_timer.isActive()
+
+    def test_dismiss_hides_model_loading_hud(self, win):
+        win.show_model_loading("正在加载 FireRedASR2...")
+        assert win.isVisible()
+        win.dismiss_if_idle()
+        assert not win.isVisible()
+        assert win._model_loading_active is False
+
+    def test_error_message_can_expand_window_height(self, win):
+        win.show_error("识别失败：" + "请检查网络或模型配置。" * 12)
+
+        assert win.height() > 124
+        assert win._text_label.wordWrap()
 
     def test_success_clears_loading_flag(self, win):
         win.show_model_loading()
         win.show_success("已就绪")
         assert win._model_loading_active is False
+
+
+class TestFloatingWindowClassicColors:
+    def test_recording_uses_record_accent_others_neutral(self, win):
+        from voiceink.ui.design_tokens import FLOAT_TEXT, STATE_RECORD
+
+        win.show_listening()
+        listen_ss = win._status_label.styleSheet().lower()
+        assert STATE_RECORD.lower() not in listen_ss
+        assert FLOAT_TEXT.lower() in listen_ss or "ffffff" in listen_ss or "235, 235, 245" in listen_ss
+
+        win.show_recording()
+        rec_ss = win._status_label.styleSheet().lower()
+        assert STATE_RECORD.lower() in rec_ss
+
+        win.show_recognizing("hi")
+        assert STATE_RECORD.lower() not in win._status_label.styleSheet().lower()
 
 
 class TestCloseButton:

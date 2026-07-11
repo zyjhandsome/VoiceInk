@@ -1,91 +1,106 @@
-"""Apple-inspired VoiceInk design tokens (aligned with awesome-design-md/apple)."""
+"""VoiceInk design tokens — classic desktop utility."""
 
-# Brand & accent — Action Blue family
-ACCENT = "#0066CC"
-ACCENT_HV = "#005BB5"
-ACCENT_FOCUS = "#0071E3"
-ACCENT_ON_DARK = "#2997FF"
-ACCENT_BG = "#E8F4FF"
-ACCENT_SOFT = "rgba(0, 102, 204, 0.10)"
+# Brand & accent (rationed)
+ACCENT = "#2563EB"
+ACCENT_HV = "#1D4ED8"
+ACCENT_FOCUS = "#2563EB"
+ACCENT_ON_DARK = "#FFFFFF"  # float default emphasis = neutral white
+ACCENT_BG = "#DBEAFE"
+ACCENT_SOFT = "rgba(37, 99, 235, 0.08)"
+PRIMARY_CONTAINER = "#2563EB"
+SECONDARY_CONTAINER = "#E5E7EB"  # nav selected wash (neutral)
 
-# Surfaces
-BG = "#EDF0F5"
-NAV_BG = "#E6EAF0"
+# Surfaces — single cool axis
+BG = "#F3F4F6"
+NAV_BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
-SURFACE_PEARL = "#F4F6F9"
-BORDER = "#D8DEE6"
-HAIRLINE = "#D0D7E2"
-DIVIDER_SOFT = "#E4E9F0"
-ROW_SELECTED = "#DCEAFA"
+SURFACE_PEARL = "#F9FAFB"  # cool muted fill (no warm pearl)
+BORDER = "#E5E7EB"
+HAIRLINE = "#E5E7EB"
+OUTLINE_VARIANT = "#D1D5DB"
+DIVIDER_SOFT = "#E5E7EB"
+ROW_SELECTED = "#EFF6FF"  # very light blue wash for list selection only
 INPUT_BG = "#FFFFFF"
-BAR_OFF = "#F0F0F0"
+BAR_OFF = "#E5E7EB"
 
 # Typography
-TEXT = "#1D1D1F"
-TEXT_SEC = "#86868B"
-TEXT_DIM = "#7A7A7A"
+TEXT = "#111827"
+TEXT_SEC = "#4B5563"
+TEXT_DIM = "#9CA3AF"
 TEXT_MUTED_DARK = "#CCCCCC"
 FONT = (
-    '"SF Pro Text", "Segoe UI Variable", "Microsoft YaHei UI", '
-    '"Segoe UI", system-ui, -apple-system, sans-serif'
+    '"Segoe UI Variable", "Microsoft YaHei UI", '
+    '"Segoe UI", system-ui, sans-serif'
 )
-FONT_DISPLAY = (
-    '"SF Pro Display", "Segoe UI Variable Display", "Segoe UI", '
-    '"Microsoft YaHei UI", system-ui, -apple-system, sans-serif'
+FONT_DISPLAY = FONT
+FONT_MONO = (
+    '"Cascadia Mono", "Consolas", "JetBrains Mono", monospace'
 )
 
-# Semantic colors
-GREEN = "#34C759"
-GREEN_BG = "#E8F8ED"
-RED = "#FF3B30"
-RED_BG = "#FFEBE9"
-AMBER = "#FFCC00"
-AMBER_TEXT = "#996F00"
-AMBER_SOFT = "#FFFAEB"
+# Semantic (settings actions only — not float state rainbow)
+GREEN = "#16A34A"
+GREEN_BG = "#DCFCE7"
+RED = "#DC2626"
+RED_BG = "#FEE2E2"
+AMBER = "#D97706"
+AMBER_TEXT = "#92400E"
+AMBER_SOFT = "#FFFBEB"
 
-# Shape — Apple rounded scale
-RADIUS_XS = 5
-RADIUS_SM = 8
-RADIUS_MD = 11
-RADIUS_LG = 18
+# Shape
+RADIUS_XS = 4
+RADIUS_SM = 6
+RADIUS_MD = 8
+RADIUS_LG = 10
 RADIUS_PILL = 999
 
-# Spacing scale (8px base)
+# Tray context menu — reference desktop-utility style
+TRAY_MENU_RADIUS = 4
+TRAY_MENU_BORDER = "#E5E7EB"
+TRAY_MENU_SEPARATOR = "#EEEEEE"
+TRAY_MENU_HOVER = "#F5F5F5"
+TRAY_MENU_DISABLED = "#888888"
+TRAY_MENU_CHECK = "#333333"
+TRAY_MENU_ARROW = "#999999"
+TRAY_MENU_PAD_V = 8
+TRAY_MENU_PAD_H = 18
+
+# Spacing scale (4px base, comfortable density)
 SPACE_XS = 8
 SPACE_SM = 12
 SPACE_MD = 16
-SPACE_LG = 12
-SPACE_XL = 24
+SPACE_LG = 24
+SPACE_XL = 32
 PAGE_MARGIN_H = 20
-PAGE_MARGIN_V = 14
+PAGE_MARGIN_V = 16
 CONTENT_MAX_WIDTH = 9999
+SIDEBAR_WIDTH = 248
 
 # Interactive controls
-CONTROL_BORDER = "#C7C7CC"
-CONTROL_BORDER_HOVER = "#AEAEB2"
-TOGGLE_OFF = "#E5E5EA"
-TOGGLE_OFF_HOVER = "#D1D1D6"
+CONTROL_BORDER = "#D1D5DB"
+CONTROL_BORDER_HOVER = "#9CA3AF"
+TOGGLE_OFF = "#E5E2E3"
+TOGGLE_OFF_HOVER = "#DCD9DA"
 TOGGLE_OFF_TRACK = (60, 60, 67, 48)
 TOGGLE_OFF_TRACK_HOVER = (60, 60, 67, 72)
 ROW_HOVER = "rgba(0, 0, 0, 0.03)"
 FOCUS_RING = f"2px solid {ACCENT_FOCUS}"
 
-# Dark overlay — surface-tile palette
+# Dark overlay — floating window (structure unchanged)
 FLOAT_BG = "rgba(39, 39, 41, 245)"
 FLOAT_TILE = "#272729"
 FLOAT_BORDER = "rgba(255, 255, 255, 0.10)"
 FLOAT_BORDER_INNER = "rgba(210, 210, 215, 0.24)"
-CHIP_BG = "rgba(210, 210, 215, 0.64)"
+CHIP_BG = "rgba(210, 210, 215, 0.40)"
 FLOAT_TEXT = "#FFFFFF"
 FLOAT_TEXT_SEC = "rgba(235, 235, 245, 0.72)"
 FLOAT_SHADOW = "rgba(0, 0, 0, 0.38)"
 
-# State colors (floating window)
-STATE_RECORD = "#FF6961"
-STATE_LISTEN = ACCENT_ON_DARK
-STATE_RECOGNIZE = AMBER
-STATE_POLISH = GREEN
-STATE_SUCCESS = GREEN
-STATE_WARN = "#FF9F0A"
-STATE_MUTED = "#98989D"
-STATE_ERROR = "#FF6961"
+# Float state colors — classic: neutral + recording only
+STATE_RECORD = "#DC2626"
+STATE_LISTEN = FLOAT_TEXT
+STATE_RECOGNIZE = FLOAT_TEXT
+STATE_POLISH = FLOAT_TEXT
+STATE_SUCCESS = FLOAT_TEXT
+STATE_WARN = FLOAT_TEXT_SEC
+STATE_MUTED = FLOAT_TEXT_SEC
+STATE_ERROR = STATE_RECORD

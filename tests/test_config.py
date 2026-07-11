@@ -38,7 +38,7 @@ class TestFormatHotkey:
 
 class TestConfigDefaults:
     def test_default_hotkey(self):
-        assert DEFAULT_CONFIG["hotkey"] == "alt+space"
+        assert DEFAULT_CONFIG["hotkey"] == "ctrl+space"
 
     def test_default_sound_enabled(self):
         assert DEFAULT_CONFIG["sound_enabled"] is True
@@ -70,7 +70,7 @@ class TestConfigInit:
         with open(config_home / "config.json", "w", encoding="utf-8") as f:
             json.dump({}, f)
         config = Config(config_dir=config_home)
-        assert config.get("hotkey") == "alt+space"
+        assert config.get("hotkey") == "ctrl+space"
         assert config.get("sound_enabled") is True
 
     def test_config_loads_existing(self, config_home):

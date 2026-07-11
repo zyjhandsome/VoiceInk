@@ -9,13 +9,13 @@ from PyQt6.QtWidgets import (
 
 from voiceink.ui.design_tokens import (
     ACCENT,
-    ACCENT_SOFT,
     BAR_OFF,
     GREEN,
     HAIRLINE,
     RADIUS_MD,
     RADIUS_PILL,
     SURFACE,
+    SURFACE_PEARL,
     TEXT,
     TEXT_DIM,
     TEXT_SEC,
@@ -23,8 +23,18 @@ from voiceink.ui.design_tokens import (
 from voiceink.ui.settings_styles import (
     BTN_ACCENT_SM,
     BTN_DANGER_SM,
-    BTN_GREEN_SM,
 )
+
+_ACCURACY_LABELS = {5: "高精度", 4: "较高", 3: "均衡", 2: "一般", 1: "基础"}
+_SPEED_LABELS = {5: "很快", 4: "较快", 3: "均衡", 2: "较慢", 1: "较慢"}
+RATING_TOOLTIP = "准确性和速度为 VoiceInk 模型目录内的相对评级。"
+
+
+def format_model_ratings(accuracy: int, speed: int) -> str:
+    return (
+        f"{_ACCURACY_LABELS.get(int(accuracy), '未知')} · "
+        f"{_SPEED_LABELS.get(int(speed), '未知')}"
+    )
 
 
 class ModelCard(QFrame):
@@ -47,7 +57,7 @@ class ModelCard(QFrame):
         self._setup_ui()
 
     def _setup_ui(self):
-        ring = f"2px solid {ACCENT}" if self._is_active else f"1px solid {HAIRLINE}"
+        ring = f"1px solid {ACCENT}" if self._is_active else f"1px solid {HAIRLINE}"
         self.setStyleSheet(
             f"ModelCard {{ background: {SURFACE}; border: {ring};"
             f" border-radius: {RADIUS_MD}px; }}"
@@ -67,7 +77,7 @@ class ModelCard(QFrame):
         if self._is_active:
             badge = QLabel("当前")
             badge.setStyleSheet(
-                f"background: {ACCENT_SOFT}; color: {ACCENT}; border-radius: {RADIUS_PILL}px;"
+                f"background: {SURFACE_PEARL}; color: {TEXT_SEC}; border-radius: {RADIUS_PILL}px;"
                 "padding: 3px 9px; font-size: 11px; font-weight: 600;"
             )
             head.addWidget(badge)
@@ -92,13 +102,14 @@ class ModelCard(QFrame):
         layout.addSpacing(6)
 
         meta = QLabel(
-            f"{self._info['languages']} · 准确率 {self._info['accuracy']}/5"
-            f" · 速度 {self._info['speed']}/5"
+            f"{self._info['languages']} · "
+            f"{format_model_ratings(self._info['accuracy'], self._info['speed'])}"
         )
         meta.setStyleSheet(
             f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
         )
         meta.setWordWrap(True)
+        meta.setToolTip(RATING_TOOLTIP)
         layout.addWidget(meta)
 
         layout.addSpacing(12)
@@ -135,7 +146,7 @@ class ModelCard(QFrame):
             self._action_btn = QPushButton("下载")
             self._action_btn.setFixedHeight(32)
             self._action_btn.setMinimumWidth(96)
-            self._action_btn.setStyleSheet(BTN_GREEN_SM)
+            self._action_btn.setStyleSheet(BTN_ACCENT_SM)
             self._action_btn.clicked.connect(
                 lambda: self.action_clicked.emit(self._model_id, "download")
             )

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from voiceink.audio_devices import (
     INPUT_SOURCE_MICROPHONE,
@@ -16,6 +16,7 @@ from voiceink.audio_devices import (
     INPUT_SOURCE_SYSTEM,
 )
 from voiceink.config import TRIGGER_MODE_CONTINUOUS, TRIGGER_MODE_HOTKEY, Config
+from voiceink.ui.design_tokens import ACCENT, SURFACE_PEARL, TEXT_DIM, TEXT_SEC
 from voiceink.ui.settings_window import SettingsWindow
 
 
@@ -53,6 +54,73 @@ class TestGeneralPageLayout:
 
     def test_footer_hint_text(self, settings_window):
         assert settings_window._footer_hint.text() == "更改会即时生效"
+        sheet = settings_window._footer_hint.styleSheet()
+        assert f"color: {TEXT_DIM}" in sheet
+        assert f"color: {ACCENT}" not in sheet
+
+    def test_about_version_and_usage_hint_are_neutral(self, settings_window):
+        version_sheet = settings_window._about_version_label.styleSheet()
+        assert f"background: {SURFACE_PEARL}" in version_sheet
+        assert f"color: {TEXT_SEC}" in version_sheet
+        assert f"color: {ACCENT}" not in version_sheet
+
+        labels = settings_window._about_usage_tip.findChildren(type(settings_window._footer_hint))
+        assert labels
+        assert any(f"color: {TEXT_SEC}" in label.styleSheet() for label in labels)
+
+    def test_general_sections_follow_task_order(self, settings_window, qapp):
+        settings_window.resize(1000, 900)
+        settings_window.show()
+        qapp.processEvents()
+        titles = {
+            label.text(): label
+            for label in settings_window.findChildren(type(settings_window._footer_hint))
+            if label.objectName() == "settingsGroupTitle"
+        }
+        ordered = ["触发方式", "快捷键", "音频来源", "检测音频", "手动设备", "开机与提示", "历史"]
+
+        assert all(title in titles for title in ordered)
+        assert [titles[title].mapToGlobal(titles[title].rect().center()).y() for title in ordered] == sorted(
+            titles[title].mapToGlobal(titles[title].rect().center()).y() for title in ordered
+        )
+
+    def test_general_section_groups_keep_titles_without_cards(self, settings_window):
+        from PyQt6.QtWidgets import QFrame
+
+        titles = [
+            label for label in settings_window.findChildren(type(settings_window._footer_hint))
+            if label.objectName() == "settingsGroupTitle"
+        ]
+        groups = [
+            frame for frame in settings_window.findChildren(QFrame)
+            if frame.objectName() == "settingsGroup"
+        ]
+
+        assert titles
+        assert groups
+        for group in groups:
+            sheet = group.styleSheet()
+            assert "background: transparent" in sheet
+            assert "border: none" in sheet
+            assert "border-radius: 0" in sheet
+
+    def test_close_button_uses_close_copy_and_accessible_name(self, settings_window):
+        close_button = next(
+            button for button in settings_window.findChildren(QPushButton)
+            if button.text() == "关闭"
+        )
+        assert close_button.accessibleName() == "关闭设置"
+
+    def test_polish_preview_stays_visible_when_enabled(self, settings_window):
+        settings_window._on_llm_enable_toggled(True)
+
+        assert not settings_window._llm_preview_card.isHidden()
+
+    def test_password_toggle_updates_its_text(self, settings_window):
+        settings_window._llm_key_toggle.setChecked(True)
+        assert settings_window._llm_key_toggle.text() == "隐藏"
+        settings_window._llm_key_toggle.setChecked(False)
+        assert settings_window._llm_key_toggle.text() == "显示"
 
     def test_audio_source_cards_are_vertical(self, settings_window):
         picker = settings_window.findChild(type(settings_window._src_mic_rb.parent()))
@@ -65,11 +133,14 @@ class TestGeneralPageLayout:
         assert ap.layout().spacing() == 8
 
     def test_trigger_mode_uses_choice_cards(self, settings_window):
+        from PyQt6.QtWidgets import QHBoxLayout
         from voiceink.ui.settings_components import TriggerModePicker
 
         picker = settings_window.findChild(TriggerModePicker)
         assert picker is not None
-        assert picker.layout().spacing() == 8
+        assert isinstance(picker.layout(), QHBoxLayout)
+        assert picker.layout().spacing() == 12
+        assert picker.layout().count() == 2
 
         assert settings_window._mixed_audio_callout.parent() is not None
         settings_window._src_mixed_rb.setChecked(True)
@@ -125,6 +196,24 @@ class TestInputSource:
 
 
 class TestToggles:
+    def test_toggle_rows_render_title_and_positive_height(self, settings_window, qapp):
+        """QCheckBox-based rows collapse to 0 height; content must stay visible."""
+        from PyQt6.QtWidgets import QLabel
+
+        settings_window.resize(1000, 900)
+        settings_window.show()
+        qapp.processEvents()
+
+        for row, title in (
+            (settings_window._auto_start_row, "开机时自动启动"),
+            (settings_window._sound_row, "录音提示音"),
+            (settings_window._history_enabled_row, "保存语音历史"),
+        ):
+            assert row.height() >= 40, f"{title} row height={row.height()}"
+            labels = [lb for lb in row.findChildren(QLabel) if lb.text() == title]
+            assert labels, f"missing title label: {title}"
+            assert labels[0].height() >= 14, f"{title} label height={labels[0].height()}"
+
     def test_row_click_toggles_from_anywhere(self, settings_window, qapp):
         from PyQt6.QtTest import QTest
 
@@ -198,7 +287,8 @@ class TestMicProbe:
         settings_window._finish_mic_probe()
         assert not settings_window._mic_probe_active
         assert settings_window._mic_test_btn.isEnabled()
-        assert "峰值" in settings_window._mic_test_status.text()
+        assert "已检测到声音" in settings_window._mic_test_status.text()
+        assert "峰值" not in settings_window._mic_test_status.text()
 
 
 class TestNavigation:

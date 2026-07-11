@@ -65,7 +65,7 @@ class TestParseHotkey:
 class TestHotKeyManagerInit:
     def test_default_hotkey(self):
         mgr = HotKeyManager()
-        assert mgr._hotkey_str == "alt+space"
+        assert mgr._hotkey_str == "ctrl+space"
         assert mgr._hotkey_keys is not None
 
     def test_custom_hotkey(self):
