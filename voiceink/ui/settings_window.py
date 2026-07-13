@@ -243,7 +243,8 @@ class SettingsWindow(QDialog):
         self._hotkey_hint = QLabel()
         self._hotkey_hint.setWordWrap(True)
         self._hotkey_hint.setStyleSheet(
-            "color: #727687; font-size: 12px; background: transparent;"
+            f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;"
+            f" padding: 0 16px 10px 16px;"
         )
         hk_field = stacked_field_row("录音快捷键", self._hotkey_edit)
         hk_lay.addWidget(hk_field)

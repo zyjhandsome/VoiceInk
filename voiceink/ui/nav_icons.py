@@ -7,7 +7,7 @@ import math
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
-from voiceink.ui.design_tokens import ACCENT, TEXT_SEC
+from voiceink.ui.design_tokens import TEXT, TEXT_SEC
 
 
 def nav_icon(shape: str, active: bool = False) -> QIcon:
@@ -16,7 +16,8 @@ def nav_icon(shape: str, active: bool = False) -> QIcon:
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    c = QColor(ACCENT if active else TEXT_SEC)
+    # Neutral when selected — left bar is the single blue accent device.
+    c = QColor(TEXT if active else TEXT_SEC)
     pen = QPen(c, 1.5)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
 

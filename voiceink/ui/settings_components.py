@@ -20,14 +20,15 @@ from voiceink.ui.design_tokens import (
     DIVIDER_SOFT,
     FONT_DISPLAY,
     HAIRLINE,
-    NAV_BG,
+    NAV_SELECTED_BAR_PX,
+    NAV_SELECTED_BG,
     PAGE_MARGIN_H,
     PAGE_MARGIN_V,
     RADIUS_MD,
     RADIUS_PILL,
     RADIUS_SM,
     ROW_HOVER,
-    SECONDARY_CONTAINER,
+    SETTINGS_SIDEBAR_BG,
     SIDEBAR_WIDTH,
     SPACE_LG,
     SPACE_MD,
@@ -41,6 +42,8 @@ from voiceink.ui.design_tokens import (
     TEXT_SEC,
     TOGGLE_OFF_TRACK,
     TOGGLE_OFF_TRACK_HOVER,
+    TOGGLE_ON,
+    TOGGLE_ON_HOVER,
 )
 
 # ── Style fragments ──────────────────────────────────────────────
@@ -58,7 +61,7 @@ PAGE_TITLE = (
 
 PAGE_SUBTITLE = (
     f"color: {TEXT_SEC}; font-size: 14px; padding: 0;"
-    f" line-height: 1.4; letter-spacing: 0;"
+    f" line-height: 1.45; letter-spacing: 0;"
 )
 
 FOOTNOTE = (
@@ -68,9 +71,9 @@ FOOTNOTE = (
 
 GROUP_STYLE = f"""
     QFrame#settingsGroup {{
-        background: transparent;
+        background: {SURFACE};
         border: none;
-        border-radius: 0;
+        border-radius: {RADIUS_MD}px;
     }}
 """
 
@@ -118,7 +121,7 @@ NAV_BTN_STYLE = f"""
         text-align: left;
         padding: 0 14px 0 12px;
         border: none;
-        border-left: 4px solid transparent;
+        border-left: {NAV_SELECTED_BAR_PX}px solid transparent;
         border-radius: {RADIUS_SM}px;
         color: {TEXT_SEC};
         font-size: 14px;
@@ -126,8 +129,8 @@ NAV_BTN_STYLE = f"""
         background: transparent;
     }}
     QPushButton#settingsNavBtn:checked {{
-        background: {SECONDARY_CONTAINER};
-        border-left: 4px solid {ACCENT};
+        background: {NAV_SELECTED_BG};
+        border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT};
         color: {TEXT};
         font-weight: 600;
     }}
@@ -137,7 +140,8 @@ NAV_BTN_STYLE = f"""
     }}
     QPushButton#settingsNavBtn:focus {{
         border: 2px solid {ACCENT_FOCUS};
-        border-left: 4px solid {ACCENT_FOCUS};
+        border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT_FOCUS};
+        padding: 0 14px 0 12px;
     }}
 """
 
@@ -195,8 +199,8 @@ class PageHero(QWidget):
     def __init__(self, title: str, tags: list[str] | None = None, subtitle: str = "", parent=None):
         super().__init__(parent)
         self._root = QVBoxLayout(self)
-        self._root.setContentsMargins(0, 0, 0, 2)
-        self._root.setSpacing(4)
+        self._root.setContentsMargins(0, 0, 0, 8)
+        self._root.setSpacing(6)
 
         top = QHBoxLayout()
         top.setSpacing(8)
@@ -419,19 +423,19 @@ def settings_group() -> QFrame:
 
 
 def settings_section(title: str, group: QFrame) -> QWidget:
-    """Section title above a white card."""
+    """Section title above a soft white settings container."""
     wrap = QWidget()
     wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
     lay = QVBoxLayout(wrap)
     lay.setContentsMargins(0, 0, 0, 0)
-    lay.setSpacing(6 if title else 0)
+    lay.setSpacing(8 if title else 0)
     if title:
         hdr = QLabel(title)
         hdr.setObjectName("settingsGroupTitle")
         hdr.setStyleSheet(
             f"color: {TEXT_SEC}; font-size: 12px; font-weight: 600;"
-            f" padding: 0 4px; background: transparent;"
-            f" letter-spacing: 0.02em;"
+            f" padding: 0 4px 2px 4px; background: transparent;"
+            f" letter-spacing: 0.04em;"
         )
         lay.addWidget(hdr)
     lay.addWidget(group)
@@ -445,7 +449,7 @@ def option_row(title: str, subtitle: str = "") -> QWidget:
     lay.setSpacing(2)
     t = QLabel(title)
     t.setStyleSheet(
-        f"color: {TEXT}; font-size: 14px; font-weight: 500; background: transparent;"
+        f"color: {TEXT}; font-size: 14px; font-weight: 600; background: transparent;"
     )
     lay.addWidget(t)
     if subtitle:
@@ -459,30 +463,19 @@ def option_row(title: str, subtitle: str = "") -> QWidget:
 
 
 def labeled_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
+    """Title (+ optional subtitle) on the left; control on the right."""
     row = QWidget()
-    outer = QVBoxLayout(row)
-    outer.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
-    outer.setSpacing(6)
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
+    lay.setSpacing(SPACE_SM)
 
-    top = QHBoxLayout()
-    top.setSpacing(SPACE_SM)
-    lbl = QLabel(label)
-    lbl.setStyleSheet(
-        f"color: {TEXT_SEC}; font-size: 13px; min-width: 72px; background: transparent;"
-    )
-    lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    lbl.setBuddy(widget)
-    top.addWidget(lbl)
-    top.addWidget(widget, 1)
-    outer.addLayout(top)
-
-    if hint:
-        h = QLabel(hint)
-        h.setWordWrap(True)
-        h.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; padding-left: 84px; background: transparent;"
-        )
-        outer.addWidget(h)
+    text_col = option_row(label, hint)
+    for child in text_col.findChildren(QLabel):
+        if child.text() == label:
+            child.setBuddy(widget)
+            break
+    lay.addWidget(text_col, 1)
+    lay.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
     return row
 
 
@@ -562,7 +555,7 @@ class _SourceIcon(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(ACCENT if self._active else TEXT_SEC)
+        color = QColor(TEXT if self._active else TEXT_SEC)
         pen = QPen(color, 1.8)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
@@ -658,8 +651,9 @@ class ChoiceCard(QFrame):
         if checked:
             self.setStyleSheet(f"""
                 ChoiceCard {{
-                    background: {SURFACE};
-                    border: 2px solid {ACCENT};
+                    background: {ACCENT_SOFT};
+                    border: 1px solid {HAIRLINE};
+                    border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT};
                     border-radius: {RADIUS_MD}px;
                 }}
             """)
@@ -750,7 +744,7 @@ class VerticalChoiceCard(QFrame):
                 VerticalChoiceCard {{
                     background: {ACCENT_SOFT};
                     border: 1px solid {HAIRLINE};
-                    border-left: 3px solid {ACCENT};
+                    border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT};
                     border-radius: {RADIUS_MD}px;
                 }}
             """)
@@ -1005,7 +999,7 @@ class SettingsSidebar(QWidget):
         self._nav_icon_fn = nav_icon_fn
         self.setFixedWidth(SIDEBAR_WIDTH)
         self.setStyleSheet(
-            f"background: {NAV_BG}; border-right: 1px solid {HAIRLINE};"
+            f"background: {SETTINGS_SIDEBAR_BG}; border-right: 1px solid {HAIRLINE};"
         )
 
         root = QVBoxLayout(self)
@@ -1195,7 +1189,7 @@ class SwitchControl(QCheckBox):
 
     def _track_color(self) -> QColor:
         if self._checked or self._knob_pos > 0.5:
-            return QColor(ACCENT_FOCUS if self._hover else ACCENT)
+            return QColor(TOGGLE_ON_HOVER if self._hover else TOGGLE_ON)
         rgb = TOGGLE_OFF_TRACK_HOVER if self._hover else TOGGLE_OFF_TRACK
         return QColor(rgb[0], rgb[1], rgb[2], rgb[3])
 
@@ -1451,7 +1445,7 @@ class SettingsPage(QScrollArea):
         )
         self._layout = QVBoxLayout(body)
         self._layout.setContentsMargins(PAGE_MARGIN_H, PAGE_MARGIN_V, PAGE_MARGIN_H, PAGE_MARGIN_V)
-        self._layout.setSpacing(SPACE_XL)
+        self._layout.setSpacing(SPACE_LG + SPACE_XS)  # 24+8 — clearer section rhythm
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.setWidget(body)
 

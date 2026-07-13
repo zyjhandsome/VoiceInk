@@ -8,7 +8,7 @@ ACCENT_ON_DARK = "#FFFFFF"  # float default emphasis = neutral white
 ACCENT_BG = "#DBEAFE"
 ACCENT_SOFT = "rgba(37, 99, 235, 0.08)"
 PRIMARY_CONTAINER = "#2563EB"
-SECONDARY_CONTAINER = "#E5E7EB"  # nav selected wash (neutral)
+SECONDARY_CONTAINER = "#E5E7EB"  # legacy neutral wash (lists / secondary chrome)
 
 # Surfaces — single cool axis
 BG = "#F3F4F6"
@@ -22,6 +22,11 @@ DIVIDER_SOFT = "#E5E7EB"
 ROW_SELECTED = "#EFF6FF"  # very light blue wash for list selection only
 INPUT_BG = "#FFFFFF"
 BAR_OFF = "#E5E7EB"
+
+# Settings shell — product hierarchy on the same cool axis
+SETTINGS_SIDEBAR_BG = SURFACE  # white rail against gray canvas
+NAV_SELECTED_BG = ACCENT_SOFT  # restrained wash (not saturated fill)
+NAV_SELECTED_BAR_PX = 3  # single strong blue device on selected nav
 
 # Typography
 TEXT = "#111827"
@@ -82,6 +87,8 @@ TOGGLE_OFF = "#E5E2E3"
 TOGGLE_OFF_HOVER = "#DCD9DA"
 TOGGLE_OFF_TRACK = (60, 60, 67, 48)
 TOGGLE_OFF_TRACK_HOVER = (60, 60, 67, 72)
+TOGGLE_ON = GREEN  # settings switch on — semantic green (not brand blue)
+TOGGLE_ON_HOVER = "#15803D"
 ROW_HOVER = "rgba(0, 0, 0, 0.03)"
 FOCUS_RING = f"2px solid {ACCENT_FOCUS}"
 
