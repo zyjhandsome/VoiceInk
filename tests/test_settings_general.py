@@ -84,8 +84,10 @@ class TestGeneralPageLayout:
             titles[title].mapToGlobal(titles[title].rect().center()).y() for title in ordered
         )
 
-    def test_general_section_groups_keep_titles_without_cards(self, settings_window):
+    def test_general_section_groups_use_soft_containers(self, settings_window):
         from PyQt6.QtWidgets import QFrame
+
+        from voiceink.ui.design_tokens import RADIUS_MD, SURFACE
 
         titles = [
             label for label in settings_window.findChildren(type(settings_window._footer_hint))
@@ -100,9 +102,9 @@ class TestGeneralPageLayout:
         assert groups
         for group in groups:
             sheet = group.styleSheet()
-            assert "background: transparent" in sheet
+            assert f"background: {SURFACE}" in sheet
             assert "border: none" in sheet
-            assert "border-radius: 0" in sheet
+            assert f"border-radius: {RADIUS_MD}px" in sheet
 
     def test_close_button_uses_close_copy_and_accessible_name(self, settings_window):
         close_button = next(

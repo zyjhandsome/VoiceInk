@@ -64,6 +64,23 @@ class TestConfigDefaults:
         assert DEFAULT_CONFIG["llm"]["api_key"] == ""
         assert DEFAULT_CONFIG["llm"]["model_name"] == ""
 
+    def test_default_llm_mode_is_polish(self):
+        assert DEFAULT_CONFIG["llm"]["mode"] == "polish"
+
+
+class TestConfigLlmModeFallback:
+    def test_get_translate_mode_falls_back_to_polish(self, config_home):
+        with open(config_home / "config.json", "w", encoding="utf-8") as f:
+            json.dump({"llm": {"mode": "translate"}}, f)
+        config = Config(config_dir=config_home)
+        assert config.get("llm.mode") == "polish"
+
+    def test_get_translate_mode_case_insensitive(self, config_home):
+        with open(config_home / "config.json", "w", encoding="utf-8") as f:
+            json.dump({"llm": {"mode": "Translate"}}, f)
+        config = Config(config_dir=config_home)
+        assert config.get("llm.mode") == "polish"
+
 
 class TestConfigInit:
     def test_config_loads_defaults(self, config_home):

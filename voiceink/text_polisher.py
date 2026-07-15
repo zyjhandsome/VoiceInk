@@ -51,20 +51,42 @@ POLISH_PROMPT = (
     "输出：今天天气怎么样？感觉还不错。"
 )
 
+LLM_MODE_POLISH = "polish"
+
+
+def build_system_prompt(
+    mode: str = LLM_MODE_POLISH,
+    *,
+    custom_prompt: str = "",
+) -> str:
+    """Return the system prompt for polish mode."""
+    custom = (custom_prompt or "").strip()
+    return custom or POLISH_PROMPT
+
 
 class PolishWorker(QThread):
     result_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, api_url: str, api_key: str, model_name: str, text: str,
-                 prompt: str = ""):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: str,
+        model_name: str,
+        text: str,
+        prompt: str = "",
+        *,
+        mode: str = LLM_MODE_POLISH,
+    ):
         super().__init__()
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
         self._model_name = model_name
         self._text = text
+        self._mode = (mode or LLM_MODE_POLISH).strip().lower()
         self._prompt = prompt or POLISH_PROMPT
         self._cancelled = False
+        self._action_label = "润色"
 
     def cancel(self):
         """Set cancellation flag to stop the worker."""
@@ -87,7 +109,7 @@ class PolishWorker(QThread):
             if not url.endswith("/chat/completions"):
                 url = url.rstrip("/") + "/chat/completions"
 
-            log.info("正在调用 LLM 润色 (%s)...", self._model_name)
+            log.info("正在调用 LLM %s (%s)...", self._action_label, self._model_name)
             log.debug("原文长度: %d 字符", len(self._text))
 
             headers = {
@@ -115,33 +137,33 @@ class PolishWorker(QThread):
             # 严格的 API 响应校验
             choices = data.get("choices")
             if not choices or not isinstance(choices, list) or len(choices) == 0:
-                self.error.emit("润色失败: API 响应格式异常")
+                self.error.emit(f"{self._action_label}失败: API 响应格式异常")
                 return
 
             message = choices[0].get("message")
             if not message or not isinstance(message, dict):
-                self.error.emit("润色失败: API 响应格式异常")
+                self.error.emit(f"{self._action_label}失败: API 响应格式异常")
                 return
 
             content = message.get("content")
             if content is None:
-                self.error.emit("润色失败: API 返回空内容")
+                self.error.emit(f"{self._action_label}失败: API 返回空内容")
                 return
 
             polished = str(content).strip()
             if not polished:
-                self.error.emit("润色失败: API 返回空内容")
+                self.error.emit(f"{self._action_label}失败: API 返回空内容")
                 return
 
-            log.debug("润色结果长度: %d 字符", len(polished))
+            log.debug("%s结果长度: %d 字符", self._action_label, len(polished))
             self.result_ready.emit(polished)
 
         except httpx.TimeoutException:
-            log.error("LLM 润色超时")
-            self.error.emit("润色超时，请稍后重试")
+            log.error("LLM %s超时", self._action_label)
+            self.error.emit(f"{self._action_label}超时，请稍后重试")
         except Exception as e:
-            log.error("LLM 润色失败: %s", e)
-            self.error.emit(f"润色失败: {str(e)}")
+            log.error("LLM %s失败: %s", self._action_label, e)
+            self.error.emit(f"{self._action_label}失败: {str(e)}")
 
 
 class TextPolisher(QObject):
@@ -152,15 +174,34 @@ class TextPolisher(QObject):
         super().__init__(parent)
         self._worker = None
 
-    def polish(self, text: str, api_url: str, api_key: str, model_name: str,
-               prompt: str = ""):
+    def polish(
+        self,
+        text: str,
+        api_url: str,
+        api_key: str,
+        model_name: str,
+        prompt: str = "",
+        *,
+        mode: str = LLM_MODE_POLISH,
+    ):
         if not text.strip():
             self.polish_complete.emit(text)
             return
 
         self.cancel()
 
-        self._worker = PolishWorker(api_url, api_key, model_name, text, prompt)
+        system_prompt = build_system_prompt(
+            mode,
+            custom_prompt=prompt,
+        )
+        self._worker = PolishWorker(
+            api_url,
+            api_key,
+            model_name,
+            text,
+            system_prompt,
+            mode=mode,
+        )
         self._worker.result_ready.connect(self._on_result)
         self._worker.error.connect(self._on_error)
         self._worker.start()

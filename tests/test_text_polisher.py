@@ -90,6 +90,20 @@ class TestPolishPrompt:
         assert "输出" in POLISH_PROMPT
 
 
+class TestPolishPromptOnly:
+    def test_build_polish_uses_default_prompt(self):
+        from voiceink.text_polisher import LLM_MODE_POLISH, build_system_prompt
+
+        prompt = build_system_prompt(LLM_MODE_POLISH, custom_prompt="")
+        assert prompt == POLISH_PROMPT
+
+    def test_translate_mode_constant_removed(self):
+        import voiceink.text_polisher as tp
+
+        assert not hasattr(tp, "LLM_MODE_TRANSLATE")
+        assert not hasattr(tp, "TRANSLATE_PROMPT_TEMPLATE")
+
+
 class TestPolishWorkerInit:
     def test_init_requires_api_params(self):
         worker = PolishWorker(

@@ -71,6 +71,8 @@ from voiceink.ui.design_tokens import (
     ACCENT_FOCUS as _ACCENT_FOCUS,
     BAR_OFF as _BAR_OFF,
     BG as _BG,
+    CONTROL_DEVICE_COMBO_WIDTH as _CONTROL_DEVICE_COMBO_WIDTH,
+    CONTROL_NUMERIC_WIDTH as _CONTROL_NUMERIC_WIDTH,
     DIVIDER_SOFT as _DIVIDER_SOFT,
     FONT as _FONT,
     FONT_DISPLAY as _FONT_DISPLAY,
@@ -243,7 +245,8 @@ class SettingsWindow(QDialog):
         self._hotkey_hint = QLabel()
         self._hotkey_hint.setWordWrap(True)
         self._hotkey_hint.setStyleSheet(
-            "color: #727687; font-size: 12px; background: transparent;"
+            f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;"
+            f" padding: 0 16px 10px 16px;"
         )
         hk_field = stacked_field_row("录音快捷键", self._hotkey_edit)
         hk_lay.addWidget(hk_field)
@@ -284,11 +287,13 @@ class SettingsWindow(QDialog):
         self._history_retention_days_spin = QSpinBox()
         self._history_retention_days_spin.setRange(1, 3650)
         self._history_retention_days_spin.setSuffix(" 天")
+        self._history_retention_days_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
         self._history_retention_days_spin.setAccessibleName("历史保留天数")
         self._history_max_entries_spin = QSpinBox()
         self._history_max_entries_spin.setRange(1, 100000)
         self._history_max_entries_spin.setSingleStep(100)
         self._history_max_entries_spin.setSuffix(" 场")
+        self._history_max_entries_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
         self._history_max_entries_spin.setAccessibleName("最多保留会话数")
         self._history_enabled_row.toggled.connect(self._on_history_enabled_toggled)
         self._history_retention_days_spin.valueChanged.connect(self._on_history_limits_changed)
@@ -373,6 +378,8 @@ class SettingsWindow(QDialog):
         adv_lay.setSpacing(0)
         self._mic_device_combo = QComboBox()
         self._system_device_combo = QComboBox()
+        self._mic_device_combo.setFixedWidth(_CONTROL_DEVICE_COMBO_WIDTH)
+        self._system_device_combo.setFixedWidth(_CONTROL_DEVICE_COMBO_WIDTH)
         adv_lay.addWidget(labeled_row("麦克风", self._mic_device_combo))
         adv_lay.addWidget(group_divider())
         adv_lay.addWidget(labeled_row("电脑声", self._system_device_combo))
@@ -703,10 +710,12 @@ class SettingsWindow(QDialog):
         polish_card_lay.setContentsMargins(0, 0, 0, 0)
         polish_card_lay.setSpacing(0)
         self._llm_enable_row = ToggleOptionRow(
-            "启用文字润色", "关闭时直接输出语音转写原文",
+            "启用后处理",
+            "关闭时直接输出语音转写原文",
         )
         self._llm_enable_row.toggled.connect(self._on_llm_enable_toggled)
         polish_card_lay.addWidget(self._llm_enable_row)
+
         self._llm_preview_divider = group_divider()
         polish_card_lay.addWidget(self._llm_preview_divider)
         self._llm_preview_card = polish_preview_content()
@@ -1099,6 +1108,7 @@ class SettingsWindow(QDialog):
         self._llm_key_edit.setText(self._config.get("llm.api_key", ""))
         self._llm_model_edit.setText(self._config.get("llm.model_name", ""))
         self._llm_prompt_edit.setPlainText(self._config.get("llm.prompt", ""))
+        self._llm_prompt_edit.setEnabled(True)
 
         self._refresh_about_info()
         self._refresh_all_heroes()
@@ -1414,6 +1424,7 @@ class SettingsWindow(QDialog):
         self._config.set("llm.api_key", self._llm_key_edit.text().strip())
         self._config.set("llm.model_name", self._llm_model_edit.text().strip())
         self._config.set("llm.prompt", self._llm_prompt_edit.toPlainText().strip())
+        self._config.set("llm.mode", "polish")
 
     def _on_done(self):
         self._cancel_mic_probe_if_active()
