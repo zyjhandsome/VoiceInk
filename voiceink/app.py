@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import numpy as np
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 
 from voiceink.config import (
@@ -34,7 +34,10 @@ from voiceink.speech_recognizer import (
     get_model_info,
 )
 from voiceink.history_store import HistoryStore, SegmentRecord
-from voiceink.text_polisher import TextPolisher
+from voiceink.text_polisher import (
+    LLM_MODE_POLISH,
+    TextPolisher,
+)
 from voiceink.text_paster import TextPaster, get_foreground_process_name
 from voiceink.sound_manager import SoundManager
 from voiceink.ui.floating_window import FloatingWindow
@@ -46,7 +49,6 @@ log = logging.getLogger("VoiceInk")
 
 MIN_AUDIO_SAMPLES = 1600  # 0.1s at 16kHz — ignore recordings shorter than this
 SHORT_TAP_TRAY_COOLDOWN_S = 300  # 托盘「按过短」提示最少间隔，避免输入法反复弹窗
-
 
 @dataclass
 class _PendingHistoryRecord:
@@ -548,7 +550,10 @@ class App(QObject):
         self._floating.show_recognizing()
         self._recognizer.transcribe_final(audio)
 
-    def _build_pending_history_record(self, audio: np.ndarray) -> _PendingHistoryRecord:
+    def _build_pending_history_record(
+        self,
+        audio: np.ndarray,
+    ) -> _PendingHistoryRecord:
         trigger_mode = self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
         if trigger_mode == TRIGGER_MODE_CONTINUOUS:
             if self._current_session_id is None:
@@ -610,11 +615,19 @@ class App(QObject):
         api_key = self._config.get("llm.api_key", "")
         model_name = self._config.get("llm.model_name", "")
         prompt = self._config.get("llm.prompt", "")
+        mode = (self._config.get("llm.mode", LLM_MODE_POLISH) or LLM_MODE_POLISH).strip().lower()
 
-        if llm_enabled and api_url and api_key and model_name:
+        if llm_enabled and mode == LLM_MODE_POLISH and api_url and api_key and model_name:
             self._tray.set_activity_tooltip("polishing")
             self._floating.show_polishing(text)
-            self._polisher.polish(text, api_url, api_key, model_name, prompt)
+            self._polisher.polish(
+                text,
+                api_url,
+                api_key,
+                model_name,
+                prompt,
+                mode=LLM_MODE_POLISH,
+            )
         else:
             self._output_text(text)
 
@@ -669,8 +682,11 @@ class App(QObject):
         self._output_text(polished_text)
 
     def _on_polish_error(self, error_msg: str):
-        log.warning("润色失败，降级输出原文: %s", error_msg)
-        self._output_text(self._current_transcription, degraded_from_polish=True)
+        log.warning("后处理失败，降级输出原文: %s", error_msg)
+        self._output_text(
+            self._current_transcription,
+            degraded_from_polish=True,
+        )
 
     # ── Output ────────────────────────────────────────
 

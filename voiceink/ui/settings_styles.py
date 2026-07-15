@@ -77,17 +77,13 @@ WINDOW_CSS = f"""
         color: {TEXT};
         border: 1px solid {HAIRLINE};
         border-radius: {RADIUS_MD}px;
-        padding: 8px 12px;
+        padding: 8px 28px 8px 12px;
         font-size: 14px;
         min-height: 32px;
     }}
     QComboBox:focus {{
         border: 2px solid {ACCENT_FOCUS};
-        padding: 8px 12px;
-    }}
-    QComboBox::drop-down {{
-        border: none;
-        width: 28px;
+        padding: 8px 28px 8px 12px;
     }}
     QComboBox QAbstractItemView {{
         background: {SURFACE};
@@ -106,6 +102,19 @@ WINDOW_CSS = f"""
     }}
     QComboBox QAbstractItemView::item:hover {{
         background: {SURFACE_PEARL};
+    }}
+    QSpinBox {{
+        background: {INPUT_BG};
+        color: {TEXT};
+        border: 1px solid {HAIRLINE};
+        border-radius: {RADIUS_MD}px;
+        padding: 6px 28px 6px 10px;
+        font-size: 14px;
+        min-height: 32px;
+    }}
+    QSpinBox:focus {{
+        border: 2px solid {ACCENT_FOCUS};
+        padding: 6px 28px 6px 10px;
     }}
     QScrollBar:vertical {{
         background: transparent;

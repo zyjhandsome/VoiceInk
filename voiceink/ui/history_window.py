@@ -385,7 +385,13 @@ class HistoryWindow(QDialog):
         meta_bits = []
         if summary is not None:
             if summary.source:
-                meta_bits.append(f"来源：{summary.source}")
+                source_label = {
+                    "mic": "麦克风",
+                    "system": "系统声音",
+                    "mixed": "混合",
+                    "file": "文件转写",
+                }.get(summary.source, summary.source)
+                meta_bits.append(f"来源：{source_label}")
             if summary.target_app:
                 meta_bits.append(f"应用：{summary.target_app}")
         if segments:
@@ -395,6 +401,8 @@ class HistoryWindow(QDialog):
                 meta_bits.append("触发：持续转写")
             elif mode == "hotkey":
                 meta_bits.append("触发：按住录音")
+            elif mode == "file_import":
+                meta_bits.append("触发：导入文件")
             elif mode:
                 meta_bits.append(f"触发：{mode}")
             if first.model:
@@ -404,9 +412,15 @@ class HistoryWindow(QDialog):
             lines.append(" · ".join(meta_bits))
             lines.append("")
         for segment in _segments_in_order(segments):
-            text = _effective_text(segment).strip()
-            if text:
-                lines.append(text)
+            raw = (segment.raw_text or "").strip()
+            polished = (segment.polished_text or "").strip()
+            if polished and raw and polished != raw:
+                lines.append(f"原文：{raw}")
+                lines.append(f"译文/润色：{polished}")
+            else:
+                text = _effective_text(segment).strip()
+                if text:
+                    lines.append(text)
         self._details.setPlainText("\n\n".join(lines) if lines else "")
 
     def _on_selection_changed(self) -> None:

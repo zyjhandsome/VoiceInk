@@ -106,6 +106,42 @@ def test_double_click_expands_session_segments(qapp):
     assert "来源：" in detail or "触发：" in detail or "模型：" in detail
 
 
+def test_legacy_file_import_history_labels_are_preserved(qapp):
+    """Withdrawn file-transcription capability still shows legacy history metadata."""
+    store = FakeHistoryStore()
+    store.sessions.insert(
+        0,
+        SessionSummary(
+            session_id="file1",
+            created_at=1_700_000_400_000,
+            segment_count=1,
+            source="file",
+            target_app="",
+            preview="from media file",
+        ),
+    )
+    store.segments["file1"] = [
+        SegmentRecord(
+            "file1",
+            0,
+            1_700_000_400_000,
+            "file raw text",
+            "",
+            "file",
+            1200,
+            "",
+            "file_import",
+            "fire-red",
+        ),
+    ]
+    window = HistoryWindow(store)
+    window._expand_session(window._session_list.item(0))
+    detail = window._details.toPlainText()
+    assert "来源：文件转写" in detail
+    assert "触发：导入文件" in detail
+    assert "file raw text" in detail
+
+
 def test_search_debounces_into_like_search(qapp):
     store = FakeHistoryStore()
     window = HistoryWindow(store)

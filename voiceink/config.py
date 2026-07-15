@@ -73,7 +73,8 @@ DEFAULT_CONFIG = {
         "api_url": "",
         "api_key": "",
         "model_name": "",
-        "prompt": ""
+        "prompt": "",
+        "mode": "polish",
     },
     "history": {
         "enabled": True,
@@ -222,6 +223,9 @@ class Config:
                 return self._extra_keys[k]
             else:
                 return default
+        # Legacy light-translation mode: treat as polish (silent fallback).
+        if key == "llm.mode" and isinstance(value, str) and value.strip().lower() == "translate":
+            return "polish"
         return value
 
     def set(self, key: str, value: Any):

@@ -81,6 +81,8 @@ CONTENT_MAX_WIDTH = 9999
 SIDEBAR_WIDTH = 248
 
 # Interactive controls
+CONTROL_NUMERIC_WIDTH = 120  # shared width for settings numeric spinboxes
+CONTROL_DEVICE_COMBO_WIDTH = 320  # shared width for manual audio device combos
 CONTROL_BORDER = "#D1D5DB"
 CONTROL_BORDER_HOVER = "#9CA3AF"
 TOGGLE_OFF = "#E5E2E3"

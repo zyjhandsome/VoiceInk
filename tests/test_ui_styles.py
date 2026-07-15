@@ -307,3 +307,95 @@ class TestCursorInspiredSettingsPolish:
         src = Path(mod.__file__).read_text(encoding="utf-8")
         assert "TEXT if active else TEXT_SEC" in src
         assert "ACCENT if active" not in src
+
+
+class TestSettingsControlAlignment:
+    """History numeric spins + scrollbar policy (settings-control-alignment)."""
+
+    def test_window_css_styles_spinbox_like_inputs(self):
+        import voiceink.ui.settings_styles as st
+        from voiceink.ui.design_tokens import ACCENT_FOCUS, HAIRLINE, RADIUS_MD
+
+        assert "QSpinBox {" in st.WINDOW_CSS or "QSpinBox {{" in st.WINDOW_CSS
+        assert f"border: 1px solid {HAIRLINE}" in st.WINDOW_CSS
+        assert f"border-radius: {RADIUS_MD}px" in st.WINDOW_CSS
+        assert "QSpinBox:focus" in st.WINDOW_CSS
+        assert f"2px solid {ACCENT_FOCUS}" in st.WINDOW_CSS
+        # Styling ::up/down-button without arrows clears native steppers on Windows.
+        assert "QSpinBox::up-button" not in st.WINDOW_CSS
+        assert "QSpinBox::down-button" not in st.WINDOW_CSS
+        # Same pitfall for combos: ::drop-down without ::down-arrow hides the chevron.
+        assert "QComboBox::drop-down" not in st.WINDOW_CSS
+        assert "QComboBox {" in st.WINDOW_CSS
+
+    def test_numeric_control_width_token(self):
+        from voiceink.ui.design_tokens import CONTROL_NUMERIC_WIDTH
+
+        assert CONTROL_NUMERIC_WIDTH == 120
+
+    def test_device_combo_width_token(self):
+        from voiceink.ui.design_tokens import CONTROL_DEVICE_COMBO_WIDTH
+
+        assert CONTROL_DEVICE_COMBO_WIDTH == 320
+
+    def test_history_spins_share_fixed_width(self, config, monkeypatch):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.ui.design_tokens import CONTROL_NUMERIC_WIDTH
+        from voiceink.ui.settings_window import SettingsWindow
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        win = SettingsWindow(config)
+        try:
+            assert win._history_retention_days_spin.minimumWidth() == CONTROL_NUMERIC_WIDTH
+            assert win._history_max_entries_spin.minimumWidth() == CONTROL_NUMERIC_WIDTH
+            assert win._history_retention_days_spin.maximumWidth() == CONTROL_NUMERIC_WIDTH
+            assert win._history_max_entries_spin.maximumWidth() == CONTROL_NUMERIC_WIDTH
+        finally:
+            win.close()
+
+    def test_device_combos_share_fixed_width(self, config, monkeypatch):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.ui.design_tokens import CONTROL_DEVICE_COMBO_WIDTH
+        from voiceink.ui.settings_window import SettingsWindow
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        win = SettingsWindow(config)
+        try:
+            assert win._mic_device_combo.minimumWidth() == CONTROL_DEVICE_COMBO_WIDTH
+            assert win._system_device_combo.minimumWidth() == CONTROL_DEVICE_COMBO_WIDTH
+            assert win._mic_device_combo.maximumWidth() == CONTROL_DEVICE_COMBO_WIDTH
+            assert win._system_device_combo.maximumWidth() == CONTROL_DEVICE_COMBO_WIDTH
+        finally:
+            win.close()
+
+    def test_settings_page_scrollbar_as_needed(self):
+        import sys
+
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.ui.settings_components import SettingsPage
+
+        QApplication.instance() or QApplication(sys.argv)
+        page = SettingsPage()
+        try:
+            assert (
+                page.verticalScrollBarPolicy()
+                == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            )
+        finally:
+            page.close()
