@@ -82,6 +82,9 @@ DEFAULT_CONFIG = {
         "retention_days": 90,
         "max_entries": 5000,
     },
+    "appearance": {
+        "theme_mode": "system",
+    },
 }
 
 

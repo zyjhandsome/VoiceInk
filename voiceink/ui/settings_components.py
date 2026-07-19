@@ -6,26 +6,23 @@ from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QSize, QPointF, Q
 from PyQt6.QtGui import QColor, QKeyEvent, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel,
-    QCheckBox, QPushButton, QRadioButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QCheckBox, QPushButton, QRadioButton, QScrollArea, QSizePolicy,
+    QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from voiceink.ui.design_tokens import (
     ACCENT,
     ACCENT_FOCUS,
     ACCENT_SOFT,
-    AMBER_SOFT,
-    AMBER_TEXT,
+    BORDER,
     CONTROL_BORDER,
-    CONTROL_BORDER_HOVER,
     DIVIDER_SOFT,
     FONT_DISPLAY,
     HAIRLINE,
     NAV_SELECTED_BAR_PX,
-    NAV_SELECTED_BG,
     PAGE_MARGIN_H,
     PAGE_MARGIN_V,
     RADIUS_MD,
-    RADIUS_PILL,
     RADIUS_SM,
     ROW_HOVER,
     SETTINGS_SIDEBAR_BG,
@@ -33,55 +30,64 @@ from voiceink.ui.design_tokens import (
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
-    SPACE_XL,
     SPACE_XS,
     SURFACE,
     SURFACE_PEARL,
     TEXT,
     TEXT_DIM,
     TEXT_SEC,
-    TOGGLE_OFF_TRACK,
-    TOGGLE_OFF_TRACK_HOVER,
-    TOGGLE_ON,
-    TOGGLE_ON_HOVER,
 )
 
-# ── Style fragments ──────────────────────────────────────────────
+# ── Style fragments (rebuilt from active token axis via reload_styles) ──
 
-SECTION_LABEL = (
-    f"color: {TEXT_SEC}; font-size: 13px; font-weight: 600;"
-    f" padding: 12px {SPACE_MD}px 8px {SPACE_MD}px; letter-spacing: 0;"
-    f" background: transparent;"
-)
+SECTION_LABEL = ""
+PAGE_TITLE = ""
+PAGE_SUBTITLE = ""
+FOOTNOTE = ""
+GROUP_STYLE = ""
+HERO_CARD_STYLE = ""
+ROW_RADIO_STYLE = ""
+NAV_BTN_STYLE = ""
+LINK_BTN_STYLE = ""
+SUB_TAB_BAR_STYLE = ""
+SUB_TAB_BTN_STYLE = ""
 
-PAGE_TITLE = (
-    f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 22px;"
-    f" font-weight: 600; letter-spacing: 0;"
-)
 
-PAGE_SUBTITLE = (
-    f"color: {TEXT_SEC}; font-size: 14px; padding: 0;"
-    f" line-height: 1.45; letter-spacing: 0;"
-)
+def reload_styles() -> None:
+    """Rebuild style fragments from the currently activated design tokens."""
+    global SECTION_LABEL, PAGE_TITLE, PAGE_SUBTITLE, FOOTNOTE
+    global GROUP_STYLE, HERO_CARD_STYLE, ROW_RADIO_STYLE, NAV_BTN_STYLE, LINK_BTN_STYLE
+    global SUB_TAB_BAR_STYLE, SUB_TAB_BTN_STYLE
+    from voiceink.ui import design_tokens as tok
 
-FOOTNOTE = (
-    f"color: {TEXT_DIM}; font-size: 11px; line-height: 1.45;"
-    f" padding: 4px 4px 0 4px; letter-spacing: 0;"
-)
-
-GROUP_STYLE = f"""
+    SECTION_LABEL = (
+        f"color: {tok.TEXT_DIM}; font-size: 12px; font-weight: 600;"
+        f" padding: 0 2px 2px 2px; letter-spacing: 0;"
+        f" background: transparent;"
+    )
+    PAGE_TITLE = (
+        f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY}; font-size: 20px;"
+        f" font-weight: 600; letter-spacing: 0;"
+    )
+    PAGE_SUBTITLE = (
+        f"color: {tok.TEXT_DIM}; font-size: 13px; padding: 0;"
+        f" line-height: 1.45; letter-spacing: 0;"
+    )
+    FOOTNOTE = (
+        f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.45;"
+        f" padding: 0 2px 0 2px; letter-spacing: 0;"
+    )
+    GROUP_STYLE = f"""
     QFrame#settingsGroup {{
-        background: {SURFACE};
-        border: none;
-        border-radius: {RADIUS_MD}px;
+        background: {tok.SURFACE};
+        border: 1px solid {tok.BORDER};
+        border-radius: {tok.RADIUS_LG}px;
     }}
 """
-
-HERO_CARD_STYLE = GROUP_STYLE.replace("settingsGroup", "settingsHeroCard")
-
-ROW_RADIO_STYLE = f"""
+    HERO_CARD_STYLE = GROUP_STYLE.replace("settingsGroup", "settingsHeroCard")
+    ROW_RADIO_STYLE = f"""
     QRadioButton {{
-        color: {TEXT};
+        color: {tok.TEXT};
         spacing: 12px;
         font-size: 14px;
         padding: 10px 14px;
@@ -95,71 +101,107 @@ ROW_RADIO_STYLE = f"""
         subcontrol-origin: padding;
         margin-right: 4px;
         border-radius: 10px;
-        border: 2px solid {CONTROL_BORDER_HOVER};
-        background: {SURFACE};
+        border: 2px solid {tok.CONTROL_BORDER_HOVER};
+        background: {tok.SURFACE};
     }}
     QRadioButton::indicator:checked {{
-        border: 2px solid {ACCENT};
+        border: 2px solid {tok.ACCENT};
         background: qradialgradient(
             cx:0.5, cy:0.5, radius:0.45, fx:0.5, fy:0.5,
-            stop:0 {ACCENT}, stop:0.52 {ACCENT},
-            stop:0.53 {SURFACE}, stop:1 {SURFACE}
+            stop:0 {tok.ACCENT}, stop:0.52 {tok.ACCENT},
+            stop:0.53 {tok.SURFACE}, stop:1 {tok.SURFACE}
         );
     }}
     QRadioButton::indicator:unchecked:hover {{
-        border-color: {ACCENT_FOCUS};
+        border-color: {tok.ACCENT_FOCUS};
     }}
     QRadioButton:focus {{
-        border: 2px solid {ACCENT_FOCUS};
-        border-radius: {RADIUS_SM}px;
+        border: 2px solid {tok.ACCENT_FOCUS};
+        border-radius: {tok.RADIUS_SM}px;
         padding: 8px 12px;
     }}
 """
-
-NAV_BTN_STYLE = f"""
+    NAV_BTN_STYLE = f"""
     QPushButton#settingsNavBtn {{
         text-align: left;
-        padding: 0 14px 0 12px;
+        padding: 0 12px 0 12px;
         border: none;
-        border-left: {NAV_SELECTED_BAR_PX}px solid transparent;
-        border-radius: {RADIUS_SM}px;
-        color: {TEXT_SEC};
-        font-size: 14px;
+        border-left: {tok.NAV_SELECTED_BAR_PX}px solid transparent;
+        border-radius: {tok.RADIUS_MD}px;
+        color: {tok.TEXT_SEC};
+        font-size: 13px;
         font-weight: 500;
         background: transparent;
     }}
     QPushButton#settingsNavBtn:checked {{
-        background: {NAV_SELECTED_BG};
-        border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT};
-        color: {TEXT};
+        background: {tok.NAV_SELECTED_BG};
+        border-left: {tok.NAV_SELECTED_BAR_PX}px solid {tok.ACCENT};
+        color: {tok.ACCENT_TEXT};
         font-weight: 600;
     }}
     QPushButton#settingsNavBtn:hover:!checked {{
-        background: {ROW_HOVER};
-        color: {TEXT};
+        background: {tok.ROW_HOVER};
+        color: {tok.TEXT};
     }}
     QPushButton#settingsNavBtn:focus {{
-        border: 2px solid {ACCENT_FOCUS};
-        border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT_FOCUS};
+        border: 2px solid {tok.ACCENT_FOCUS};
+        border-left: {tok.NAV_SELECTED_BAR_PX}px solid {tok.ACCENT_FOCUS};
         padding: 0 14px 0 12px;
     }}
 """
-
-LINK_BTN_STYLE = f"""
+    LINK_BTN_STYLE = f"""
     QPushButton {{
-        color: {TEXT_SEC}; background: transparent; border: none;
+        color: {tok.TEXT_SEC}; background: transparent; border: none;
         font-size: 12px; text-align: left; padding: 4px 0;
     }}
-    QPushButton:hover {{ color: {TEXT}; }}
+    QPushButton:hover {{ color: {tok.TEXT}; }}
     QPushButton:focus {{
         outline: none;
-        border-bottom: 1px solid {CONTROL_BORDER_HOVER};
+        border-bottom: 1px solid {tok.CONTROL_BORDER_HOVER};
     }}
 """
+    SUB_TAB_BAR_STYLE = f"""
+    QFrame#settingsSubTabBar {{
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid {tok.BORDER};
+    }}
+"""
+    SUB_TAB_BTN_STYLE = f"""
+    QPushButton#settingsSubTabBtn {{
+        text-align: center;
+        padding: 10px 14px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        color: {tok.TEXT_DIM};
+        font-size: 13px;
+        font-weight: 500;
+        background: transparent;
+        min-width: 56px;
+    }}
+    QPushButton#settingsSubTabBtn:checked {{
+        color: {tok.ACCENT_TEXT};
+        font-weight: 600;
+        border-bottom: 2px solid {tok.ACCENT};
+        background: transparent;
+    }}
+    QPushButton#settingsSubTabBtn:hover:!checked {{
+        color: {tok.TEXT};
+    }}
+    QPushButton#settingsSubTabBtn:focus {{
+        outline: none;
+        border-bottom: 2px solid {tok.ACCENT_FOCUS};
+    }}
+"""
+
+
+reload_styles()
 
 
 def section_header(text: str) -> QLabel:
     lbl = QLabel(text)
+    lbl.setProperty("viRole", "sectionLabel")
     lbl.setStyleSheet(SECTION_LABEL)
     return lbl
 
@@ -170,6 +212,7 @@ def page_header(title: str, subtitle: str = "") -> QWidget:
     lay.setContentsMargins(0, 0, 0, 4)
     lay.setSpacing(4)
     t = QLabel(title)
+    t.setProperty("viRole", "pageTitle")
     t.setStyleSheet(PAGE_TITLE)
     lay.addWidget(t)
     if subtitle:
@@ -181,6 +224,7 @@ def page_intro(text: str) -> QLabel:
     """Subtitle-only intro — sidebar already shows the page title."""
     lbl = QLabel(text)
     lbl.setWordWrap(True)
+    lbl.setProperty("viRole", "pageSubtitle")
     lbl.setStyleSheet(PAGE_SUBTITLE)
     return lbl
 
@@ -205,6 +249,7 @@ class PageHero(QWidget):
         top = QHBoxLayout()
         top.setSpacing(8)
         self._title = QLabel(title)
+        self._title.setProperty("viRole", "pageTitle")
         self._title.setStyleSheet(PAGE_TITLE)
         top.addWidget(self._title, 0, Qt.AlignmentFlag.AlignVCenter)
         top.addStretch(1)
@@ -225,6 +270,7 @@ class PageHero(QWidget):
         self._root.addLayout(top)
 
         self._subtitle = QLabel(subtitle)
+        self._subtitle.setProperty("viRole", "pageSubtitle")
         self._subtitle.setWordWrap(True)
         self._subtitle.setStyleSheet(PAGE_SUBTITLE)
         self._subtitle.setVisible(bool(subtitle))
@@ -235,6 +281,16 @@ class PageHero(QWidget):
 
         self.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
+
+    def reapply_styles(self) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        self._title.setStyleSheet(PAGE_TITLE)
+        self._subtitle.setStyleSheet(PAGE_SUBTITLE)
+        self._inline_status.setStyleSheet(
+            f"color: {tok.TEXT_DIM}; font-size: 12px; font-weight: 500;"
+            f" background: transparent;"
         )
 
     def set_inline_status(self, text: str) -> None:
@@ -286,63 +342,44 @@ def usage_tip_bar(text: str) -> QFrame:
 
 
 def polish_preview_content() -> QWidget:
-    """Before/after sample body — embed inside parent card, no extra box."""
+    """Compact before/after sample matching the selected HTML reference."""
     frame = QWidget()
+    frame.setObjectName("polishPreview")
     lay = QVBoxLayout(frame)
     lay.setContentsMargins(SPACE_MD, 4, SPACE_MD, SPACE_MD)
-    lay.setSpacing(12)
+    lay.setSpacing(8)
 
     head = QLabel("效果预览")
+    head.setProperty("viRole", "polishPreviewHeading")
     head.setStyleSheet(
         f"color: {TEXT}; font-size: 16px; font-weight: 600; background: transparent;"
     )
     lay.addWidget(head)
 
-    def _sample(label: str, body: str, *, polished: bool) -> None:
-        box = QWidget()
-        bl = QVBoxLayout(box)
-        bl.setContentsMargins(0, 0, 0, 0)
-        bl.setSpacing(6)
+    def _sample(label: str, body: str) -> None:
+        row = QWidget()
+        row_lay = QHBoxLayout(row)
+        row_lay.setContentsMargins(0, 0, 0, 0)
+        row_lay.setSpacing(6)
         tag = QLabel(label)
+        tag.setProperty("viRole", "polishPreviewLabel")
         tag.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 12px; font-weight: 500;"
+            f"color: {TEXT_DIM}; font-size: 13px; font-weight: 600;"
             f" background: transparent;"
         )
-        bl.addWidget(tag)
+        row_lay.addWidget(tag, 0, Qt.AlignmentFlag.AlignTop)
         txt = QLabel(body)
+        txt.setProperty("viRole", "polishPreviewText")
         txt.setWordWrap(True)
-        if polished:
-            color = TEXT
-            bg = SURFACE
-            border = f"1px solid {HAIRLINE}"
-        else:
-            color = TEXT_SEC
-            bg = SURFACE_PEARL
-            border = f"1px solid {HAIRLINE}"
         txt.setStyleSheet(
-            f"color: {color}; font-size: 14px; line-height: 1.5;"
-            f" background: {bg}; border: {border};"
-            f" border-radius: {RADIUS_SM}px; padding: 12px 14px;"
+            f"color: {TEXT_SEC}; font-size: 13px; line-height: 1.5;"
+            f" background: transparent;"
         )
-        bl.addWidget(txt)
-        lay.addWidget(box)
+        row_lay.addWidget(txt, 1)
+        lay.addWidget(row)
 
-    _sample(
-        "转写原文",
-        "那个我今天嗯想去趟超市然后买点东西。",
-        polished=False,
-    )
-    _sample(
-        "润色后",
-        "我今天想去趟超市买点东西。",
-        polished=True,
-    )
-    hint = QLabel("ℹ  开启上方开关并配置 API 后，识别结果会自动润色。")
-    hint.setWordWrap(True)
-    hint.setStyleSheet(
-        f"color: {TEXT_SEC}; font-size: 12px; background: transparent;"
-    )
-    lay.addWidget(hint)
+    _sample("原文", "嗯那个就是把会议纪要整理一下吧")
+    _sample("润色", "请整理会议纪要。")
     return frame
 
 
@@ -359,38 +396,44 @@ def kv_row_elided(key: str, value: str, *, max_len: int = 44) -> QWidget:
 
 def footnote(text: str) -> QLabel:
     lbl = QLabel(text)
+    lbl.setProperty("viRole", "footnote")
     lbl.setWordWrap(True)
     lbl.setStyleSheet(FOOTNOTE)
     return lbl
 
 
 def info_callout(text: str, object_name: str = "infoCallout") -> QFrame:
-    """Subtle inline notice — not a heavy alert banner."""
+    """Prototype v3 amber callout — text only, no leading glyph."""
     frame = QFrame()
     frame.setObjectName(object_name)
-    frame.setStyleSheet(f"""
-        QFrame#{object_name} {{
-            background: {AMBER_SOFT};
-            border: 1px solid #F5E6B8;
-            border-radius: {RADIUS_SM}px;
-        }}
-    """)
     lay = QHBoxLayout(frame)
     lay.setContentsMargins(12, 10, 12, 10)
-    lay.setSpacing(8)
-    icon = QLabel("⚠")
-    icon.setStyleSheet(
-        f"color: {AMBER_TEXT}; font-size: 14px; background: transparent;"
-    )
-    icon.setAlignment(Qt.AlignmentFlag.AlignTop)
-    lay.addWidget(icon)
+    lay.setSpacing(0)
     lbl = QLabel(text)
+    lbl.setObjectName(f"{object_name}Text")
     lbl.setWordWrap(True)
-    lbl.setStyleSheet(
-        f"color: {AMBER_TEXT}; font-size: 12px; line-height: 1.45; background: transparent;"
-    )
     lay.addWidget(lbl, 1)
+    paint_info_callout(frame)
     return frame
+
+
+def paint_info_callout(frame: QFrame) -> None:
+    """Refresh an info_callout frame from the active token axis."""
+    from voiceink.ui import design_tokens as tok
+
+    object_name = frame.objectName() or "infoCallout"
+    frame.setStyleSheet(f"""
+        QFrame#{object_name} {{
+            background: {tok.AMBER_SOFT};
+            border: 1px solid {tok.CALLOUT_BORDER};
+            border-radius: {tok.RADIUS_MD}px;
+        }}
+    """)
+    for child in frame.findChildren(QLabel):
+        child.setStyleSheet(
+            f"color: {tok.AMBER_TEXT}; font-size: 12px; line-height: 1.45;"
+            f" background: transparent;"
+        )
 
 
 def empty_state(text: str) -> QLabel:
@@ -405,14 +448,25 @@ def empty_state(text: str) -> QLabel:
 
 
 def group_divider() -> QWidget:
+    """Full-bleed hairline inside a settings card (prototype .row + .row)."""
     wrap = QWidget()
+    wrap.setObjectName("settingsGroupDivider")
     lay = QHBoxLayout(wrap)
-    lay.setContentsMargins(SPACE_MD, 0, SPACE_MD, 0)
+    lay.setContentsMargins(0, 0, 0, 0)
     line = QFrame()
+    line.setObjectName("settingsGroupDividerLine")
     line.setFixedHeight(1)
     line.setStyleSheet(f"background: {DIVIDER_SOFT};")
     lay.addWidget(line)
     return wrap
+
+
+def recolor_group_divider(wrap: QWidget) -> None:
+    from voiceink.ui import design_tokens as tok
+
+    for line in wrap.findChildren(QFrame):
+        if line.objectName() == "settingsGroupDividerLine":
+            line.setStyleSheet(f"background: {tok.DIVIDER_SOFT};")
 
 
 def settings_group() -> QFrame:
@@ -433,13 +487,116 @@ def settings_section(title: str, group: QFrame) -> QWidget:
         hdr = QLabel(title)
         hdr.setObjectName("settingsGroupTitle")
         hdr.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 12px; font-weight: 600;"
-            f" padding: 0 4px 2px 4px; background: transparent;"
-            f" letter-spacing: 0.04em;"
+            f"color: {TEXT_DIM}; font-size: 12px; font-weight: 600;"
+            f" padding: 0 2px 2px 2px; background: transparent;"
+            f" letter-spacing: 0;"
         )
         lay.addWidget(hdr)
     lay.addWidget(group)
     return wrap
+
+
+def settings_tab_pane(*sections: QWidget) -> QWidget:
+    """Vertical stack of settings sections for one sub-tab page."""
+    pane = QWidget()
+    pane.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+    lay = QVBoxLayout(pane)
+    lay.setContentsMargins(0, SPACE_SM, 0, 0)
+    lay.setSpacing(SPACE_LG + SPACE_XS)
+    lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+    for section in sections:
+        lay.addWidget(section)
+    lay.addStretch(1)
+    return pane
+
+
+class SettingsSubTabs(QWidget):
+    """Underline sub-tabs + stacked panes for settings pages (录音 / 音频 / 偏好)."""
+
+    tab_changed = pyqtSignal(int)
+
+    def __init__(
+        self,
+        labels: list[str],
+        pages: list[QWidget],
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        if len(labels) != len(pages) or not labels:
+            raise ValueError("labels and pages must be non-empty and equal length")
+        self._labels = list(labels)
+        self._buttons: list[QPushButton] = []
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        bar = QFrame()
+        bar.setObjectName("settingsSubTabBar")
+        bar.setStyleSheet(SUB_TAB_BAR_STYLE)
+        bar_lay = QHBoxLayout(bar)
+        bar_lay.setContentsMargins(0, 0, 0, 0)
+        bar_lay.setSpacing(4)
+
+        for i, label in enumerate(labels):
+            btn = QPushButton(label)
+            btn.setObjectName("settingsSubTabBtn")
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(SUB_TAB_BTN_STYLE)
+            btn.setAccessibleName(f"通用子页签 {label}")
+            btn.clicked.connect(lambda _checked=False, idx=i: self.set_current_index(idx))
+            self._buttons.append(btn)
+            bar_lay.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft)
+        bar_lay.addStretch(1)
+        root.addWidget(bar)
+
+        self._stack = QStackedWidget()
+        self._stack.setObjectName("settingsSubTabStack")
+        self._stack.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        for page in pages:
+            self._stack.addWidget(page)
+        root.addWidget(self._stack)
+
+        self._buttons[0].setChecked(True)
+        self._stack.setCurrentIndex(0)
+        self._fit_stack_to_current()
+
+    def tab_labels(self) -> list[str]:
+        return list(self._labels)
+
+    def current_index(self) -> int:
+        return self._stack.currentIndex()
+
+    def set_current_index(self, index: int) -> None:
+        if index < 0 or index >= len(self._labels):
+            return
+        if self._stack.currentIndex() != index:
+            self._stack.setCurrentIndex(index)
+        btn = self._buttons[index]
+        if not btn.isChecked():
+            btn.setChecked(True)
+        self._fit_stack_to_current()
+        self.tab_changed.emit(index)
+
+    def _fit_stack_to_current(self) -> None:
+        """Keep stack height to the active pane so short tabs leave no empty scroll."""
+        page = self._stack.currentWidget()
+        if page is None:
+            return
+        height = max(page.sizeHint().height(), page.minimumSizeHint().height())
+        if height > 0:
+            self._stack.setFixedHeight(height)
+
+    def reapply_styles(self) -> None:
+        bar = self.findChild(QFrame, "settingsSubTabBar")
+        if bar is not None:
+            bar.setStyleSheet(SUB_TAB_BAR_STYLE)
+        for btn in self._buttons:
+            btn.setStyleSheet(SUB_TAB_BTN_STYLE)
 
 
 def option_row(title: str, subtitle: str = "") -> QWidget:
@@ -448,15 +605,18 @@ def option_row(title: str, subtitle: str = "") -> QWidget:
     lay.setContentsMargins(0, 0, 0, 0)
     lay.setSpacing(2)
     t = QLabel(title)
+    t.setProperty("viRole", "rowTitle")
     t.setStyleSheet(
-        f"color: {TEXT}; font-size: 14px; font-weight: 600; background: transparent;"
+        f"color: {TEXT}; font-size: 13px; font-weight: 500; background: transparent;"
     )
     lay.addWidget(t)
     if subtitle:
         s = QLabel(subtitle)
+        s.setProperty("viRole", "rowSubtitle")
         s.setWordWrap(True)
         s.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 12px; background: transparent;"
+            f"color: {TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f" background: transparent;"
         )
         lay.addWidget(s)
     return col
@@ -480,15 +640,16 @@ def labeled_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
 
 
 def stacked_field_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
-    """Vertical field — label, control, optional hint (settings-row pattern)."""
+    """Vertical field — label, control, optional hint (prototype .field)."""
     row = QWidget()
     outer = QVBoxLayout(row)
-    outer.setContentsMargins(SPACE_MD, 10, SPACE_MD, 10)
+    outer.setContentsMargins(SPACE_MD, 12, SPACE_MD, 12)
     outer.setSpacing(6)
 
     lbl = QLabel(label)
+    lbl.setProperty("viRole", "fieldLabel")
     lbl.setStyleSheet(
-        f"color: {TEXT}; font-size: 14px; font-weight: 500; background: transparent;"
+        f"color: {TEXT_SEC}; font-size: 12px; font-weight: 500; background: transparent;"
     )
     lbl.setBuddy(widget)
     outer.addWidget(lbl)
@@ -496,6 +657,7 @@ def stacked_field_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
 
     if hint:
         h = QLabel(hint)
+        h.setProperty("viRole", "hint")
         h.setWordWrap(True)
         h.setStyleSheet(
             f"color: {TEXT_DIM}; font-size: 12px; line-height: 1.4; background: transparent;"
@@ -523,17 +685,22 @@ def kv_row(key: str, value: str, *, mono: bool = False) -> QWidget:
     lay.setContentsMargins(SPACE_MD, 11, SPACE_MD, 11)
     lay.setSpacing(SPACE_MD)
     k = QLabel(key)
-    k.setStyleSheet(f"color: {TEXT_SEC}; font-size: 13px; min-width: 80px;")
+    k.setProperty("viRole", "kvKey")
+    k.setStyleSheet(
+        f"color: {TEXT}; font-size: 13px; font-weight: 550; min-width: 80px;"
+    )
     k.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     v = QLabel(value)
+    v.setProperty("viRole", "kvValueMono" if mono else "kvValue")
     v.setWordWrap(True)
+    v.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     v.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     if mono:
         v.setStyleSheet(
-            f"color: {TEXT}; font-size: 12px; font-family: {FONT_MONO};"
+            f"color: {TEXT_DIM}; font-size: 12px; font-family: {FONT_MONO};"
         )
     else:
-        v.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
+        v.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px;")
     lay.addWidget(k)
     lay.addWidget(v, 1)
     return row
@@ -685,7 +852,7 @@ class ChoiceCard(QFrame):
 
 
 class VerticalChoiceCard(QFrame):
-    """Full-width selectable row — reference general-settings audio cards."""
+    """Full-width selectable row — used by legacy layouts / style tests."""
 
     clicked = pyqtSignal()
 
@@ -775,8 +942,103 @@ class VerticalChoiceCard(QFrame):
         super().keyPressEvent(event)
 
 
+class CompactPickCard(QFrame):
+    """Prototype v3 pick tile: title + short desc, full accent border when selected."""
+
+    clicked = pyqtSignal()
+
+    def __init__(
+        self,
+        title: str,
+        subtitle: str,
+        radio: QRadioButton,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._radio = radio
+        self._subtitle = subtitle
+        self.setObjectName("CompactPickCard")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(title)
+        if subtitle:
+            self.setAccessibleDescription(subtitle)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(4)
+        lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self._title_label = QLabel(title)
+        self._title_label.setProperty("viRole", "pickTitle")
+        lay.addWidget(self._title_label)
+        self._subtitle_label = QLabel(subtitle)
+        self._subtitle_label.setProperty("viRole", "pickSubtitle")
+        self._subtitle_label.setWordWrap(True)
+        lay.addWidget(self._subtitle_label)
+
+        radio.setVisible(False)
+        radio.toggled.connect(self._sync_style)
+        self._sync_style(radio.isChecked())
+
+    def reapply_styles(self) -> None:
+        self._sync_style(self._radio.isChecked())
+
+    def _sync_style(self, checked: bool) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        self.setProperty("accessibleChecked", checked)
+        self.setAccessibleDescription(
+            f"{self._subtitle}，{'已选中' if checked else '未选中'}".strip("，")
+        )
+        self._title_label.setStyleSheet(
+            f"color: {tok.TEXT}; font-size: 13px; font-weight: 600;"
+            f" background: transparent;"
+        )
+        self._subtitle_label.setStyleSheet(
+            f"color: {tok.TEXT_DIM}; font-size: 11px; line-height: 1.35;"
+            f" background: transparent;"
+        )
+        # Prototype v3: muted tile idle; accent fill + double ring when selected.
+        if checked:
+            self.setStyleSheet(f"""
+                CompactPickCard {{
+                    background: {tok.ACCENT_SOFT};
+                    border: 2px solid {tok.ACCENT};
+                    border-radius: {tok.RADIUS_MD}px;
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                CompactPickCard {{
+                    background: {tok.SURFACE_PEARL};
+                    border: 1px solid {tok.BORDER};
+                    border-radius: {tok.RADIUS_MD}px;
+                }}
+                CompactPickCard:hover {{
+                    border-color: {tok.CONTROL_BORDER};
+                    background: {tok.SURFACE};
+                }}
+            """)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._radio.setChecked(True)
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._radio.setChecked(True)
+            self.clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class AudioSourcePicker(QWidget):
-    """Vertically stacked audio source cards (reference layout)."""
+    """Horizontal 3-column audio source picks (settings › general prototype)."""
 
     def __init__(
         self,
@@ -786,21 +1048,22 @@ class AudioSourcePicker(QWidget):
         parent=None,
     ):
         super().__init__(parent)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
+        lay = QHBoxLayout(self)
+        # Prototype .picker: padding 12px; gap 8px.
+        lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(8)
 
         specs = [
-            (mic_radio, "仅麦克风", "收录你的说话声", "mic"),
-            (sys_radio, "仅电脑播放", "视频、会议声音", "sys"),
-            (mixed_radio, "麦克风+电脑", "开会同时收录", "mixed"),
+            (mic_radio, "仅麦克风", "日常口述"),
+            (sys_radio, "仅电脑声", "会议回放"),
+            (mixed_radio, "混合", "麦 + 系统"),
         ]
-        for rb, title, sub, kind in specs:
-            lay.addWidget(VerticalChoiceCard(title, sub, kind, rb))
+        for rb, title, sub in specs:
+            lay.addWidget(CompactPickCard(title, sub, rb), 1)
 
 
 class TriggerModePicker(QWidget):
-    """Mutually exclusive trigger mode cards — side-by-side Stitch layout."""
+    """Side-by-side trigger mode picks (settings › general prototype)."""
 
     def __init__(
         self,
@@ -810,29 +1073,107 @@ class TriggerModePicker(QWidget):
     ):
         super().__init__(parent)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
-        lay.setSpacing(12)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
 
         specs = [
-            (
-                continuous_radio,
-                "自动持续转写",
-                "按住约 0.30 秒开始，浮窗 × 结束整场监听",
-                "continuous",
-            ),
-            (
-                hotkey_radio,
-                "按住快捷键录音",
-                "按住约 0.18 秒录音，松开后结束并识别",
-                "hotkey",
-            ),
+            (continuous_radio, "连续口述", "按一次开始，再按一次结束"),
+            (hotkey_radio, "按住说话", "按住录音，松开结束"),
         ]
-        for rb, title, sub, kind in specs:
-            card = VerticalChoiceCard(title, sub, kind, rb)
-            card.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-            )
-            lay.addWidget(card, 1)
+        for rb, title, sub in specs:
+            lay.addWidget(CompactPickCard(title, sub, rb), 1)
+
+
+class ThemeModeSegment(QWidget):
+    """Segmented theme control — API mirrors QComboBox data helpers used by settings."""
+
+    currentIndexChanged = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ThemeModeCombo")
+        self.setAccessibleName("主题模式")
+        self._items = [("系统", "system"), ("浅色", "light"), ("暗色", "dark")]
+        self._index = 0
+        self._buttons: list[QPushButton] = []
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._host = QFrame()
+        self._host.setObjectName("themeModeSegment")
+        host_lay = QHBoxLayout(self._host)
+        host_lay.setContentsMargins(3, 3, 3, 3)
+        host_lay.setSpacing(0)
+
+        for i, (label, _mode) in enumerate(self._items):
+            btn = QPushButton(label)
+            btn.setObjectName("themeModeSegBtn")
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _c=False, idx=i: self.setCurrentIndex(idx))
+            self._buttons.append(btn)
+            host_lay.addWidget(btn)
+        root.addWidget(self._host)
+        self._buttons[0].setChecked(True)
+        self.reapply_styles()
+
+    def findData(self, data) -> int:
+        for i, (_label, mode) in enumerate(self._items):
+            if mode == data:
+                return i
+        return -1
+
+    def currentData(self, _role=None):
+        return self._items[self._index][1]
+
+    def currentIndex(self) -> int:
+        return self._index
+
+    def setCurrentIndex(self, index: int) -> None:
+        if index < 0 or index >= len(self._items):
+            return
+        changed = index != self._index
+        self._index = index
+        btn = self._buttons[index]
+        if not btn.isChecked():
+            btn.setChecked(True)
+        if changed and not self.signalsBlocked():
+            self.currentIndexChanged.emit(index)
+
+    def reapply_styles(self) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        self._host.setStyleSheet(f"""
+            QFrame#themeModeSegment {{
+                background: {tok.SURFACE_PEARL};
+                border: 1px solid {tok.BORDER};
+                border-radius: {tok.RADIUS_MD}px;
+            }}
+        """)
+        for btn in self._buttons:
+            btn.setStyleSheet(f"""
+                QPushButton#themeModeSegBtn {{
+                    border: none;
+                    background: transparent;
+                    color: {tok.TEXT_SEC};
+                    font-size: 12px;
+                    font-weight: 500;
+                    padding: 6px 12px;
+                    border-radius: 6px;
+                }}
+                QPushButton#themeModeSegBtn:checked {{
+                    background: {tok.SURFACE};
+                    color: {tok.TEXT};
+                    font-weight: 600;
+                    border: none;
+                }}
+                QPushButton#themeModeSegBtn:hover:!checked {{
+                    color: {tok.TEXT};
+                }}
+            """)
 
 
 class _PlayCircle(QWidget):
@@ -950,13 +1291,30 @@ class WideTestButton(QWidget):
 
 
 def device_selection_link(text: str = "手动选择音频设备") -> QPushButton:
-    """Text link with chevron — toggles advanced device panel."""
-    btn = QPushButton(f"{text}  ›")
+    """Accent text link — toggles advanced device panel (prototype v3)."""
+    btn = QPushButton(text)
+    btn.setObjectName("deviceSelectionLink")
     btn.setCheckable(True)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setAccessibleName(text)
-    btn.setStyleSheet(LINK_BTN_STYLE)
+    paint_device_selection_link(btn)
     return btn
+
+
+def paint_device_selection_link(btn: QPushButton) -> None:
+    from voiceink.ui import design_tokens as tok
+
+    btn.setStyleSheet(f"""
+        QPushButton#deviceSelectionLink {{
+            color: {tok.ACCENT_TEXT}; background: transparent; border: none;
+            font-size: 13px; font-weight: 500; text-align: left; padding: 4px 0;
+        }}
+        QPushButton#deviceSelectionLink:hover {{ color: {tok.ACCENT_TEXT_HOVER}; }}
+        QPushButton#deviceSelectionLink:focus {{
+            outline: none;
+            border-bottom: 1px solid {tok.ACCENT_FOCUS};
+        }}
+    """)
 
 
 def collapsible_toggle_btn(text: str) -> QPushButton:
@@ -1012,18 +1370,20 @@ class SettingsSidebar(QWidget):
         brand.setContentsMargins(4, 0, 4, 0)
         brand.setSpacing(10)
 
-        icon = QLabel()
-        icon.setFixedSize(32, 32)
-        icon.setPixmap(create_microphone_icon(recording=False, size=64).pixmap(32, 32))
-        icon.setStyleSheet("background: transparent;")
-        icon.setAccessibleName("VoiceInk 图标")
-        brand.addWidget(icon)
-        name = QLabel("VoiceInk")
-        name.setStyleSheet(
-            f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 18px;"
+        self._brand_icon = QLabel()
+        self._brand_icon.setFixedSize(32, 32)
+        self._brand_icon.setPixmap(
+            create_microphone_icon(recording=False, size=64).pixmap(32, 32)
+        )
+        self._brand_icon.setStyleSheet("background: transparent;")
+        self._brand_icon.setAccessibleName("VoiceInk 图标")
+        brand.addWidget(self._brand_icon)
+        self._brand_label = QLabel("VoiceInk")
+        self._brand_label.setStyleSheet(
+            f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 14px;"
             f" font-weight: 600; letter-spacing: 0; background: transparent;"
         )
-        brand.addWidget(name, 1)
+        brand.addWidget(self._brand_label, 1)
         root.addLayout(brand)
 
         root.addSpacing(SPACE_MD)
@@ -1032,18 +1392,19 @@ class SettingsSidebar(QWidget):
         status_card.setObjectName("sidebarStatusCard")
         status_card.setStyleSheet(f"""
             QFrame#sidebarStatusCard {{
-                background: transparent;
-                border: none;
+                background: {SURFACE_PEARL};
+                border: 1px solid {BORDER};
+                border-radius: {RADIUS_MD}px;
             }}
         """)
         status_lay = QVBoxLayout(status_card)
-        status_lay.setContentsMargins(12, 10, 12, 10)
-        status_lay.setSpacing(4)
+        status_lay.setContentsMargins(10, 8, 10, 8)
+        status_lay.setSpacing(2)
 
         self._status_primary = QLabel("")
         self._status_primary.setWordWrap(True)
         self._status_primary.setStyleSheet(
-            f"color: {TEXT}; font-size: 12px; font-weight: 500;"
+            f"color: {TEXT_DIM}; font-size: 11px; font-weight: 500;"
             f" background: transparent;"
         )
         status_lay.addWidget(self._status_primary)
@@ -1051,7 +1412,7 @@ class SettingsSidebar(QWidget):
         self._status_secondary = QLabel("")
         self._status_secondary.setWordWrap(False)
         self._status_secondary.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 12px; background: transparent;"
+            f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
         )
         status_lay.addWidget(self._status_secondary)
 
@@ -1064,7 +1425,7 @@ class SettingsSidebar(QWidget):
         self._buttons: list[QPushButton] = []
         nav_col = QVBoxLayout()
         nav_col.setContentsMargins(0, 0, 0, 0)
-        nav_col.setSpacing(6)
+        nav_col.setSpacing(2)
         for shape, label in zip(self._SHAPES, self._LABELS):
             btn = QPushButton(label)
             btn.setObjectName("settingsNavBtn")
@@ -1072,7 +1433,7 @@ class SettingsSidebar(QWidget):
             btn.setIcon(nav_icon_fn(shape))
             btn.setIconSize(QSize(16, 16))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(42)
+            btn.setFixedHeight(36)
             btn.setToolTip(label)
             btn.setAccessibleName(f"设置：{label}")
             btn.clicked.connect(lambda checked, i=len(self._buttons): self._select(i))
@@ -1118,7 +1479,8 @@ class SettingsSidebar(QWidget):
 def _option_text_column(title: str, subtitle: str) -> QWidget:
     wrap = QWidget()
     lay = QHBoxLayout(wrap)
-    lay.setContentsMargins(SPACE_MD, 10, SPACE_SM, 10)
+    # Prototype .row: padding 12px 16px; min-height ~52 with switch.
+    lay.setContentsMargins(SPACE_MD, 12, SPACE_SM, 12)
     lay.setSpacing(0)
     lay.addWidget(option_row(title, subtitle), 1)
     return wrap
@@ -1160,11 +1522,12 @@ class RadioOptionRow(QWidget):
 
 
 class SwitchControl(QCheckBox):
-    """iOS/Huawei-style pill switch (reference general-settings toggles)."""
+    """Prototype v3 pill switch: gray off track, green on, white knob."""
 
     toggled = pyqtSignal(bool)
 
-    _TRACK_W = 44
+    # Match prototypes/settings-general-variants.html .toggle (42×24).
+    _TRACK_W = 42
     _TRACK_H = 24
     _KNOB_MARGIN = 2
 
@@ -1188,10 +1551,12 @@ class SwitchControl(QCheckBox):
         self.setFixedSize(self._TRACK_W, self._TRACK_H)
 
     def _track_color(self) -> QColor:
+        from voiceink.ui import design_tokens as tok
+
+        # Prototype: off #E5E2E3 / on #16A34A (green); hover only slightly shifts.
         if self._checked or self._knob_pos > 0.5:
-            return QColor(TOGGLE_ON_HOVER if self._hover else TOGGLE_ON)
-        rgb = TOGGLE_OFF_TRACK_HOVER if self._hover else TOGGLE_OFF_TRACK
-        return QColor(rgb[0], rgb[1], rgb[2], rgb[3])
+            return QColor(tok.TOGGLE_ON_HOVER if self._hover else tok.TOGGLE_ON)
+        return QColor(tok.TOGGLE_OFF_HOVER if self._hover else tok.TOGGLE_OFF)
 
     def _get_knob_pos(self) -> float:
         return self._knob_pos
@@ -1264,47 +1629,39 @@ class SwitchControl(QCheckBox):
         super().keyPressEvent(event)
 
     def paintEvent(self, event):
+        from voiceink.ui import design_tokens as tok
+
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         w, h = self._TRACK_W, self._TRACK_H
         radius = h / 2.0
-        if self.hasFocus():
-            focus_pen = QPen(QColor(ACCENT_FOCUS), 2)
-            focus_pen.setCosmetic(True)
-            p.setPen(focus_pen)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(QRectF(1, 1, w - 2, h - 2), radius - 1, radius - 1)
         on = self._checked or self._knob_pos > 0.5
 
-        # Same outer track geometry in both states — avoid 1px pen shrinking OFF state.
+        # Flat pill track (prototype .toggle) — no custom focus ring chrome.
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self._track_color())
         p.drawRoundedRect(0, 0, w, h, radius, radius)
-
-        if not on:
-            border = QColor(CONTROL_BORDER)
-            border.setAlpha(90)
-            pen = QPen(border, 1)
-            pen.setCosmetic(True)
-            p.setPen(pen)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(
-                QRectF(0.5, 0.5, w - 1, h - 1), radius - 0.5, radius - 0.5,
-            )
 
         knob_d = h - self._KNOB_MARGIN * 2
         travel = w - knob_d - self._KNOB_MARGIN * 2
         knob_x = self._KNOB_MARGIN + int(travel * self._knob_pos)
         knob_y = self._KNOB_MARGIN
 
-        shadow = QColor(0, 0, 0, 36 if on else 22)
-        p.setPen(Qt.PenStyle.NoPen)
+        # Prototype shadow-sm under the white knob.
+        shadow = QColor(0, 0, 0, 20 if on else 14)
         p.setBrush(shadow)
         p.drawEllipse(knob_x, knob_y + 1, knob_d, knob_d)
 
-        p.setBrush(QColor(SURFACE))
+        p.setBrush(QColor("#FFFFFF"))
         p.drawEllipse(knob_x, knob_y, knob_d, knob_d)
+
+        if self.hasFocus():
+            focus_pen = QPen(QColor(tok.ACCENT_FOCUS), 2)
+            focus_pen.setCosmetic(True)
+            p.setPen(focus_pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(1, 1, w - 2, h - 2), radius - 1, radius - 1)
         p.end()
 
     def sizeHint(self):
@@ -1363,20 +1720,43 @@ class ToggleOptionRow(QWidget):
         lay.setSpacing(12)
         lay.addWidget(text_col, 1)
         lay.addWidget(switch_slot, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        self.setMinimumHeight(52)
+
+    def reapply_styles(self) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        for label in self.findChildren(QLabel):
+            role = label.property("viRole")
+            if role == "rowTitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 500;"
+                    f" background: transparent;"
+                )
+            elif role == "rowSubtitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                    f" background: transparent;"
+                )
+        self._sync_row_style()
+        self._switch.update()
 
     def _toggle(self) -> None:
         self._switch.setChecked(not self._switch.isChecked())
         self.setFocus()
 
     def _sync_row_style(self) -> None:
-        hover_bg = ROW_HOVER if self._hover else "transparent"
+        from voiceink.ui import design_tokens as tok
+
+        hover_bg = tok.ROW_HOVER if self._hover else "transparent"
+        # No rounded “card inside card” — rows are flat slices like prototype .row.
         self.setStyleSheet(f"""
             ToggleOptionRow {{
                 background: {hover_bg};
-                border-radius: {RADIUS_SM}px;
+                border: none;
+                border-radius: 0;
             }}
             ToggleOptionRow:focus {{
-                border: 2px solid {ACCENT_FOCUS};
+                background: {tok.ROW_HOVER};
             }}
         """)
 

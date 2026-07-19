@@ -133,6 +133,9 @@ class App(QObject):
 
         self._tray.set_auto_start(self._config.get("auto_start", False))
         self._tray.show()
+        # Re-apply after surfaces exist so cold-start dark/system is not stuck
+        # on import-time light snapshots for inline-styled widgets.
+        self.apply_appearance_theme()
 
     def _is_continuous_mode(self) -> bool:
         return self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS) == TRIGGER_MODE_CONTINUOUS
@@ -870,10 +873,12 @@ class App(QObject):
             self._settings_win.auto_start_changed.connect(self._on_auto_start_toggled)
             self._settings_win.sound_enabled_changed.connect(self._on_sound_enabled_changed)
             self._settings_win.models_changed.connect(self._on_models_changed)
+            self._settings_win.theme_changed.connect(self._on_theme_changed)
             self._settings_win.finished.connect(self._on_settings_closed)
             self._settings_win.hotkey_capture_started.connect(self._hotkey_mgr.pause)
             self._settings_win.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
 
+        self.apply_appearance_theme()
         self._settings_win.reload_settings()
         self._sync_settings_runtime_status()
         self._settings_win.show()
@@ -885,6 +890,7 @@ class App(QObject):
             self._history_win = HistoryWindow(self._history)
         else:
             self._history_win.refresh()
+        self.apply_appearance_theme()
         if not self._history_win.isVisible():
             self._history_win.show()
         self._history_win.raise_()
@@ -906,6 +912,36 @@ class App(QObject):
         self._configure_stt()
         self._update_tray_models()
 
+    def _on_theme_changed(self, mode: str):
+        """Apply appearance without reconfiguring STT / audio."""
+        self.apply_appearance_theme(mode)
+
+    def apply_appearance_theme(self, mode: str | None = None) -> None:
+        from PyQt6.QtWidgets import QApplication
+        from voiceink.ui.theme import apply_theme
+
+        # Tests may construct App via __new__ without QObject __init__;
+        # use object.__getattribute__ to avoid Qt "super-class __init__" errors.
+        def _attr(name, default=None):
+            try:
+                return object.__getattribute__(self, name)
+            except (AttributeError, RuntimeError):
+                return default
+
+        config = _attr("_config")
+        theme_mode = "system"
+        if mode is not None:
+            theme_mode = mode
+        elif config is not None:
+            theme_mode = config.get("appearance.theme_mode", "system")
+
+        surfaces = [
+            surface
+            for attr in ("_settings_win", "_history_win", "_floating", "_tray")
+            if (surface := _attr(attr)) is not None
+        ]
+        apply_theme(QApplication.instance(), mode=theme_mode, surfaces=surfaces)
+
     def _on_settings_changed(self):
         was_continuous = self._recorder.is_continuous
         if was_continuous:
@@ -925,6 +961,7 @@ class App(QObject):
             "output.restore_clipboard", False
         )
         self._sync_hotkey_trigger_mode()
+        self.apply_appearance_theme()
 
     def _on_tray_model_switch(self, model_id: str):
         current = self._config.get("stt.model_id", "")

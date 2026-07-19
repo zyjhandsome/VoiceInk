@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-17
+goal: Replace design tokens via ui-ux-pro-max MASTER; theme (dark/system) across
+  settings, history, floating, tray

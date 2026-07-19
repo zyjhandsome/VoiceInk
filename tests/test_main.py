@@ -28,6 +28,10 @@ class TestFileLockFallback:
 
     def test_second_instance_blocked_when_pid_alive(self, monkeypatch, temp_lock):
         monkeypatch.setattr(main.sys, "platform", "linux")
+        # Windows implements os.kill(pid, 0) as TerminateProcess rather than
+        # the POSIX existence probe. Model the intended live-process result so
+        # this fallback test is safe and deterministic on the Win11 CI host.
+        monkeypatch.setattr(main.os, "kill", lambda _pid, _sig: None)
         assert main.check_single_instance() is True
         # A living PID (our own) in the lock → second check refuses to start.
         (temp_lock / "voiceink.lock").write_text(str(__import__("os").getpid()))

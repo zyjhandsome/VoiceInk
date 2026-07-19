@@ -27,6 +27,20 @@ def _qapp_session():
 
 
 @pytest.fixture(autouse=True)
+def _restore_light_design_tokens():
+    """Keep design-token module aliases on the light axis between tests."""
+    yield
+    try:
+        from voiceink.ui import design_tokens as dt
+        from voiceink.ui import settings_styles as ss
+
+        dt.activate("light")
+        ss.reload_styles()
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _isolate_registry_auto_start(monkeypatch):
     """Stop tests from reading the real machine's Windows ``Run`` key.
 

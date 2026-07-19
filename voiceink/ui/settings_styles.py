@@ -1,120 +1,102 @@
-"""QSS style fragments for the settings window."""
+"""QSS style fragments for the settings window (theme-rebuildable)."""
 
-from voiceink.ui.design_tokens import (
-    ACCENT,
-    ACCENT_BG,
-    ACCENT_FOCUS,
-    ACCENT_HV,
-    BAR_OFF,
-    BG,
-    FONT,
-    FONT_MONO,
-    GREEN,
-    GREEN_BG,
-    HAIRLINE,
-    INPUT_BG,
-    RADIUS_MD,
-    RADIUS_SM,
-    RED,
-    RED_BG,
-    SURFACE,
-    SURFACE_PEARL,
-    TEXT,
-    TEXT_DIM,
-    TEXT_SEC,
-)
-from voiceink.ui.settings_components import NAV_BTN_STYLE, ROW_RADIO_STYLE
+from __future__ import annotations
 
-WINDOW_CSS = f"""
+from voiceink.ui import design_tokens as t
+from voiceink.ui import settings_components as sc
+
+
+def build_window_css() -> str:
+    return f"""
     QDialog {{
-        background: {BG};
-        color: {TEXT};
-        font-family: {FONT};
+        background: {t.BG};
+        color: {t.TEXT};
+        font-family: {t.FONT};
         font-size: 14px;
     }}
     QLabel {{
-        color: {TEXT};
+        color: {t.TEXT};
         background: transparent;
     }}
     QLineEdit {{
-        background: {INPUT_BG};
-        color: {TEXT};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
+        background: {t.INPUT_BG};
+        color: {t.TEXT};
+        border: 1px solid {t.CONTROL_BORDER};
+        border-radius: {t.RADIUS_MD}px;
         padding: 10px 14px;
         font-size: 14px;
-        selection-background-color: {ACCENT};
+        selection-background-color: {t.PRIMARY_CONTAINER};
         selection-color: white;
     }}
     QLineEdit:focus {{
-        border: 2px solid {ACCENT_FOCUS};
+        border: 2px solid {t.ACCENT_FOCUS};
         padding: 10px 14px;
     }}
-    {ROW_RADIO_STYLE}
-    {NAV_BTN_STYLE}
+    {sc.ROW_RADIO_STYLE}
+    {sc.NAV_BTN_STYLE}
     HotkeyEdit {{
-        background: {SURFACE_PEARL};
-        color: {TEXT};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
-        padding: 12px 16px;
-        font-size: 16px;
+        background: {t.SURFACE};
+        color: {t.TEXT};
+        border: 1px solid {t.CONTROL_BORDER};
+        border-radius: {t.RADIUS_MD}px;
+        padding: 10px 12px;
+        font-size: 13px;
         font-weight: 600;
-        font-family: {FONT_MONO};
+        font-family: {t.FONT_MONO};
         min-height: 24px;
     }}
     HotkeyEdit:focus {{
-        border: 2px solid {ACCENT_FOCUS};
-        padding: 12px 16px;
-        background: {SURFACE_PEARL};
+        border: 2px solid {t.ACCENT_FOCUS};
+        padding: 10px 12px;
+        background: {t.SURFACE};
     }}
     QScrollArea {{
         border: none;
         background: transparent;
     }}
     QComboBox {{
-        background: {INPUT_BG};
-        color: {TEXT};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
+        background: {t.SURFACE};
+        color: {t.TEXT};
+        border: 1px solid {t.CONTROL_BORDER};
+        border-radius: {t.RADIUS_MD}px;
         padding: 8px 28px 8px 12px;
-        font-size: 14px;
+        font-size: 13px;
         min-height: 32px;
     }}
     QComboBox:focus {{
-        border: 2px solid {ACCENT_FOCUS};
+        border: 2px solid {t.ACCENT_FOCUS};
         padding: 8px 28px 8px 12px;
     }}
     QComboBox QAbstractItemView {{
-        background: {SURFACE};
-        color: {TEXT};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
+        background: {t.SURFACE};
+        color: {t.TEXT};
+        border: 1px solid {t.CONTROL_BORDER};
+        border-radius: {t.RADIUS_MD}px;
         padding: 6px;
-        selection-background-color: {ACCENT_BG};
-        selection-color: {ACCENT};
+        selection-background-color: {t.ACCENT_SOFT};
+        selection-color: {t.ACCENT_TEXT};
         outline: none;
     }}
     QComboBox QAbstractItemView::item {{
         min-height: 32px;
         padding: 6px 10px;
-        border-radius: {RADIUS_SM}px;
+        border-radius: {t.RADIUS_SM}px;
     }}
     QComboBox QAbstractItemView::item:hover {{
-        background: {SURFACE_PEARL};
+        background: {t.SURFACE_PEARL};
     }}
     QSpinBox {{
-        background: {INPUT_BG};
-        color: {TEXT};
-        border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px;
-        padding: 6px 28px 6px 10px;
-        font-size: 14px;
-        min-height: 32px;
+        background: {t.SURFACE};
+        color: {t.TEXT};
+        border: 1px solid {t.CONTROL_BORDER};
+        border-radius: {t.RADIUS_MD}px;
+        padding: 8px 28px 8px 12px;
+        font-size: 13px;
+        min-height: 34px;
     }}
     QSpinBox:focus {{
-        border: 2px solid {ACCENT_FOCUS};
-        padding: 6px 28px 6px 10px;
+        border: 2px solid {t.ACCENT_FOCUS};
+        padding: 8px 28px 8px 12px;
     }}
     QScrollBar:vertical {{
         background: transparent;
@@ -128,7 +110,7 @@ WINDOW_CSS = f"""
         background: transparent;
     }}
     QScrollBar::handle:vertical {{
-        background: {HAIRLINE};
+        background: {t.HAIRLINE};
         border-radius: 3px;
         min-height: 30px;
     }}
@@ -137,57 +119,102 @@ WINDOW_CSS = f"""
     }}
 """
 
-BTN_PRIMARY = f"""
+
+def build_btn_primary() -> str:
+    return f"""
     QPushButton {{
-        background: {ACCENT}; color: white; border: none;
-        border-radius: {RADIUS_MD}px; padding: 10px 22px; font-size: 14px; font-weight: 600;
+        background: {t.PRIMARY_CONTAINER}; color: white;
+        border: 1px solid {t.PRIMARY_CONTAINER};
+        border-radius: {t.RADIUS_MD}px; padding: 9px 14px; font-size: 13px; font-weight: 600;
     }}
-    QPushButton:hover {{ background: {ACCENT_FOCUS}; }}
-    QPushButton:pressed {{ background: {ACCENT_HV}; }}
-    QPushButton:disabled {{ background: {BAR_OFF}; color: {TEXT_DIM}; }}
-    QPushButton:focus {{ border: 2px solid {ACCENT_FOCUS}; padding: 10px 22px; }}
+    QPushButton:hover {{
+        background: {t.PRIMARY_CONTAINER_HOVER};
+        border-color: {t.PRIMARY_CONTAINER_HOVER};
+    }}
+    QPushButton:pressed {{
+        background: {t.PRIMARY_CONTAINER_PRESSED};
+        border-color: {t.PRIMARY_CONTAINER_PRESSED};
+    }}
+    QPushButton:disabled {{ background: {t.BAR_OFF}; border-color: {t.BAR_OFF}; color: {t.TEXT_DIM}; }}
+    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 9px 14px; }}
 """
 
-BTN_GHOST = f"""
+
+def build_btn_ghost() -> str:
+    return f"""
     QPushButton {{
-        background: {SURFACE_PEARL}; color: {TEXT}; border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_MD}px; padding: 10px 22px; font-size: 14px;
+        background: {t.SURFACE_PEARL}; color: {t.TEXT}; border: 1px solid {t.HAIRLINE};
+        border-radius: {t.RADIUS_MD}px; padding: 10px 22px; font-size: 14px;
     }}
-    QPushButton:hover {{ background: {SURFACE}; color: {TEXT}; border-color: {TEXT_DIM}; }}
-    QPushButton:focus {{ outline: none; border: 2px solid {ACCENT_FOCUS}; }}
+    QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; border-color: {t.TEXT_DIM}; }}
+    QPushButton:focus {{ outline: none; border: 2px solid {t.ACCENT_FOCUS}; }}
 """
 
-BTN_GHOST_SM = f"""
+
+def build_btn_ghost_sm() -> str:
+    return f"""
     QPushButton {{
-        background: {SURFACE_PEARL}; color: {TEXT_SEC}; border: 1px solid {HAIRLINE};
-        border-radius: {RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
+        background: {t.SURFACE_PEARL}; color: {t.TEXT_SEC}; border: 1px solid {t.HAIRLINE};
+        border-radius: {t.RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
     }}
-    QPushButton:hover {{ background: {SURFACE}; color: {TEXT}; }}
-    QPushButton:focus {{ border: 2px solid {ACCENT_FOCUS}; padding: 8px 15px; }}
+    QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; }}
+    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 8px 15px; }}
 """
 
-BTN_DANGER_SM = f"""
+
+def build_btn_danger_sm() -> str:
+    return f"""
     QPushButton {{
-        background: transparent; color: {RED}; border: 1px solid {RED_BG};
-        border-radius: {RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
+        background: transparent; color: {t.RED}; border: 1px solid {t.RED_BG};
+        border-radius: {t.RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
     }}
-    QPushButton:hover {{ background: {RED_BG}; color: {RED}; }}
-    QPushButton:focus {{ border: 2px solid {ACCENT_FOCUS}; padding: 8px 15px; }}
+    QPushButton:hover {{ background: {t.RED_BG}; color: {t.RED}; }}
+    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 8px 15px; }}
 """
 
-BTN_GREEN_SM = f"""
+
+def build_btn_green_sm() -> str:
+    return f"""
     QPushButton {{
-        background: {GREEN_BG}; color: {GREEN}; border: none;
-        border-radius: {RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+        background: {t.GREEN_BG}; color: {t.GREEN}; border: none;
+        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
     }}
-    QPushButton:hover {{ background: #D4F5DE; }}
-    QPushButton:disabled {{ background: {BAR_OFF}; color: {TEXT_DIM}; }}
+    QPushButton:hover {{ background: {t.GREEN_BG}; }}
+    QPushButton:disabled {{ background: {t.BAR_OFF}; color: {t.TEXT_DIM}; }}
 """
 
-BTN_ACCENT_SM = f"""
+
+def build_btn_accent_sm() -> str:
+    return f"""
     QPushButton {{
-        background: {ACCENT}; color: white; border: none;
-        border-radius: {RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+        background: {t.PRIMARY_CONTAINER}; color: white; border: none;
+        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
     }}
-    QPushButton:hover {{ background: {ACCENT_FOCUS}; }}
+    QPushButton:hover {{ background: {t.PRIMARY_CONTAINER_HOVER}; }}
+    QPushButton:pressed {{ background: {t.PRIMARY_CONTAINER_PRESSED}; }}
 """
+
+
+def reload_styles() -> None:
+    """Rebuild module-level style aliases from the active token axis."""
+    global WINDOW_CSS, BTN_PRIMARY, BTN_GHOST, BTN_GHOST_SM
+    global BTN_DANGER_SM, BTN_GREEN_SM, BTN_ACCENT_SM
+    sc.reload_styles()
+    WINDOW_CSS = build_window_css()
+    BTN_PRIMARY = build_btn_primary()
+    BTN_GHOST = build_btn_ghost()
+    BTN_GHOST_SM = build_btn_ghost_sm()
+    BTN_DANGER_SM = build_btn_danger_sm()
+    BTN_GREEN_SM = build_btn_green_sm()
+    BTN_ACCENT_SM = build_btn_accent_sm()
+
+
+WINDOW_CSS = ""
+BTN_PRIMARY = ""
+BTN_GHOST = ""
+BTN_GHOST_SM = ""
+BTN_DANGER_SM = ""
+BTN_GREEN_SM = ""
+BTN_ACCENT_SM = ""
+
+reload_styles()

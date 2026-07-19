@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 语音识别</title>
+  <style>
+    :root {
+      --accent: #2563EB; --accent-hv: #1D4ED8;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --bg: #F3F4F6; --surface: #FFFFFF; --surface-muted: #F9FAFB;
+      --text: #111827; --text-sec: #4B5563; --text-dim: #6B7280;
+      --border: #E5E7EB; --control-border: #D1D5DB; --green: #16A34A;
+      --danger: #DC2626; --danger-bg: #FEF2F2; --danger-border: #FECACA;
+      --radius-md: 8px; --radius-lg: 10px;
+      --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      min-height: 100%; contain: layout style;
+    }
+    body.dark {
+      --accent: #3B82F6; --accent-hv: #60A5FA;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+      --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+      --border: #374151; --control-border: #4B5563; --green: #22C55E;
+      --danger: #FCA5A5; --danger-bg: #450A0A; --danger-border: #7F1D1D;
+    }
+    .main-body { padding: 20px 2px 32px; }
+    .hero { margin-bottom: 18px; }
+    .hero h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+    .hero p { margin-top: 4px; font-size: 13px; color: var(--text-dim); }
+    .section { margin-bottom: 18px; }
+    .section-label {
+      font-size: 12px; font-weight: 600; color: var(--text-dim);
+      margin: 0 0 8px 2px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden; contain: layout paint;
+    }
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; min-height: 52px;
+    }
+    .row-text { flex: 1; min-width: 0; }
+    .row-title { font-size: 13px; font-weight: 550; }
+    .row-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; word-break: break-all; }
+    .btn {
+      appearance: none; font: inherit; font-size: 13px; font-weight: 550;
+      border-radius: var(--radius-md); padding: 8px 14px; cursor: pointer;
+      border: 1px solid var(--control-border); background: var(--surface); color: var(--text);
+    }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-danger {
+      background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger);
+    }
+    .btn:disabled { opacity: 0.55; cursor: default; }
+    .pill {
+      display: inline-flex; align-items: center; font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 999px; background: var(--surface-muted);
+      color: var(--text-sec); border: 1px solid var(--border);
+    }
+    .model-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 16px 18px; margin-bottom: 12px;
+    }
+    .model-card.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .model-card .head { display: flex; align-items: center; gap: 8px; }
+    .model-card .name { font-size: 15px; font-weight: 600; }
+    .model-card .size { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+    .model-card .desc { font-size: 13px; color: var(--text-sec); margin-top: 8px; line-height: 1.45; }
+    .model-card .meta { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+    .model-card .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .progress {
+      height: 4px; background: var(--border); border-radius: 999px; overflow: hidden; margin-top: 10px; display: none;
+    }
+    .progress.on { display: block; }
+    .progress > span { display: block; height: 100%; background: var(--green); width: 0%; }
+    .empty { font-size: 13px; color: var(--text-dim); padding: 14px 16px; }
+  </style>
+</head>
+<body>
+  <div class="main-body">
+    <div class="hero">
+      <h2>语音识别</h2>
+      <p id="heroSub">选择并管理本地识别引擎</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">当前引擎</div>
+      <div id="activeHost"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">存储</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">模型存储</div>
+            <div class="row-desc" id="storageSummary"></div>
+          </div>
+          <button type="button" class="btn" id="changeDirBtn">更改存储…</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">其他已下载</div>
+      <div id="downloadedHost"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">可下载</div>
+      <div id="availableHost"></div>
+    </div>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script>
+    let bridge = null;
+    let applying = false;
+    const progressMap = {};
+
+    function cardHtml(m, opts) {
+      const active = !!opts.active;
+      const downloaded = !!opts.downloaded;
+      const pct = progressMap[m.id];
+      let actions = "";
+      if (downloaded) {
+        if (!active) actions += `<button type="button" class="btn btn-primary" data-act="select" data-id="${m.id}">使用此模型</button>`;
+        actions += `<button type="button" class="btn btn-danger" data-act="delete" data-id="${m.id}">删除</button>`;
+      } else {
+        const label = (pct != null) ? `${pct}%` : "下载";
+        const dis = pct != null ? " disabled" : "";
+        actions += `<button type="button" class="btn btn-primary" data-act="download" data-id="${m.id}"${dis}>${label}</button>`;
+      }
+      const progOn = pct != null ? " on" : "";
+      const progW = pct != null ? pct : 0;
+      return `<div class="model-card ${active ? "active" : ""}" data-id="${m.id}">
+        <div class="head">
+          <span class="name">${m.name}</span>
+          ${active ? '<span class="pill">当前引擎</span>' : ""}
+          <span class="size">${m.sizeMb} MB</span>
+        </div>
+        <div class="desc">${m.description || ""}</div>
+        <div class="meta">${m.meta || ""}</div>
+        <div class="progress${progOn}"><span style="width:${progW}%"></span></div>
+        <div class="actions">${actions}</div>
+      </div>`;
+    }
+
+    function renderList(host, models, downloaded) {
+      if (!models || !models.length) {
+        host.innerHTML = `<div class="card"><div class="empty">${
+          downloaded ? "暂无其他已下载模型" : "所有模型均已下载"
+        }</div></div>`;
+        return;
+      }
+      host.innerHTML = models.map((m) => cardHtml(m, { downloaded, active: false })).join("");
+    }
+
+    window.applyState = function (state) {
+      applying = true;
+      try {
+        document.body.classList.toggle("dark", !!state.effectiveDark);
+        document.getElementById("heroSub").textContent = state.heroSubtitle || "选择并管理本地识别引擎";
+        document.getElementById("storageSummary").textContent = state.storageSummary || "";
+        const active = state.activeModel;
+        const activeHost = document.getElementById("activeHost");
+        if (active) {
+          activeHost.innerHTML = cardHtml(active, { downloaded: true, active: true });
+        } else {
+          activeHost.innerHTML = `<div class="card"><div class="empty">尚未选择已下载的模型，请从下方下载并启用。</div></div>`;
+        }
+        renderList(document.getElementById("downloadedHost"), state.downloadedModels || [], true);
+        renderList(document.getElementById("availableHost"), state.availableModels || [], false);
+      } finally {
+        applying = false;
+      }
+    };
+
+    window.setModelProgress = function (id, pct) {
+      progressMap[id] = pct;
+      const card = document.querySelector(`.model-card[data-id="${id}"]`);
+      if (!card) return;
+      const bar = card.querySelector(".progress");
+      const span = bar && bar.querySelector("span");
+      const btn = card.querySelector('[data-act="download"]');
+      if (bar) {
+        bar.classList.add("on");
+        if (span) span.style.width = pct + "%";
+      }
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = pct + "%";
+      }
+    };
+
+    window.clearModelProgress = function (id) {
+      delete progressMap[id];
+    };
+
+    function wire() {
+      document.getElementById("changeDirBtn").addEventListener("click", () => {
+        if (bridge) bridge.changeModelDir();
+      });
+      document.body.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-act]");
+        if (!btn || !bridge || applying) return;
+        const id = btn.getAttribute("data-id");
+        const act = btn.getAttribute("data-act");
+        if (act === "select") bridge.selectModel(id);
+        else if (act === "download") bridge.downloadModel(id);
+        else if (act === "delete") bridge.deleteModel(id);
+      });
+    }
+
+    new QWebChannel(qt.webChannelTransport, (channel) => {
+      bridge = channel.objects.bridge;
+      wire();
+      if (bridge && bridge.ready) bridge.ready();
+    });
+  </script>
+</body>
+</html>

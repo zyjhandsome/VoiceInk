@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 文字润色</title>
+  <style>
+    :root {
+      --accent: #2563EB; --accent-hv: #1D4ED8;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --bg: #F3F4F6; --surface: #FFFFFF; --surface-muted: #F9FAFB;
+      --text: #111827; --text-sec: #4B5563; --text-dim: #6B7280;
+      --border: #E5E7EB; --control-border: #D1D5DB; --green: #16A34A;
+      --radius-md: 8px; --radius-lg: 10px;
+      --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      min-height: 100%; contain: layout style;
+    }
+    body.dark {
+      --accent: #3B82F6; --accent-hv: #60A5FA;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+      --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+      --border: #374151; --control-border: #4B5563; --green: #22C55E;
+    }
+    body.dark .toggle { background: #4B5563; }
+    body.dark .toggle.on { background: var(--green); }
+    .main-body { padding: 20px 2px 32px; }
+    .hero { margin-bottom: 18px; }
+    .hero h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+    .hero p { margin-top: 4px; font-size: 13px; color: var(--text-dim); }
+    .section { margin-bottom: 18px; }
+    .section-label {
+      font-size: 12px; font-weight: 600; color: var(--text-dim);
+      margin: 0 0 8px 2px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden;
+    }
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; min-height: 52px;
+    }
+    .row + .row, .field + .row, .row + .field, .preview + .field,
+    .field + .field { border-top: 1px solid var(--border); }
+    .row-text { flex: 1; min-width: 0; }
+    .row-title { font-size: 13px; font-weight: 550; }
+    .row-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; }
+    .toggle {
+      width: 42px; height: 24px; border-radius: 999px; background: #E5E2E3;
+      position: relative; flex-shrink: 0; border: none; cursor: pointer;
+    }
+    .toggle.on { background: var(--green); }
+    .toggle::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 20px; height: 20px; border-radius: 50%; background: #fff;
+      box-shadow: var(--shadow-sm); transition: transform .15s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+    .field { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
+    .field label { font-size: 12px; font-weight: 550; color: var(--text-sec); }
+    .input, .textarea {
+      appearance: none; font: inherit; font-size: 13px; color: var(--text);
+      background: var(--surface); border: 1px solid var(--control-border);
+      border-radius: var(--radius-md); padding: 10px 12px; outline: none; width: 100%;
+    }
+    .textarea { min-height: 128px; resize: vertical; line-height: 1.45; }
+    .btn {
+      appearance: none; font: inherit; font-size: 13px; font-weight: 550;
+      border-radius: var(--radius-md); padding: 8px 14px; cursor: pointer;
+      border: 1px solid var(--control-border); background: var(--surface); color: var(--text);
+    }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .preview { padding: 4px 16px 16px; }
+    .preview .lbl { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+    .preview .line { font-size: 13px; color: var(--text-sec); line-height: 1.5; margin-top: 6px; }
+    .preview b { color: var(--text-dim); font-weight: 600; margin-right: 6px; }
+    .footnote { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 8px; }
+    .status { font-size: 12px; color: var(--text-sec); margin-left: 10px; }
+    #llmFields.hidden { display: none; }
+    .key-row { display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div class="main-body">
+    <div class="hero">
+      <h2>文字润色</h2>
+      <p id="heroSub">已关闭</p>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">启用后处理</div>
+          <div class="row-desc">关闭时直接输出语音转写原文</div>
+        </div>
+        <button type="button" class="toggle" id="togEnable"></button>
+      </div>
+      <div class="preview">
+        <div class="lbl">效果预览</div>
+        <div class="line"><b>原文</b>嗯那个就是把会议纪要整理一下吧</div>
+        <div class="line"><b>润色</b>请整理会议纪要。</div>
+      </div>
+    </div>
+
+    <div id="llmFields">
+      <div class="section" style="margin-top:18px">
+        <div class="section-label">接口配置</div>
+        <div class="card">
+          <div class="field">
+            <label for="urlInput">接口地址</label>
+            <input id="urlInput" class="input" type="text" placeholder="https://api.deepseek.com/v1" />
+          </div>
+          <div class="field">
+            <label for="keyInput">API 密钥</label>
+            <div class="key-row">
+              <input id="keyInput" class="input" type="password" placeholder="sk-..." />
+              <button type="button" class="btn" id="keyToggle">显示</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="modelInput">模型名称</label>
+            <input id="modelInput" class="input" type="text" placeholder="deepseek-chat" />
+          </div>
+          <div class="row" style="justify-content:flex-end">
+            <button type="button" class="btn" id="testBtn">测试连接</button>
+            <span class="status" id="testStatus"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">提示词</div>
+        <div class="card">
+          <div class="field">
+            <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+              <button type="button" class="btn" id="resetPrompt">恢复默认</button>
+            </div>
+            <textarea id="promptInput" class="textarea" placeholder="留空则使用内置默认提示词"></textarea>
+          </div>
+        </div>
+      </div>
+      <p class="footnote">支持 OpenAI、DeepSeek、通义千问、Ollama 等 OpenAI 兼容接口。</p>
+    </div>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script>
+    let bridge = null;
+    let applying = false;
+    let promptTimer = null;
+
+    function setToggle(el, on) { el.classList.toggle("on", !!on); }
+
+    window.applyState = function (state) {
+      applying = true;
+      try {
+        document.body.classList.toggle("dark", !!state.effectiveDark);
+        document.getElementById("heroSub").textContent = state.heroSubtitle || "";
+        setToggle(document.getElementById("togEnable"), state.enabled);
+        document.getElementById("llmFields").classList.toggle("hidden", !state.enabled);
+        document.getElementById("urlInput").value = state.url || "";
+        document.getElementById("keyInput").value = state.apiKey || "";
+        document.getElementById("modelInput").value = state.modelName || "";
+        document.getElementById("promptInput").value = state.prompt || "";
+        document.getElementById("testStatus").textContent = state.testStatus || "";
+        const key = document.getElementById("keyInput");
+        const show = !!state.keyVisible;
+        key.type = show ? "text" : "password";
+        document.getElementById("keyToggle").textContent = show ? "隐藏" : "显示";
+      } finally {
+        applying = false;
+      }
+    };
+
+    window.setTestStatus = function (text) {
+      document.getElementById("testStatus").textContent = text || "";
+    };
+
+    function flushFields() {
+      if (!bridge || applying) return;
+      bridge.setFields(
+        document.getElementById("urlInput").value,
+        document.getElementById("keyInput").value,
+        document.getElementById("modelInput").value,
+        document.getElementById("promptInput").value
+      );
+    }
+
+    function wire() {
+      document.getElementById("togEnable").addEventListener("click", () => {
+        if (applying || !bridge) return;
+        const next = !document.getElementById("togEnable").classList.contains("on");
+        setToggle(document.getElementById("togEnable"), next);
+        document.getElementById("llmFields").classList.toggle("hidden", !next);
+        bridge.setEnabled(next);
+      });
+      ["urlInput", "keyInput", "modelInput"].forEach((id) => {
+        document.getElementById(id).addEventListener("change", flushFields);
+        document.getElementById(id).addEventListener("blur", flushFields);
+      });
+      document.getElementById("promptInput").addEventListener("input", () => {
+        if (promptTimer) clearTimeout(promptTimer);
+        promptTimer = setTimeout(flushFields, 600);
+      });
+      document.getElementById("keyToggle").addEventListener("click", () => {
+        if (!bridge) return;
+        const key = document.getElementById("keyInput");
+        const show = key.type === "password";
+        key.type = show ? "text" : "password";
+        document.getElementById("keyToggle").textContent = show ? "隐藏" : "显示";
+        bridge.setKeyVisible(show);
+      });
+      document.getElementById("testBtn").addEventListener("click", () => {
+        if (bridge) { flushFields(); bridge.testConnection(); }
+      });
+      document.getElementById("resetPrompt").addEventListener("click", () => {
+        if (bridge) bridge.resetPrompt();
+      });
+    }
+
+    new QWebChannel(qt.webChannelTransport, (channel) => {
+      bridge = channel.objects.bridge;
+      wire();
+      if (bridge && bridge.ready) bridge.ready();
+    });
+  </script>
+</body>
+</html>

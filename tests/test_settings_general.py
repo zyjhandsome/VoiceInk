@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton
 
 from voiceink.audio_devices import (
     INPUT_SOURCE_MICROPHONE,
@@ -16,7 +16,13 @@ from voiceink.audio_devices import (
     INPUT_SOURCE_SYSTEM,
 )
 from voiceink.config import TRIGGER_MODE_CONTINUOUS, TRIGGER_MODE_HOTKEY, Config
-from voiceink.ui.design_tokens import ACCENT, SURFACE_PEARL, TEXT_DIM, TEXT_SEC
+from voiceink.ui.design_tokens import (
+    ACCENT,
+    AMBER_TEXT,
+    SURFACE_PEARL,
+    TEXT_DIM,
+    TEXT_SEC,
+)
 from voiceink.ui.settings_window import SettingsWindow
 
 
@@ -52,66 +58,125 @@ class TestGeneralPageLayout:
     def test_header_title_matches_reference(self, settings_window):
         assert settings_window._general_hero._title.text() == "通用设置"
 
-    def test_footer_hint_text(self, settings_window):
-        assert settings_window._footer_hint.text() == "更改会即时生效"
-        sheet = settings_window._footer_hint.styleSheet()
+    def test_general_footer_note_combines_save_and_hotkey_guidance(self, settings_window):
+        assert settings_window._general_footer_note.text() == (
+            "更改将自动保存并立即生效；若录音快捷键与输入法冲突，"
+            "可改用 Alt + Space。"
+        )
+        sheet = settings_window._general_footer_note.styleSheet()
         assert f"color: {TEXT_DIM}" in sheet
         assert f"color: {ACCENT}" not in sheet
 
-    def test_about_version_and_usage_hint_are_neutral(self, settings_window):
+    def test_settings_shell_has_no_redundant_action_strip(self, settings_window):
+        assert not hasattr(settings_window, "_action_bar")
+        assert not hasattr(settings_window, "_done_btn")
+        assert not hasattr(settings_window, "_footer_hint")
+
+    def test_general_copy_matches_prototype_v3(self, settings_window):
+        """Prototype v3 titles; chrome keeps product action bar."""
+        from PyQt6.QtWidgets import QLabel
+
+        assert settings_window._general_hero._title.text() == "通用设置"
+        assert settings_window._general_hero._subtitle.text() == "录音、音频与偏好"
+        assert settings_window._mic_test_btn.text() == "测试声音（约 2 秒）"
+        assert settings_window._advanced_audio_btn.text() == "手动选择音频设备"
+
+        # Preference rows: title only (no prototype subtitles).
+        for row, title in (
+            (settings_window._auto_start_row, "开机时自动启动"),
+            (settings_window._sound_row, "录音提示音"),
+            (settings_window._restore_clipboard_row, "粘贴后恢复剪贴板"),
+            (settings_window._history_enabled_row, "保存语音历史"),
+        ):
+            texts = [lb.text() for lb in row.findChildren(QLabel) if lb.text()]
+            assert texts == [title], texts
+
+        footnotes = [
+            lb.text()
+            for lb in settings_window.findChildren(QLabel)
+            if "输入法冲突" in lb.text()
+        ]
+        assert footnotes
+        assert footnotes[0] == (
+            "更改将自动保存并立即生效；若录音快捷键与输入法冲突，"
+            "可改用 Alt + Space。"
+        )
+
+    def test_about_version_pill_and_usage_callout_match_reference(self, settings_window):
         version_sheet = settings_window._about_version_label.styleSheet()
         assert f"background: {SURFACE_PEARL}" in version_sheet
         assert f"color: {TEXT_SEC}" in version_sheet
         assert f"color: {ACCENT}" not in version_sheet
 
-        labels = settings_window._about_usage_tip.findChildren(type(settings_window._footer_hint))
+        labels = settings_window._about_usage_tip.findChildren(QLabel)
         assert labels
-        assert any(f"color: {TEXT_SEC}" in label.styleSheet() for label in labels)
+        assert any(f"color: {AMBER_TEXT}" in label.styleSheet() for label in labels)
 
-    def test_general_sections_follow_task_order(self, settings_window, qapp):
+    def test_settings_stack_contains_only_native_pages(self, settings_window):
+        from voiceink.ui.settings_components import SettingsPage
+
+        pages = settings_window._pages
+        assert pages.count() == 4
+        assert all(
+            isinstance(pages.widget(index), SettingsPage)
+            for index in range(pages.count())
+        )
+        assert not hasattr(settings_window, "_general_web")
+        assert not hasattr(settings_window, "_models_web")
+        assert not hasattr(settings_window, "_polish_web")
+        assert not hasattr(settings_window, "_about_web")
+
+    def test_general_stacks_three_sections_top_to_bottom(self, settings_window, qapp):
+        """Prototype v3: 录音 → 音频 → 偏好 all visible in one scroll page."""
+        from voiceink.ui.settings_components import (
+            AudioSourcePicker,
+            CompactPickCard,
+            ThemeModeSegment,
+            TriggerModePicker,
+        )
+
         settings_window.resize(1000, 900)
         settings_window.show()
         qapp.processEvents()
+
         titles = {
             label.text(): label
-            for label in settings_window.findChildren(type(settings_window._footer_hint))
+            for label in settings_window.findChildren(QLabel)
             if label.objectName() == "settingsGroupTitle"
         }
-        ordered = ["触发方式", "快捷键", "音频来源", "检测音频", "手动设备", "开机与提示", "历史"]
+        ordered = ["录音", "音频", "偏好"]
+        assert all(name in titles for name in ordered)
+        ys = [titles[name].mapToGlobal(titles[name].rect().center()).y() for name in ordered]
+        assert ys == sorted(ys)
 
-        assert all(title in titles for title in ordered)
-        assert [titles[title].mapToGlobal(titles[title].rect().center()).y() for title in ordered] == sorted(
-            titles[title].mapToGlobal(titles[title].rect().center()).y() for title in ordered
-        )
+        trigger = settings_window.findChild(TriggerModePicker)
+        audio = settings_window.findChild(AudioSourcePicker)
+        assert trigger is not None and trigger.isVisible()
+        assert audio is not None and audio.isVisible()
+        assert len(trigger.findChildren(CompactPickCard)) == 2
+        assert len(audio.findChildren(CompactPickCard)) == 3
+        assert settings_window._hotkey_edit.isVisible()
+        assert settings_window._mic_test_btn.isVisible()
+        assert isinstance(settings_window._theme_combo, ThemeModeSegment)
+        assert settings_window._theme_combo.isVisible()
+        assert settings_window._auto_start_row.isVisible()
+        assert settings_window._history_enabled_row.isVisible()
 
-    def test_general_section_groups_use_soft_containers(self, settings_window):
+    def test_general_section_groups_use_bordered_cards(self, settings_window):
         from PyQt6.QtWidgets import QFrame
 
-        from voiceink.ui.design_tokens import RADIUS_MD, SURFACE
+        from voiceink.ui.design_tokens import BORDER, RADIUS_LG, SURFACE
 
-        titles = [
-            label for label in settings_window.findChildren(type(settings_window._footer_hint))
-            if label.objectName() == "settingsGroupTitle"
-        ]
         groups = [
             frame for frame in settings_window.findChildren(QFrame)
             if frame.objectName() == "settingsGroup"
         ]
-
-        assert titles
         assert groups
         for group in groups:
             sheet = group.styleSheet()
             assert f"background: {SURFACE}" in sheet
-            assert "border: none" in sheet
-            assert f"border-radius: {RADIUS_MD}px" in sheet
-
-    def test_close_button_uses_close_copy_and_accessible_name(self, settings_window):
-        close_button = next(
-            button for button in settings_window.findChildren(QPushButton)
-            if button.text() == "关闭"
-        )
-        assert close_button.accessibleName() == "关闭设置"
+            assert f"border: 1px solid {BORDER}" in sheet
+            assert f"border-radius: {RADIUS_LG}px" in sheet
 
     def test_polish_preview_stays_visible_when_enabled(self, settings_window):
         settings_window._on_llm_enable_toggled(True)
@@ -124,29 +189,29 @@ class TestGeneralPageLayout:
         settings_window._llm_key_toggle.setChecked(False)
         assert settings_window._llm_key_toggle.text() == "显示"
 
-    def test_audio_source_cards_are_vertical(self, settings_window):
-        picker = settings_window.findChild(type(settings_window._src_mic_rb.parent()))
-        # AudioSourcePicker uses QVBoxLayout on itself
-        from voiceink.ui.settings_components import AudioSourcePicker
+    def test_audio_source_cards_are_horizontal(self, settings_window):
+        from PyQt6.QtWidgets import QHBoxLayout
+        from voiceink.ui.settings_components import AudioSourcePicker, CompactPickCard
 
         ap = settings_window.findChild(AudioSourcePicker)
         assert ap is not None
-        assert isinstance(ap.layout(), type(ap.layout()))  # has layout
+        assert isinstance(ap.layout(), QHBoxLayout)
         assert ap.layout().spacing() == 8
+        assert ap.layout().count() == 3
+        assert len(ap.findChildren(CompactPickCard)) == 3
 
-    def test_trigger_mode_uses_choice_cards(self, settings_window):
+    def test_trigger_mode_uses_compact_picks(self, settings_window):
         from PyQt6.QtWidgets import QHBoxLayout
-        from voiceink.ui.settings_components import TriggerModePicker
+        from voiceink.ui.settings_components import CompactPickCard, TriggerModePicker
 
         picker = settings_window.findChild(TriggerModePicker)
         assert picker is not None
         assert isinstance(picker.layout(), QHBoxLayout)
-        assert picker.layout().spacing() == 12
+        assert picker.layout().spacing() == 8
         assert picker.layout().count() == 2
+        assert len(picker.findChildren(CompactPickCard)) == 2
 
         assert settings_window._mixed_audio_callout.parent() is not None
-        settings_window._src_mixed_rb.setChecked(True)
-        settings_window._sync_source_device_widgets()
         assert not settings_window._mixed_audio_callout.isHidden()
 
 
@@ -180,10 +245,12 @@ class TestInputSource:
         settings_window._src_sys_rb.setChecked(True)
         assert config.get("audio.input_source") == INPUT_SOURCE_SYSTEM
 
-    def test_mixed_warning_visibility(self, settings_window):
+    def test_mixed_warning_stays_visible(self, settings_window, qapp):
+        settings_window.show()
+        qapp.processEvents()
         settings_window._src_mic_rb.setChecked(True)
         settings_window._sync_source_device_widgets()
-        assert settings_window._mixed_audio_callout.isHidden()
+        assert not settings_window._mixed_audio_callout.isHidden()
         settings_window._src_mixed_rb.setChecked(True)
         settings_window._sync_source_device_widgets()
         assert not settings_window._mixed_audio_callout.isHidden()

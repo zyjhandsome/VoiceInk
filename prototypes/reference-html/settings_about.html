@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 关于</title>
+  <style>
+    :root {
+      --accent: #2563EB;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --bg: #F3F4F6; --surface: #FFFFFF; --surface-muted: #F9FAFB;
+      --text: #111827; --text-sec: #4B5563; --text-dim: #6B7280;
+      --border: #E5E7EB; --control-border: #D1D5DB;
+      --amber-soft: #FFFBEB; --amber-border: #F5E6B8; --amber-text: #92400E;
+      --radius-md: 8px; --radius-lg: 10px;
+      --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      min-height: 100%; contain: layout style;
+    }
+    body.dark {
+      --accent: #3B82F6;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+      --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+      --border: #374151; --control-border: #4B5563;
+      --amber-soft: #422006; --amber-border: #78350f; --amber-text: #FCD34D;
+    }
+    .main-body { padding: 20px 2px 32px; }
+    .compact-hero { margin-bottom: 14px; }
+    .compact-hero h2 { font-size: 17px; font-weight: 650; letter-spacing: -0.02em; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden;
+    }
+    .dense .row { min-height: 44px; padding: 8px 14px; }
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; min-height: 52px;
+    }
+    .row + .row { border-top: 1px solid var(--border); }
+    .row-text { flex: 1; min-width: 0; }
+    .row-title { font-size: 13px; font-weight: 550; }
+    .row-val {
+      font-size: 12px; color: var(--text-dim); text-align: right;
+      max-width: 62%; word-break: break-all; line-height: 1.4;
+    }
+    .pill {
+      display: inline-flex; font-size: 11px; font-weight: 600;
+      padding: 3px 10px; border-radius: 999px; background: var(--surface-muted);
+      color: var(--text-sec); border: 1px solid var(--border);
+    }
+    .callout {
+      margin-top: 12px; padding: 10px 12px;
+      background: var(--amber-soft); border: 1px solid var(--amber-border);
+      border-radius: var(--radius-md); font-size: 12px; color: var(--amber-text); line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="main-body">
+    <div class="compact-hero"><h2>关于</h2></div>
+    <div class="card dense" id="infoCard"></div>
+    <div class="callout" id="usageTip"></div>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script>
+    let bridge = null;
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    window.applyState = function (state) {
+      document.body.classList.toggle("dark", !!state.effectiveDark);
+      const rows = state.rows || [];
+      const card = document.getElementById("infoCard");
+      card.innerHTML = rows.map((r, i) => {
+        if (i === 0) {
+          return `<div class="row"><div class="row-text"><div class="row-title">${esc(r.label)}</div></div><span class="pill">${esc(r.value)}</span></div>`;
+        }
+        return `<div class="row"><div class="row-text"><div class="row-title">${esc(r.label)}</div></div><div class="row-val" title="${esc(r.full || r.value)}">${esc(r.value)}</div></div>`;
+      }).join("");
+      document.getElementById("usageTip").textContent = state.usageTip || "";
+    };
+
+    new QWebChannel(qt.webChannelTransport, (channel) => {
+      bridge = channel.objects.bridge;
+      if (bridge && bridge.ready) bridge.ready();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 历史</title>
+  <style>
+    :root {
+      --accent: #2563EB;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --bg: #F3F4F6; --surface: #FFFFFF; --surface-muted: #F9FAFB;
+      --text: #111827; --text-sec: #4B5563; --text-dim: #6B7280;
+      --border: #E5E7EB; --control-border: #D1D5DB;
+      --danger: #DC2626; --danger-bg: #FEF2F2; --danger-border: #FECACA;
+      --radius-md: 8px; --radius-lg: 10px;
+      --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      height: 100%; contain: layout style;
+    }
+    body.dark {
+      --accent: #3B82F6;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+      --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+      --border: #374151; --control-border: #4B5563;
+      --danger: #FCA5A5; --danger-bg: #450A0A; --danger-border: #7F1D1D;
+    }
+    .shell {
+      display: grid; grid-template-columns: 260px 1fr;
+      height: 100%; min-height: 100%;
+    }
+    .left {
+      background: var(--surface); border-right: 1px solid var(--border);
+      padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0;
+    }
+    .right {
+      background: var(--bg); padding: 16px 20px;
+      display: flex; flex-direction: column; gap: 12px; min-height: 0;
+    }
+    .title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+    .input {
+      appearance: none; font: inherit; font-size: 13px; color: var(--text);
+      background: var(--surface-muted); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 10px 14px; outline: none; width: 100%;
+    }
+    .list { flex: 1; overflow: auto; min-height: 0; }
+    .session {
+      padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 2px;
+    }
+    .session.on {
+      background: var(--accent-soft);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .session:hover:not(.on) { background: var(--surface-muted); }
+    .session .prev {
+      font-size: 13px; font-weight: 550;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .session .sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar .grow { flex: 1; font-size: 16px; font-weight: 600; min-width: 80px; }
+    .btn {
+      appearance: none; font: inherit; font-size: 12px; font-weight: 550;
+      border-radius: var(--radius-md); padding: 7px 12px; cursor: pointer;
+      border: 1px solid var(--control-border); background: var(--surface); color: var(--text);
+    }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-danger {
+      background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger);
+    }
+    .detail {
+      flex: 1; overflow: auto; font-size: 14px; line-height: 1.6;
+      white-space: pre-wrap; min-height: 0; color: var(--text);
+    }
+    .feedback { font-size: 12px; color: var(--text-sec); min-height: 16px; }
+    .undo {
+      display: none; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 6px;
+      background: var(--surface-muted); border: 1px solid var(--border); font-size: 12px;
+    }
+    .undo.on { display: flex; }
+    .empty { color: var(--text-dim); font-size: 13px; padding: 8px 2px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="left">
+      <div class="title">历史</div>
+      <input class="input" id="search" type="search" placeholder="搜索会话…" />
+      <div class="list" id="sessionList"></div>
+    </aside>
+    <section class="right">
+      <div class="toolbar">
+        <div class="grow" id="detailTitle">会话详情</div>
+        <button type="button" class="btn" id="copyRaw" disabled>复制原文</button>
+        <button type="button" class="btn" id="copyPolished" disabled>复制润色</button>
+        <button type="button" class="btn btn-primary" id="exportBtn" disabled>导出</button>
+        <button type="button" class="btn btn-danger" id="deleteBtn" disabled>删除</button>
+      </div>
+      <div class="feedback" id="feedback"></div>
+      <div class="detail" id="detailBody"></div>
+      <div class="undo" id="undoBar">
+        <span id="undoLabel" style="flex:1"></span>
+        <button type="button" class="btn" id="undoBtn">撤销</button>
+      </div>
+      <div class="toolbar">
+        <button type="button" class="btn btn-danger" id="clearAll">清空全部历史</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-primary" id="closeBtn">关闭</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script>
+    let bridge = null;
+    let applying = false;
+    let searchTimer = null;
+    let selected = new Set();
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    function syncActions() {
+      const n = selected.size;
+      document.getElementById("copyRaw").disabled = n !== 1;
+      document.getElementById("copyPolished").disabled = n !== 1;
+      document.getElementById("exportBtn").disabled = n < 1;
+      document.getElementById("deleteBtn").disabled = n < 1;
+    }
+
+    window.applyState = function (state) {
+      applying = true;
+      try {
+        document.body.classList.toggle("dark", !!state.effectiveDark);
+        const list = document.getElementById("sessionList");
+        const sessions = state.sessions || [];
+        selected = new Set(state.selectedIds || []);
+        if (!sessions.length) {
+          list.innerHTML = `<div class="empty">暂无历史记录。完成一次语音转写后，会话会显示在这里。</div>`;
+          document.getElementById("detailTitle").textContent = "暂无历史";
+        } else {
+          list.innerHTML = sessions.map((s) => `
+            <div class="session ${selected.has(s.id) ? "on" : ""}" data-id="${esc(s.id)}" title="${esc(s.tooltip || "")}">
+              <div class="prev">${esc(s.preview)}</div>
+              <div class="sub">${esc(s.subtitle)}</div>
+            </div>`).join("");
+        }
+        document.getElementById("detailTitle").textContent = state.detailTitle || "会话详情";
+        document.getElementById("detailBody").textContent = state.detailBody || "";
+        document.getElementById("feedback").textContent = state.feedback || "";
+        const undo = document.getElementById("undoBar");
+        undo.classList.toggle("on", !!state.undoVisible);
+        document.getElementById("undoLabel").textContent = state.undoLabel || "";
+        if (state.search != null && document.activeElement !== document.getElementById("search")) {
+          document.getElementById("search").value = state.search || "";
+        }
+        syncActions();
+      } finally {
+        applying = false;
+      }
+    };
+
+    function wire() {
+      document.getElementById("search").addEventListener("input", (e) => {
+        if (!bridge) return;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => bridge.search(e.target.value || ""), 200);
+      });
+      document.getElementById("sessionList").addEventListener("click", (e) => {
+        const item = e.target.closest(".session");
+        if (!item || !bridge || applying) return;
+        const id = item.getAttribute("data-id");
+        const multi = e.ctrlKey || e.metaKey;
+        bridge.selectSession(id, !!multi);
+      });
+      document.getElementById("copyRaw").onclick = () => bridge && bridge.copyRaw();
+      document.getElementById("copyPolished").onclick = () => bridge && bridge.copyPolished();
+      document.getElementById("exportBtn").onclick = () => bridge && bridge.exportSelected();
+      document.getElementById("deleteBtn").onclick = () => bridge && bridge.deleteSelected();
+      document.getElementById("clearAll").onclick = () => bridge && bridge.clearAll();
+      document.getElementById("closeBtn").onclick = () => bridge && bridge.closeWindow();
+      document.getElementById("undoBtn").onclick = () => bridge && bridge.undoDelete();
+    }
+
+    new QWebChannel(qt.webChannelTransport, (channel) => {
+      bridge = channel.objects.bridge;
+      wire();
+      if (bridge && bridge.ready) bridge.ready();
+    });
+  </script>
+</body>
+</html>

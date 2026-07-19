@@ -5,7 +5,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QComboBox,
-    QMessageBox, QFrame, QScrollArea,
+    QMessageBox, QFrame,
     QStackedWidget,
     QFileDialog, QTextEdit,
     QSizePolicy, QRadioButton, QButtonGroup, QSpinBox,
@@ -28,7 +28,6 @@ from voiceink.audio_devices import (
     INPUT_SOURCE_SYSTEM,
     list_microphone_devices,
     list_system_capture_devices_for_settings,
-    platform_audio_hint,
     sanitize_system_device_index,
 )
 
@@ -38,9 +37,9 @@ from voiceink.ui.settings_components import (
     PageHero,
     SettingsPage,
     SettingsSidebar,
+    ThemeModeSegment,
     ToggleOptionRow,
     TriggerModePicker,
-    WideTestButton,
     device_selection_link,
     elide_middle,
     empty_state,
@@ -55,17 +54,17 @@ from voiceink.ui.settings_components import (
     settings_group,
     settings_section,
     stacked_field_row,
-    usage_tip_bar,
 )
 from voiceink.ui.hotkey_edit import HotkeyEdit
 from voiceink.ui.model_card import ModelCard, RATING_TOOLTIP, format_model_ratings
 from voiceink.ui.nav_icons import nav_icon
+from voiceink.ui import settings_styles as _settings_styles
 from voiceink.ui.settings_styles import (
     BTN_GHOST as _BTN_GHOST,
     BTN_GHOST_SM as _BTN_GHOST_SM,
     BTN_PRIMARY as _BTN_PRIMARY,
-    WINDOW_CSS,
 )
+from voiceink.ui.theme import normalize_theme_mode
 from voiceink.ui.design_tokens import (
     ACCENT as _ACCENT,
     ACCENT_FOCUS as _ACCENT_FOCUS,
@@ -73,7 +72,6 @@ from voiceink.ui.design_tokens import (
     BG as _BG,
     CONTROL_DEVICE_COMBO_WIDTH as _CONTROL_DEVICE_COMBO_WIDTH,
     CONTROL_NUMERIC_WIDTH as _CONTROL_NUMERIC_WIDTH,
-    DIVIDER_SOFT as _DIVIDER_SOFT,
     FONT as _FONT,
     FONT_DISPLAY as _FONT_DISPLAY,
     HAIRLINE as _HAIRLINE,
@@ -95,6 +93,7 @@ class SettingsWindow(QDialog):
     auto_start_changed = pyqtSignal(bool)
     sound_enabled_changed = pyqtSignal(bool)
     models_changed = pyqtSignal()
+    theme_changed = pyqtSignal(str)
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
 
@@ -123,7 +122,216 @@ class SettingsWindow(QDialog):
             | Qt.WindowType.WindowMinimizeButtonHint
             | Qt.WindowType.WindowMaximizeButtonHint
         )
-        self.setStyleSheet(WINDOW_CSS)
+        self.setStyleSheet(_settings_styles.WINDOW_CSS)
+
+    def reapply_theme(self) -> None:
+        """Refresh dialog chrome after design tokens were activated."""
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_components import (
+            CompactPickCard,
+            FOOTNOTE,
+            GROUP_STYLE,
+            NAV_BTN_STYLE,
+            PAGE_SUBTITLE,
+            PAGE_TITLE,
+            PageHero,
+            SECTION_LABEL,
+            SwitchControl,
+            ToggleOptionRow,
+            paint_device_selection_link,
+            paint_info_callout,
+            recolor_group_divider,
+        )
+
+        self.setStyleSheet(_settings_styles.WINDOW_CSS)
+        if hasattr(self, "_content_wrap"):
+            self._content_wrap.setStyleSheet(f"background: {tok.BG};")
+        if hasattr(self, "_pages"):
+            self._pages.setStyleSheet(f"background: {tok.BG};")
+        if hasattr(self, "_sidebar"):
+            self._sidebar.setStyleSheet(
+                f"background: {tok.SETTINGS_SIDEBAR_BG};"
+                f" border-right: 1px solid {tok.HAIRLINE};"
+            )
+            for btn in self._sidebar.findChildren(QPushButton):
+                if btn.objectName() == "settingsNavBtn":
+                    btn.setStyleSheet(NAV_BTN_STYLE)
+            brand = getattr(self._sidebar, "_brand_label", None)
+            if brand is not None:
+                brand.setStyleSheet(
+                    f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY};"
+                    f" font-size: 14px; font-weight: 600; background: transparent;"
+                )
+            brand_icon = getattr(self._sidebar, "_brand_icon", None)
+            if brand_icon is not None:
+                from voiceink.ui.tray_icon import create_microphone_icon
+
+                brand_icon.setPixmap(
+                    create_microphone_icon(recording=False, size=64).pixmap(32, 32)
+                )
+            status_card = getattr(self._sidebar, "_status_wrap", None)
+            if status_card is not None:
+                status_card.setStyleSheet(f"""
+                    QFrame#sidebarStatusCard {{
+                        background: {tok.SURFACE_PEARL};
+                        border: 1px solid {tok.BORDER};
+                        border-radius: {tok.RADIUS_MD}px;
+                    }}
+                """)
+            status_primary = getattr(self._sidebar, "_status_primary", None)
+            if status_primary is not None:
+                status_primary.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 11px; font-weight: 500;"
+                    f" background: transparent;"
+                )
+            status_secondary = getattr(self._sidebar, "_status_secondary", None)
+            if status_secondary is not None:
+                status_secondary.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 11px;"
+                    f" background: transparent;"
+                )
+        if hasattr(self, "_theme_combo") and hasattr(self._theme_combo, "reapply_styles"):
+            self._theme_combo.reapply_styles()
+        if hasattr(self, "_mic_test_btn") and isinstance(self._mic_test_btn, QPushButton):
+            self._mic_test_btn.setStyleSheet(_settings_styles.BTN_PRIMARY)
+        if hasattr(self, "_mic_test_status"):
+            self._mic_test_status.setStyleSheet(
+                f"color: {tok.TEXT_SEC}; font-size: 12px; background: transparent;"
+            )
+        if hasattr(self, "_hotkey_hint"):
+            self._hotkey_hint.setStyleSheet(
+                f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                f" background: transparent; padding: 0 16px 12px 16px;"
+            )
+        if hasattr(self, "_advanced_audio_btn"):
+            paint_device_selection_link(self._advanced_audio_btn)
+
+        for hero in self.findChildren(PageHero):
+            hero.reapply_styles()
+        for row in self.findChildren(ToggleOptionRow):
+            row.reapply_styles()
+        for card in self.findChildren(CompactPickCard):
+            card.reapply_styles()
+        for sw in self.findChildren(SwitchControl):
+            sw.update()
+
+        for frame in self.findChildren(QFrame):
+            name = frame.objectName() or ""
+            if name == "settingsGroup":
+                frame.setStyleSheet(GROUP_STYLE)
+            elif name.endswith("Callout") or name == "infoCallout":
+                paint_info_callout(frame)
+
+        for wrap in self.findChildren(QWidget):
+            if wrap.objectName() == "settingsGroupDivider":
+                recolor_group_divider(wrap)
+
+        for label in self.findChildren(QLabel):
+            role = label.property("viRole")
+            if role == "pageTitle":
+                label.setStyleSheet(PAGE_TITLE)
+            elif role == "pageSubtitle":
+                label.setStyleSheet(PAGE_SUBTITLE)
+            elif role == "sectionLabel":
+                label.setStyleSheet(SECTION_LABEL)
+            elif role == "rowTitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 500;"
+                    f" background: transparent;"
+                )
+            elif role == "rowSubtitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                    f" background: transparent;"
+                )
+            elif role == "fieldLabel":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_SEC}; font-size: 12px; font-weight: 500;"
+                    f" background: transparent;"
+                )
+            elif role == "hint":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                    f" background: transparent;"
+                )
+            elif role == "footnote":
+                label.setStyleSheet(FOOTNOTE)
+            elif role == "polishPreviewHeading":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT}; font-size: 16px; font-weight: 600;"
+                    f" background: transparent;"
+                )
+            elif role == "polishPreviewLabel":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 13px; font-weight: 600;"
+                    f" background: transparent;"
+                )
+            elif role == "polishPreviewText":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_SEC}; font-size: 13px; line-height: 1.5;"
+                    f" background: transparent;"
+                )
+            elif role == "kvKey":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 550;"
+                    f" min-width: 80px;"
+                    f" background: transparent;"
+                )
+            elif role == "kvValue":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 13px; background: transparent;"
+                )
+            elif role == "kvValueMono":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 12px;"
+                    f" font-family: {tok.FONT_MONO}; background: transparent;"
+                )
+            elif role == "pickTitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 600;"
+                    f" background: transparent;"
+                )
+            elif role == "pickSubtitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 11px; line-height: 1.35;"
+                    f" background: transparent;"
+                )
+            elif label.objectName() == "settingsGroupTitle":
+                label.setStyleSheet(
+                    f"color: {tok.TEXT_DIM}; font-size: 12px; font-weight: 600;"
+                    f" padding: 0 2px 2px 2px; background: transparent;"
+                    f" letter-spacing: 0;"
+                )
+
+        # Theme row titles baked at construct time (general page).
+        if hasattr(self, "_theme_title_label"):
+            self._theme_title_label.setStyleSheet(
+                f"color: {tok.TEXT}; font-size: 13px; font-weight: 500;"
+                f" background: transparent;"
+            )
+        if hasattr(self, "_theme_desc_label"):
+            self._theme_desc_label.setStyleSheet(
+                f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                f" background: transparent;"
+            )
+
+        for btn in self.findChildren(QPushButton):
+            name = btn.objectName() or ""
+            if name in ("", "settingsNavBtn", "deviceSelectionLink", "themeModeSegBtn"):
+                continue
+            # Ghost / primary buttons rebuilt from active styles when tagged.
+            role = btn.property("viBtn")
+            if role == "primary":
+                btn.setStyleSheet(_settings_styles.BTN_PRIMARY)
+            elif role == "ghostSm":
+                btn.setStyleSheet(_settings_styles.BTN_GHOST_SM)
+
+        if hasattr(self, "_about_version_label"):
+            self._about_version_label.setStyleSheet(
+                f"color: {tok.TEXT_SEC}; font-size: 11px; font-weight: 600;"
+                f" background: {tok.SURFACE_PEARL}; border: 1px solid {tok.HAIRLINE};"
+                f" border-radius: {tok.RADIUS_PILL}px; padding: 3px 10px;"
+            )
 
     def _on_nav_changed(self, row: int):
         self._pages.setCurrentIndex(row)
@@ -147,11 +355,20 @@ class SettingsWindow(QDialog):
         self._sidebar.page_changed.connect(self._on_nav_changed)
         body.addWidget(self._sidebar)
 
+        # The content column starts directly with the active page. Settings are
+        # auto-saved, so persistent action chrome would only consume space.
         content_wrap = QWidget()
+        self._content_wrap = content_wrap
         content_wrap.setStyleSheet(f"background: {_BG};")
-        content_lay = QHBoxLayout(content_wrap)
-        content_lay.setContentsMargins(20, 0, 20, 0)
+        content_lay = QVBoxLayout(content_wrap)
+        content_lay.setContentsMargins(0, 0, 0, 0)
         content_lay.setSpacing(0)
+
+        pages_host = QWidget()
+        pages_host.setStyleSheet(f"background: {_BG};")
+        pages_lay = QHBoxLayout(pages_host)
+        pages_lay.setContentsMargins(20, 0, 20, 0)
+        pages_lay.setSpacing(0)
 
         self._pages = QStackedWidget()
         self._pages.setSizePolicy(
@@ -162,46 +379,11 @@ class SettingsWindow(QDialog):
         self._pages.addWidget(self._create_model_page())
         self._pages.addWidget(self._create_polish_page())
         self._pages.addWidget(self._create_about_page())
-        content_lay.addWidget(self._pages, 1)
+        pages_lay.addWidget(self._pages, 1)
+        content_lay.addWidget(pages_host, 1)
         body.addWidget(content_wrap, 1)
 
         root.addLayout(body, 1)
-
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {_DIVIDER_SOFT};")
-        root.addWidget(sep)
-
-        footer = QWidget()
-        footer.setObjectName("settingsFooter")
-        footer.setStyleSheet(f"""
-            QWidget#settingsFooter {{
-                background: {_SURFACE_PEARL};
-                border-top: 1px solid {_HAIRLINE};
-            }}
-        """)
-        btn_bar = QHBoxLayout(footer)
-        btn_bar.setContentsMargins(20, 12, 20, 12)
-        btn_bar.setSpacing(12)
-
-        self._footer_hint = QLabel("更改会即时生效")
-        self._footer_hint.setStyleSheet(
-            f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;"
-            f" padding-left: 4px;"
-        )
-        btn_bar.addWidget(self._footer_hint, 1)
-
-        done_btn = QPushButton("关闭")
-        done_btn.setFixedHeight(38)
-        done_btn.setMinimumWidth(96)
-        done_btn.setStyleSheet(_BTN_PRIMARY)
-        done_btn.setDefault(True)
-        done_btn.setAutoDefault(True)
-        done_btn.setAccessibleName("关闭设置")
-        done_btn.clicked.connect(self._on_done)
-        btn_bar.addWidget(done_btn)
-
-        root.addWidget(footer)
 
     # ── Page: General ──────────────────────────────────
 
@@ -210,165 +392,107 @@ class SettingsWindow(QDialog):
         self._refresh_sidebar_status()
 
     def _create_general_page(self) -> QWidget:
+        """Prototype v3 layout: stacked 录音 → 音频 → 偏好 cards (top to bottom)."""
         page = SettingsPage()
         self._general_hero = PageHero(
             "通用设置",
-            subtitle="快捷键、触发方式与音频输入",
+            subtitle="录音、音频与偏好",
         )
         page.add(self._general_hero)
 
-        trig_group = settings_group()
-        trig_lay = QVBoxLayout(trig_group)
-        trig_lay.setContentsMargins(0, 0, 0, 0)
-        trig_lay.setSpacing(0)
+        # ── 录音 ──
+        record_card = settings_group()
+        record_lay = QVBoxLayout(record_card)
+        record_lay.setContentsMargins(0, 0, 0, 0)
+        record_lay.setSpacing(0)
         self._trigger_group = QButtonGroup(self)
         self._trigger_continuous_rb = QRadioButton()
         self._trigger_hotkey_rb = QRadioButton()
         for rb in (self._trigger_continuous_rb, self._trigger_hotkey_rb):
             self._trigger_group.addButton(rb)
-        trig_lay.addWidget(TriggerModePicker(
+        record_lay.addWidget(TriggerModePicker(
             self._trigger_continuous_rb,
             self._trigger_hotkey_rb,
         ))
-        page.add(settings_section("触发方式", trig_group))
-
-        hk_group = settings_group()
-        hk_lay = QVBoxLayout(hk_group)
-        hk_lay.setContentsMargins(0, 0, 0, 0)
-        hk_lay.setSpacing(0)
         self._hotkey_edit = HotkeyEdit()
         self._hotkey_edit.setObjectName("HotkeyEdit")
-        self._hotkey_edit.setMinimumHeight(48)
+        self._hotkey_edit.setMinimumHeight(40)
         self._hotkey_edit.capture_started.connect(self.hotkey_capture_started.emit)
         self._hotkey_edit.capture_ended.connect(self.hotkey_capture_ended.emit)
         self._hotkey_edit.hotkey_changed.connect(self._apply_hotkey_setting)
+        # Product help under the field (not in prototype chrome); keep for usability.
         self._hotkey_hint = QLabel()
         self._hotkey_hint.setWordWrap(True)
         self._hotkey_hint.setStyleSheet(
-            f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;"
-            f" padding: 0 16px 10px 16px;"
+            f"color: {_TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f" background: transparent; padding: 0 16px 12px 16px;"
         )
-        hk_field = stacked_field_row("录音快捷键", self._hotkey_edit)
-        hk_lay.addWidget(hk_field)
-        hk_lay.addWidget(self._hotkey_hint)
-        page.add(settings_section("快捷键", hk_group))
+        record_lay.addWidget(stacked_field_row("录音快捷键", self._hotkey_edit))
+        record_lay.addWidget(self._hotkey_hint)
+        page.add(settings_section("录音", record_card))
 
-        pref_group = settings_group()
-        pref_lay = QVBoxLayout(pref_group)
-        pref_lay.setContentsMargins(0, 0, 0, 0)
-        pref_lay.setSpacing(0)
-        self._auto_start_row = ToggleOptionRow(
-            "开机时自动启动", "登录 Windows 后自动在托盘运行",
-        )
-        self._sound_row = ToggleOptionRow(
-            "录音提示音", "开始和结束录音时播放短促提示音",
-        )
-        self._restore_clipboard_row = ToggleOptionRow(
-            "粘贴后恢复剪贴板",
-            "粘贴成功后把剪贴板还原为粘贴前的内容（部分应用可能仍保留新文本）",
-        )
-        self._auto_start_row.toggled.connect(self._on_auto_start_toggled)
-        self._sound_row.toggled.connect(self._on_sound_toggled)
-        self._restore_clipboard_row.toggled.connect(self._on_restore_clipboard_toggled)
-        pref_lay.addWidget(self._auto_start_row)
-        pref_lay.addWidget(group_divider())
-        pref_lay.addWidget(self._sound_row)
-        pref_lay.addWidget(group_divider())
-        pref_lay.addWidget(self._restore_clipboard_row)
-
-        history_group = settings_group()
-        history_lay = QVBoxLayout(history_group)
-        history_lay.setContentsMargins(0, 0, 0, 0)
-        history_lay.setSpacing(0)
-        self._history_enabled_row = ToggleOptionRow(
-            "保存语音历史",
-            "记录未来识别结果；关闭后不会删除已有历史",
-        )
-        self._history_retention_days_spin = QSpinBox()
-        self._history_retention_days_spin.setRange(1, 3650)
-        self._history_retention_days_spin.setSuffix(" 天")
-        self._history_retention_days_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
-        self._history_retention_days_spin.setAccessibleName("历史保留天数")
-        self._history_max_entries_spin = QSpinBox()
-        self._history_max_entries_spin.setRange(1, 100000)
-        self._history_max_entries_spin.setSingleStep(100)
-        self._history_max_entries_spin.setSuffix(" 场")
-        self._history_max_entries_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
-        self._history_max_entries_spin.setAccessibleName("最多保留会话数")
-        self._history_enabled_row.toggled.connect(self._on_history_enabled_toggled)
-        self._history_retention_days_spin.valueChanged.connect(self._on_history_limits_changed)
-        self._history_max_entries_spin.valueChanged.connect(self._on_history_limits_changed)
-        history_lay.addWidget(self._history_enabled_row)
-        history_lay.addWidget(group_divider())
-        history_lay.addWidget(labeled_row(
-            "保留天数",
-            self._history_retention_days_spin,
-            "超过天数的旧会话会在清理时删除，当前会话不会被半删。",
-        ))
-        history_lay.addWidget(group_divider())
-        history_lay.addWidget(labeled_row(
-            "最大会话数",
-            self._history_max_entries_spin,
-            "按整场会话计数，超出后优先清理最旧会话。",
-        ))
-
-        src_group = settings_group()
-        src_lay = QVBoxLayout(src_group)
-        src_lay.setContentsMargins(0, 0, 0, 0)
-        src_lay.setSpacing(0)
+        # ── 音频 ──
+        audio_card = settings_group()
+        audio_lay = QVBoxLayout(audio_card)
+        audio_lay.setContentsMargins(0, 0, 0, 0)
+        audio_lay.setSpacing(0)
         self._source_group = QButtonGroup(self)
         self._src_mic_rb = QRadioButton()
         self._src_sys_rb = QRadioButton()
         self._src_mixed_rb = QRadioButton()
         for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
             self._source_group.addButton(rb)
-        src_lay.addWidget(AudioSourcePicker(
+        audio_lay.addWidget(AudioSourcePicker(
             self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb,
         ))
         self._mixed_audio_callout = info_callout(
-            "混合模式会同时收录麦克风与电脑播放声。若背景有视频、音乐或会议远端声音，"
-            "识别结果可能混杂中英或乱码。日常口述建议选「仅麦克风」。"
+            "混合模式可能混入背景音导致识别杂乱。日常口述建议「仅麦克风」。"
         )
-        self._mixed_audio_callout.setVisible(False)
         callout_wrap = QWidget()
         callout_lay = QHBoxLayout(callout_wrap)
-        callout_lay.setContentsMargins(16, 0, 16, 12)
+        callout_lay.setContentsMargins(12, 0, 12, 12)
         callout_lay.addWidget(self._mixed_audio_callout)
-        src_lay.addWidget(callout_wrap)
+        audio_lay.addWidget(callout_wrap)
         self._src_mic_rb.toggled.connect(self._sync_source_device_widgets)
         self._src_sys_rb.toggled.connect(self._sync_source_device_widgets)
         self._src_mixed_rb.toggled.connect(self._sync_source_device_widgets)
-        page.add(settings_section("音频来源", src_group))
 
-        test_group = settings_group()
-        test_lay = QVBoxLayout(test_group)
-        test_lay.setContentsMargins(0, 0, 0, 0)
-        test_lay.setSpacing(0)
-        self._mic_test_btn = WideTestButton("测试声音（约 2 秒）")
+        # Prototype: callout → bordered rows for primary action + device link.
+        audio_lay.addWidget(group_divider())
+        test_row = QWidget()
+        test_row.setMinimumHeight(52)
+        test_row_lay = QVBoxLayout(test_row)
+        test_row_lay.setContentsMargins(16, 12, 16, 12)
+        test_row_lay.setSpacing(6)
+        self._mic_test_btn = QPushButton("测试声音（约 2 秒）")
+        self._mic_test_btn.setProperty("viBtn", "primary")
+        self._mic_test_btn.setStyleSheet(_BTN_PRIMARY)
+        self._mic_test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._mic_test_btn.setFixedHeight(36)
         self._mic_test_btn.clicked.connect(self._run_mic_probe)
-        test_lay.addWidget(self._mic_test_btn)
+        test_row_lay.addWidget(self._mic_test_btn, 0, Qt.AlignmentFlag.AlignLeft)
         self._mic_test_status = QLabel("")
+        self._mic_test_status.setProperty("viRole", "hint")
         self._mic_test_status.setStyleSheet(
             f"color: {_TEXT_SEC}; font-size: 12px; background: transparent;"
-            f" padding: 0 16px 10px 16px;"
         )
         self._mic_test_status.setWordWrap(True)
-        test_lay.addWidget(self._mic_test_status)
-        page.add(settings_section("检测音频", test_group))
+        test_row_lay.addWidget(self._mic_test_status)
+        audio_lay.addWidget(test_row)
 
-        adv_group = settings_group()
-        adv_group_lay = QVBoxLayout(adv_group)
-        adv_group_lay.setContentsMargins(0, 0, 0, 0)
-        adv_group_lay.setSpacing(0)
-        adv_toggle_row = QHBoxLayout()
-        adv_toggle_row.setContentsMargins(16, 8, 16, 8)
+        audio_lay.addWidget(group_divider())
+        link_row = QWidget()
+        link_row.setMinimumHeight(52)
+        link_row_lay = QHBoxLayout(link_row)
+        link_row_lay.setContentsMargins(16, 12, 16, 12)
+        link_row_lay.setSpacing(0)
         self._advanced_audio_btn = device_selection_link("手动选择音频设备")
         self._advanced_audio_btn.toggled.connect(self._toggle_advanced_audio)
-        adv_toggle_row.addWidget(self._advanced_audio_btn)
-        adv_toggle_row.addStretch()
-        adv_group_lay.addLayout(adv_toggle_row)
+        link_row_lay.addWidget(self._advanced_audio_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        link_row_lay.addStretch(1)
+        audio_lay.addWidget(link_row)
 
-        self._advanced_audio_panel = settings_group()
+        self._advanced_audio_panel = QWidget()
         self._advanced_audio_panel.setVisible(False)
         self._advanced_audio_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
@@ -388,9 +512,11 @@ class SettingsWindow(QDialog):
         dev_btn_row.setContentsMargins(16, 8, 16, 12)
         dev_btn_row.setSpacing(8)
         refresh_btn = QPushButton("刷新列表")
+        refresh_btn.setProperty("viBtn", "ghostSm")
         refresh_btn.setStyleSheet(_BTN_GHOST_SM)
         refresh_btn.clicked.connect(self._refresh_audio_device_lists)
         reset_btn = QPushButton("恢复自动选择")
+        reset_btn.setProperty("viBtn", "ghostSm")
         reset_btn.setStyleSheet(_BTN_GHOST_SM)
         reset_btn.setToolTip("让程序自动挑选设备，避免选到打不开的声卡")
         reset_btn.clicked.connect(self._reset_audio_devices_to_auto)
@@ -398,11 +524,78 @@ class SettingsWindow(QDialog):
         dev_btn_row.addWidget(reset_btn)
         dev_btn_row.addStretch()
         adv_lay.addLayout(dev_btn_row)
-        adv_group_lay.addWidget(self._advanced_audio_panel)
-        page.add(settings_section("手动设备", adv_group))
+        audio_lay.addWidget(self._advanced_audio_panel)
+        page.add(settings_section("音频", audio_card))
 
-        page.add(settings_section("开机与提示", pref_group))
-        page.add(settings_section("历史", history_group))
+        # ── 偏好 ──
+        prefs_card = settings_group()
+        prefs_lay = QVBoxLayout(prefs_card)
+        prefs_lay.setContentsMargins(0, 0, 0, 0)
+        prefs_lay.setSpacing(0)
+
+        self._theme_combo = ThemeModeSegment()
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_mode_changed)
+        theme_row = QWidget()
+        theme_row_lay = QHBoxLayout(theme_row)
+        theme_row_lay.setContentsMargins(16, 12, 16, 12)
+        theme_row_lay.setSpacing(12)
+        theme_text = QWidget()
+        theme_text_lay = QVBoxLayout(theme_text)
+        theme_text_lay.setContentsMargins(0, 0, 0, 0)
+        theme_text_lay.setSpacing(2)
+        self._theme_title_label = QLabel("主题")
+        self._theme_title_label.setProperty("viRole", "rowTitle")
+        self._theme_title_label.setStyleSheet(
+            f"color: {_TEXT}; font-size: 13px; font-weight: 500; background: transparent;"
+        )
+        self._theme_desc_label = QLabel("跟随系统时按 Windows 外观显示")
+        self._theme_desc_label.setProperty("viRole", "rowSubtitle")
+        self._theme_desc_label.setStyleSheet(
+            f"color: {_TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f" background: transparent;"
+        )
+        theme_text_lay.addWidget(self._theme_title_label)
+        theme_text_lay.addWidget(self._theme_desc_label)
+        theme_row_lay.addWidget(theme_text, 1)
+        theme_row_lay.addWidget(self._theme_combo, 0, Qt.AlignmentFlag.AlignVCenter)
+        prefs_lay.addWidget(theme_row)
+        prefs_lay.addWidget(group_divider())
+
+        # Prototype v3 preference rows: title only (no subtitle).
+        self._auto_start_row = ToggleOptionRow("开机时自动启动")
+        self._sound_row = ToggleOptionRow("录音提示音")
+        self._restore_clipboard_row = ToggleOptionRow("粘贴后恢复剪贴板")
+        self._auto_start_row.toggled.connect(self._on_auto_start_toggled)
+        self._sound_row.toggled.connect(self._on_sound_toggled)
+        self._restore_clipboard_row.toggled.connect(self._on_restore_clipboard_toggled)
+        prefs_lay.addWidget(self._auto_start_row)
+        prefs_lay.addWidget(group_divider())
+        prefs_lay.addWidget(self._sound_row)
+        prefs_lay.addWidget(group_divider())
+        prefs_lay.addWidget(self._restore_clipboard_row)
+        prefs_lay.addWidget(group_divider())
+
+        self._history_enabled_row = ToggleOptionRow("保存语音历史")
+        self._history_retention_days_spin = QSpinBox()
+        self._history_retention_days_spin.setRange(1, 3650)
+        self._history_retention_days_spin.setSuffix(" 天")
+        self._history_retention_days_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
+        self._history_retention_days_spin.setAccessibleName("历史保留天数")
+        self._history_max_entries_spin = QSpinBox()
+        self._history_max_entries_spin.setRange(1, 100000)
+        self._history_max_entries_spin.setSingleStep(100)
+        self._history_max_entries_spin.setSuffix(" 场")
+        self._history_max_entries_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
+        self._history_max_entries_spin.setAccessibleName("最多保留会话数")
+        self._history_enabled_row.toggled.connect(self._on_history_enabled_toggled)
+        self._history_retention_days_spin.valueChanged.connect(self._on_history_limits_changed)
+        self._history_max_entries_spin.valueChanged.connect(self._on_history_limits_changed)
+        prefs_lay.addWidget(self._history_enabled_row)
+        prefs_lay.addWidget(group_divider())
+        prefs_lay.addWidget(labeled_row("保留天数", self._history_retention_days_spin))
+        prefs_lay.addWidget(group_divider())
+        prefs_lay.addWidget(labeled_row("最大会话数", self._history_max_entries_spin))
+        page.add(settings_section("偏好", prefs_card))
 
         for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
             rb.toggled.connect(self._on_input_source_radio_toggled)
@@ -411,12 +604,21 @@ class SettingsWindow(QDialog):
         self._mic_device_combo.currentIndexChanged.connect(self._on_audio_device_changed)
         self._system_device_combo.currentIndexChanged.connect(self._on_audio_device_changed)
 
-        page.add(footnote(
-            f"{platform_audio_hint()}\n"
-            "若与输入法冲突，可改为 Alt+Space。"
-        ))
-        page.set_compact()
+        self._general_footer_note = footnote(
+            "更改将自动保存并立即生效；若录音快捷键与输入法冲突，"
+            "可改用 Alt + Space。"
+        )
+        self._general_footer_note.setObjectName("generalFooterNote")
+        self._general_footer_note.setAccessibleName("设置保存与快捷键提示")
+        page.add(self._general_footer_note)
+        # content_wrap already pads ~20px; page adds ~2px → ≈ prototype 22px.
+        page._layout.setContentsMargins(2, 20, 2, 28)
+        page.set_spacing(18)
         return page
+
+    def _set_mic_test_status(self, text: str) -> None:
+        if hasattr(self, "_mic_test_status"):
+            self._mic_test_status.setText(text)
 
     # ── Page: Model ────────────────────────────────────
 
@@ -839,59 +1041,54 @@ class SettingsWindow(QDialog):
     def _reset_prompt(self):
         from voiceink.text_polisher import POLISH_PROMPT
         self._llm_prompt_edit.setPlainText(POLISH_PROMPT)
+        self._flush_llm_fields()
 
     # ── Page: About ────────────────────────────────────
 
     def _create_about_page(self) -> QWidget:
         page = SettingsPage()
-        self._about_hero = PageHero("关于 VoiceInk")
+        self._about_hero = PageHero("关于")
         page.add(self._about_hero)
-
-        brand_group = settings_group()
-        brand_lay = QHBoxLayout(brand_group)
-        brand_lay.setContentsMargins(18, 16, 18, 16)
-        brand_lay.setSpacing(14)
-        from voiceink.ui.tray_icon import create_microphone_icon
-        icon_lbl = QLabel()
-        icon_lbl.setPixmap(
-            create_microphone_icon(recording=False, size=96).pixmap(48, 48)
-        )
-        icon_lbl.setStyleSheet("background: transparent;")
-        brand_lay.addWidget(icon_lbl)
-        brand_text = QVBoxLayout()
-        brand_text.setSpacing(8)
-        t = QLabel("VoiceInk")
-        t.setStyleSheet(
-            f"color: {_TEXT}; font-family: {_FONT_DISPLAY}; font-size: 22px;"
-            f" font-weight: 600; letter-spacing: 0; background: transparent;"
-        )
-        brand_text.addWidget(t)
-        self._about_version_label = QLabel(f"版本 {VERSION}")
-        self._about_version_label.setStyleSheet(
-            f"color: {_TEXT_SEC}; font-size: 12px; font-weight: 500;"
-            f" background: {_SURFACE_PEARL}; border: 1px solid {_HAIRLINE};"
-            f" border-radius: {_RADIUS_PILL}px; padding: 4px 12px;"
-        )
-        brand_text.addWidget(self._about_version_label, 0, Qt.AlignmentFlag.AlignLeft)
-        brand_lay.addLayout(brand_text)
-        brand_lay.addStretch()
-        page.add(settings_section("", brand_group))
-
-        self._about_usage_tip = usage_tip_bar("")
-        page.add(self._about_usage_tip)
 
         self._about_info_group = settings_group()
         self._about_info_lay = QVBoxLayout(self._about_info_group)
         self._about_info_lay.setContentsMargins(0, 0, 0, 0)
         self._about_info_lay.setSpacing(0)
-        page.add(settings_section("运行信息", self._about_info_group))
+
+        brand_row = QWidget()
+        brand_lay = QHBoxLayout(brand_row)
+        brand_lay.setContentsMargins(16, 8, 16, 8)
+        brand_lay.setSpacing(12)
+        brand_name = QLabel("VoiceInk")
+        brand_name.setProperty("viRole", "kvKey")
+        brand_name.setStyleSheet(
+            f"color: {_TEXT}; font-size: 13px; font-weight: 550;"
+            f" background: transparent;"
+        )
+        brand_lay.addWidget(brand_name)
+        brand_lay.addStretch(1)
+        self._about_version_label = QLabel(f"版本 {VERSION}")
+        self._about_version_label.setStyleSheet(
+            f"color: {_TEXT_SEC}; font-size: 11px; font-weight: 600;"
+            f" background: {_SURFACE_PEARL}; border: 1px solid {_HAIRLINE};"
+            f" border-radius: {_RADIUS_PILL}px; padding: 3px 10px;"
+        )
+        brand_lay.addWidget(self._about_version_label)
+        self._about_info_lay.addWidget(brand_row)
+        page.add(settings_section("", self._about_info_group))
+
+        self._about_usage_tip = info_callout("", "aboutUsageCallout")
+        page.add(self._about_usage_tip)
         page.set_compact()
+        page.set_spacing(12)
         return page
 
     def _refresh_about_info(self):
-        while self._about_info_lay.count():
-            item = self._about_info_lay.takeAt(0)
-            if item.widget():
+        # Keep the fixed VoiceInk/version row at index 0. Dynamic rows are
+        # appended below it and are the only rows replaced on refresh.
+        while self._about_info_lay.count() > 1:
+            item = self._about_info_lay.takeAt(1)
+            if item.widget() is not None:
                 item.widget().deleteLater()
 
         from voiceink.speech_recognizer import MODEL_REGISTRY, is_model_downloaded, get_model_info
@@ -909,13 +1106,18 @@ class SettingsWindow(QDialog):
             ("模型目录", str(self._config.models_dir)),
             ("配置文件", str(self._config.config_dir / "config.json")),
             ("快捷键", format_hotkey(self._config.get("hotkey", "ctrl+space"))),
+            (
+                "润色",
+                "已开启"
+                if self._config.get("llm.enabled", False)
+                else "已关闭",
+            ),
         ]
 
-        for i, (key, val) in enumerate(items):
-            if i > 0:
-                self._about_info_lay.addWidget(group_divider())
+        for key, val in items:
+            self._about_info_lay.addWidget(group_divider())
             if key in ("模型目录", "配置文件"):
-                self._about_info_lay.addWidget(kv_row_elided(key, val))
+                self._about_info_lay.addWidget(kv_row_elided(key, val, max_len=42))
             else:
                 self._about_info_lay.addWidget(kv_row(key, val))
 
@@ -1043,8 +1245,6 @@ class SettingsWindow(QDialog):
         sys_on = src in (INPUT_SOURCE_SYSTEM, INPUT_SOURCE_MIXED)
         self._mic_device_combo.setEnabled(mic_on)
         self._system_device_combo.setEnabled(sys_on)
-        if hasattr(self, "_mixed_audio_callout"):
-            self._mixed_audio_callout.setVisible(src == INPUT_SOURCE_MIXED)
 
     def _apply_input_source_radios(self, source: str):
         if source == INPUT_SOURCE_SYSTEM:
@@ -1077,6 +1277,16 @@ class SettingsWindow(QDialog):
         self._history_max_entries_spin.setValue(
             int(self._config.get("history.max_entries", 5000))
         )
+
+        theme_mode = normalize_theme_mode(
+            self._config.get("appearance.theme_mode", "system")
+        )
+        idx = self._theme_combo.findData(theme_mode)
+        if idx < 0:
+            idx = self._theme_combo.findData("system")
+        self._theme_combo.blockSignals(True)
+        self._theme_combo.setCurrentIndex(max(0, idx))
+        self._theme_combo.blockSignals(False)
 
         self._apply_input_source_radios(
             self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
@@ -1126,7 +1336,7 @@ class SettingsWindow(QDialog):
     def _reset_audio_devices_to_auto(self):
         self._set_combo_by_data(self._mic_device_combo, -1)
         self._set_combo_by_data(self._system_device_combo, -1)
-        self._mic_test_status.setText("已恢复为「自动选择」，请再点「测试声音」。")
+        self._set_mic_test_status("已恢复为「自动选择」，请再点「测试声音」。")
 
     def _refresh_audio_device_lists(self):
         mic_sel = self._mic_device_combo.currentData() if self._mic_device_combo.count() else -1
@@ -1156,7 +1366,7 @@ class SettingsWindow(QDialog):
     def _toggle_advanced_audio(self, visible: bool):
         self._advanced_audio_panel.setVisible(visible)
         self._advanced_audio_btn.setText(
-            "收起设备选择  ›" if visible else "手动选择音频设备  ›"
+            "收起手动设备" if visible else "手动选择音频设备"
         )
         self._advanced_audio_btn.setChecked(visible)
         if visible and self._mic_device_combo.count() <= 1:
@@ -1204,7 +1414,7 @@ class SettingsWindow(QDialog):
         self._mic_probe_active = True
         self._mic_probe_max = 0.0
         self._mic_test_btn.setEnabled(False)
-        self._mic_test_status.setText("监听中…请说话并播放一段电脑声音")
+        self._set_mic_test_status("监听中…请说话并播放一段电脑声音")
         self._mic_test_recorder.volume_changed.connect(self._on_mic_probe_volume)
         self._mic_test_recorder.error.connect(self._on_mic_probe_error)
         self._mic_test_recorder.warning.connect(self._on_mic_probe_warning)
@@ -1222,13 +1432,13 @@ class SettingsWindow(QDialog):
         if self._mic_test_recorder.is_recording:
             self._mic_test_recorder.cancel()
         self._mic_test_btn.setEnabled(True)
-        self._mic_test_status.setText("")
+        self._set_mic_test_status("")
         QMessageBox.warning(self, "音频设备", msg)
 
     def _on_mic_probe_warning(self, msg: str):
         if not self._mic_probe_active:
             return
-        self._mic_test_status.setText(msg)
+        self._set_mic_test_status(msg)
 
     def _finish_mic_probe(self):
         if not self._mic_probe_active:
@@ -1243,9 +1453,9 @@ class SettingsWindow(QDialog):
         warn = self._mic_test_recorder.last_start_warning
         if peak >= threshold:
             base = "已检测到声音，可以正常使用。"
-            self._mic_test_status.setText(f"{base} {warn}".strip() if warn else base)
+            self._set_mic_test_status(f"{base} {warn}".strip() if warn else base)
         else:
-            self._mic_test_status.setText(
+            self._set_mic_test_status(
                 "几乎无输入。请点「恢复自动选择」后再测；仍失败再展开下方改设备。"
             )
 
@@ -1320,6 +1530,14 @@ class SettingsWindow(QDialog):
             self._hotkey_hint.setText(
                 "点击输入框后按下组合键绑定；按住约 0.18 秒开始录音，松开后识别。"
             )
+
+    def _on_theme_mode_changed(self, _index: int = 0):
+        if self._loading:
+            return
+        mode = normalize_theme_mode(self._theme_combo.currentData())
+        self._config.set("appearance.theme_mode", mode)
+        self._config.save_immediate()
+        self.theme_changed.emit(mode)
 
     def _on_auto_start_toggled(self, checked: bool):
         if self._loading:

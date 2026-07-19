@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 设置框架 · 10 版原型</title>
+  <style>
+:root {
+  --accent: #2563EB; --accent-hv: #1D4ED8;
+  --accent-soft: rgba(37, 99, 235, 0.08);
+  --bg: #F3F4F6; --surface: #FFFFFF; --surface-muted: #F9FAFB;
+  --text: #111827; --text-sec: #4B5563; --text-dim: #6B7280;
+  --border: #E5E7EB; --control-border: #D1D5DB; --green: #16A34A;
+  --amber-soft: #FFFBEB; --amber-border: #F5E6B8; --amber-text: #92400E;
+  --radius-md: 8px; --radius-lg: 10px; --sidebar: 220px;
+  --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: #0f1218; color: #e5e7eb; min-height: 100vh; }
+.gallery-bar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+  padding: 12px 20px 14px;
+  background: rgba(15, 18, 24, 0.94); backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.gallery-bar h1 { font-size: 14px; font-weight: 600; color: #f9fafb; padding-top: 6px; }
+.gallery-bar .meta { font-size: 12px; color: #9ca3af; width: 100%; order: 3; }
+.tabs { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; }
+.tab {
+  appearance: none; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04); color: #d1d5db;
+  font: inherit; font-size: 11px; font-weight: 550;
+  padding: 6px 10px; border-radius: 999px; cursor: pointer;
+}
+.tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.tab.active { background: #2563EB; border-color: #2563EB; color: #fff; }
+.theme-toggle {
+  appearance: none; border: 1px solid rgba(255,255,255,0.12);
+  background: transparent; color: #9ca3af; font: inherit; font-size: 12px;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer; margin-top: 2px;
+}
+.stage { padding: 24px 20px 56px; display: flex; justify-content: center; }
+.variant { display: none; width: min(1000px, 100%); }
+.variant.active { display: block; }
+.caption { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.caption .badge {
+  flex-shrink: 0; font-size: 11px; font-weight: 650; letter-spacing: 0.03em;
+  color: #93c5fd; background: rgba(37,99,235,0.2);
+  border: 1px solid rgba(37,99,235,0.35); padding: 4px 8px; border-radius: 6px;
+}
+.caption p { font-size: 13px; line-height: 1.5; color: #9ca3af; }
+.caption strong { color: #e5e7eb; font-weight: 600; }
+
+.win {
+  background: var(--bg); color: var(--text); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06);
+}
+.win.dark {
+  --accent: #3B82F6; --accent-hv: #60A5FA;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+  --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+  --border: #374151; --control-border: #4B5563; --green: #22C55E;
+  --amber-soft: #422006; --amber-border: #78350f; --amber-text: #FCD34D;
+}
+.body.sidebar-layout { display: grid; grid-template-columns: var(--sidebar) 1fr; min-height: 560px; }
+.body.sidebar-layout.wide-nav { --sidebar: 280px; }
+.body.rail-layout { display: grid; grid-template-columns: 64px 1fr; min-height: 560px; }
+.body.stack-layout { display: flex; flex-direction: column; min-height: 560px; }
+.body.inset { flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+
+.sidebar {
+  background: var(--surface); border-right: 1px solid var(--border);
+  padding: 16px 12px; display: flex; flex-direction: column; gap: 12px;
+}
+.sidebar.wide { padding: 16px 14px; }
+.sidebar.mini { --sidebar: 120px; width: 120px; padding: 12px 8px; }
+.rail {
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; padding: 12px 6px; gap: 8px;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 8px; }
+.mark {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(145deg, #2563EB, #1D4ED8);
+  display: grid; place-items: center; color: #fff; font-size: 12px;
+}
+.mark.sm { width: 32px; height: 32px; border-radius: 10px; font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+.name { font-size: 14px; font-weight: 650; }
+.status-card {
+  margin: 0 4px; padding: 10px 12px; border-radius: var(--radius-md);
+  background: var(--surface-muted); border: 1px solid var(--border); font-size: 12px;
+}
+.status-card .s1 { color: var(--green); font-weight: 600; }
+.status-card .s2 { color: var(--text-dim); margin-top: 4px; }
+.nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.nav-group {
+  font-size: 11px; font-weight: 650; color: var(--text-dim);
+  padding: 12px 12px 6px; letter-spacing: 0.04em;
+}
+.nav-item {
+  appearance: none; border: none; background: transparent; text-align: left;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border-radius: var(--radius-md);
+  font: inherit; font-size: 13px; color: var(--text-sec); cursor: pointer; position: relative;
+}
+.nav-item:hover { background: var(--surface-muted); }
+.nav-item.on {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+}
+.nav-item.on::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 2px 2px 0; background: var(--accent);
+}
+.nav-item .ico { width: 18px; text-align: center; opacity: 0.85; }
+.nav-item .desc { width: 100%; padding-left: 28px; font-size: 11px; color: var(--text-dim); font-weight: 500; margin-top: -2px; }
+.nav-item.wide .lab-wrap { display: flex; flex-direction: column; gap: 2px; }
+.nav-item.wide .desc { width: auto; padding-left: 0; }
+.nav-item.wide.on::before { display: none; }
+.nav-item.icon { flex-direction: column; gap: 4px; padding: 10px 6px; width: 100%; align-items: center; }
+.nav-item.icon .lab { font-size: 10px; }
+.nav-item.icon.on::before { left: 0; top: 6px; bottom: 6px; }
+.nav-item.mini { justify-content: center; padding: 8px; font-size: 12px; }
+.nav-item.mini.on::before { display: none; }
+.rail-status { margin-top: auto; color: var(--green); font-size: 14px; padding-bottom: 8px; }
+
+.main-col { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+.main-col.full { flex: 1; }
+.content { padding: 20px 22px 28px; flex: 1; }
+.footer, .immersive-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.immersive-bar { border-top: none; border-bottom: 1px solid var(--border); }
+.footer .hint, .immersive-bar .hint { flex: 1; font-size: 12px; color: var(--text-dim); }
+
+.topbar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.topbar.pad { padding: 14px 18px; }
+.top-tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.top-tab {
+  appearance: none; border: none; background: transparent; font: inherit;
+  font-size: 13px; font-weight: 550; color: var(--text-dim);
+  padding: 8px 12px; border-radius: var(--radius-md); cursor: pointer;
+}
+.top-tab.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg {
+  display: flex; gap: 0; background: var(--surface-muted);
+  border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px;
+}
+.seg-btn {
+  appearance: none; border: none; background: transparent; font: inherit;
+  font-size: 12px; font-weight: 550; color: var(--text-sec);
+  padding: 6px 14px; border-radius: 6px; cursor: pointer;
+}
+.seg-btn.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
+.top-meta { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.crumb { font-size: 13px; color: var(--text-dim); }
+.crumb b { color: var(--text); font-weight: 650; }
+.crumb span { margin: 0 6px; opacity: 0.5; }
+.status-bar {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin: 16px 22px 0; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); font-size: 12px; color: var(--text-sec);
+}
+.status-bar b { color: var(--green); }
+.status-bar .sep { color: var(--border); }
+
+.page-hero { margin-bottom: 16px; }
+.page-hero h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+.page-hero.sm h2 { font-size: 17px; }
+.page-hero p { margin-top: 4px; font-size: 13px; color: var(--text-dim); }
+.sec { margin-bottom: 16px; }
+.sec-l { font-size: 12px; font-weight: 600; color: var(--text-dim); margin: 0 0 8px 2px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.dense .row { min-height: 44px; padding: 8px 14px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 52px; }
+.row + .row, .field + .row, .row + .field { border-top: 1px solid var(--border); }
+.rt { flex: 1; min-width: 0; }
+.tt { font-size: 13px; font-weight: 550; }
+.td { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.picker2, .picker3 { display: grid; gap: 8px; padding: 12px; }
+.picker2 { grid-template-columns: 1fr 1fr; }
+.picker3 { grid-template-columns: 1fr 1fr 1fr; }
+.pick {
+  appearance: none; text-align: left; border: 1px solid var(--border);
+  background: var(--surface-muted); border-radius: var(--radius-md);
+  padding: 12px; cursor: pointer; color: var(--text); font: inherit;
+}
+.pick.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.pick .t { font-size: 13px; font-weight: 600; display: block; }
+.pick .d { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.field { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.field label { font-size: 12px; font-weight: 550; color: var(--text-sec); }
+.input {
+  appearance: none; font: inherit; font-size: 13px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--control-border);
+  border-radius: var(--radius-md); padding: 10px 12px; width: 100%;
+}
+.btn {
+  appearance: none; font: inherit; font-size: 13px; font-weight: 550;
+  border-radius: var(--radius-md); padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--control-border); background: var(--surface); color: var(--text);
+}
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-link {
+  appearance: none; border: none; background: none; font: inherit;
+  font-size: 13px; color: var(--accent); cursor: pointer; font-weight: 550;
+}
+.callout {
+  margin: 0 12px 12px; padding: 10px 12px;
+  background: var(--amber-soft); border: 1px solid var(--amber-border);
+  border-radius: var(--radius-md); font-size: 12px; color: var(--amber-text); line-height: 1.45;
+}
+.toggle {
+  width: 42px; height: 24px; border-radius: 999px; background: #E5E2E3;
+  position: relative; border: none; cursor: pointer; flex-shrink: 0;
+}
+.win.dark .toggle { background: #4B5563; }
+.toggle.on { background: var(--green); }
+.toggle::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; border-radius: 50%; background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.toggle.on::after { transform: translateX(18px); }
+.pill {
+  display: inline-flex; font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 999px; background: var(--surface-muted);
+  color: var(--text-sec); border: 1px solid var(--border);
+}
+.mcard {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 10px;
+}
+.mcard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mh { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.mh .dim { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.md { font-size: 12px; color: var(--text-sec); margin-top: 6px; }
+.actions { margin-top: 10px; }
+.preview { padding: 4px 16px 16px; font-size: 13px; color: var(--text-sec); line-height: 1.5; }
+.preview .pl { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.preview b { color: var(--text-dim); margin-right: 6px; }
+
+.portal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.portal-card {
+  appearance: none; text-align: left; border: 1px solid var(--border);
+  background: var(--surface); border-radius: var(--radius-lg); padding: 18px;
+  cursor: pointer; color: var(--text); font: inherit;
+}
+.portal-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+.portal-card .pt { display: block; font-size: 15px; font-weight: 650; }
+.portal-card .pd { display: block; margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+
+@media (max-width: 820px) {
+  .body.sidebar-layout, .body.rail-layout { grid-template-columns: 1fr; }
+  .sidebar, .rail { display: none; }
+  .portal-grid, .picker2, .picker3 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+  <header class="gallery-bar">
+    <h1>设置框架 · 10 版全貌</h1>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-v="1">01 现状侧栏</button>
+      <button class="tab" data-v="2">02 图标窄轨</button>
+      <button class="tab" data-v="3">03 顶栏标签</button>
+      <button class="tab" data-v="4">04 顶栏分段</button>
+      <button class="tab" data-v="5">05 侧栏分组</button>
+      <button class="tab" data-v="6">06 顶状态条</button>
+      <button class="tab" data-v="7">07 宽导航说明</button>
+      <button class="tab" data-v="8">08 门户卡片</button>
+      <button class="tab" data-v="9">09 面包屑壳</button>
+      <button class="tab" data-v="10">10 无底栏沉浸</button>
+    </div>
+    <button class="theme-toggle" id="themeToggle" type="button">预览暗色</button>
+    <p class="meta">仅壳层结构探索 · token 对齐通用 03 · 内容为已选页简化版（可点导航切换）</p>
+  </header>
+  <div class="stage">
+
+    <section class="variant active" id="v-1" data-kind="sidebar">
+      <div class="caption"><span class="badge">01</span>
+        <p><strong>现状侧栏</strong>：接近当前：左导航 + 状态卡 + 内容 + 底栏。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body sidebar-layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <div class="status-card"><div class="s1">就绪</div><div class="s2">润色已开启</div></div>
+      <nav class="nav"><button type="button" class="nav-item on" data-page="general"><span class="ico">⚙</span><span class="lab">通用</span></button>
+<button type="button" class="nav-item" data-page="models"><span class="ico">▤</span><span class="lab">模型</span></button>
+<button type="button" class="nav-item" data-page="polish"><span class="ico">✦</span><span class="lab">润色</span></button>
+<button type="button" class="nav-item" data-page="about"><span class="ico">ℹ</span><span class="lab">关于</span></button></nav>
+    </aside>
+    <div class="main-col">
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-2" data-kind="rail">
+      <div class="caption"><span class="badge">02</span>
+        <p><strong>图标窄轨</strong>：侧栏收成图标轨，悬停/选中显示标签，内容区更宽。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body rail-layout">
+    <aside class="rail">
+      <div class="mark sm">V</div>
+      <nav class="nav rail-nav"><button type="button" class="nav-item icon on" data-page="general" title="通用"><span class="ico">⚙</span><span class="lab">通用</span></button>
+<button type="button" class="nav-item icon" data-page="models" title="模型"><span class="ico">▤</span><span class="lab">模型</span></button>
+<button type="button" class="nav-item icon" data-page="polish" title="润色"><span class="ico">✦</span><span class="lab">润色</span></button>
+<button type="button" class="nav-item icon" data-page="about" title="关于"><span class="ico">ℹ</span><span class="lab">关于</span></button></nav>
+      <div class="rail-status" title="就绪 · 润色已开启">●</div>
+    </aside>
+    <div class="main-col">
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-3" data-kind="toptabs">
+      <div class="caption"><span class="badge">03</span>
+        <p><strong>顶栏标签</strong>：取消侧栏；顶栏 Tabs 切换页面，底栏保留。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body stack-layout">
+    <header class="topbar">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <nav class="top-tabs"><button type="button" class="top-tab on" data-page="general">通用</button>
+<button type="button" class="top-tab" data-page="models">模型</button>
+<button type="button" class="top-tab" data-page="polish">润色</button>
+<button type="button" class="top-tab" data-page="about">关于</button></nav>
+    </header>
+    <div class="main-col full">
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-4" data-kind="topseg">
+      <div class="caption"><span class="badge">04</span>
+        <p><strong>顶栏分段</strong>：顶栏品牌 + 分段控件导航；内容全宽。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body stack-layout">
+    <header class="topbar pad">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <div class="seg"><button type="button" class="seg-btn on" data-page="general">通用</button>
+<button type="button" class="seg-btn" data-page="models">模型</button>
+<button type="button" class="seg-btn" data-page="polish">润色</button>
+<button type="button" class="seg-btn" data-page="about">关于</button></div>
+      <div class="top-meta">就绪 · 润色已开启</div>
+    </header>
+    <div class="main-col full">
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-5" data-kind="grouped">
+      <div class="caption"><span class="badge">05</span>
+        <p><strong>侧栏分组</strong>：导航按「输入 / 增强 / 其他」分组，强化信息架构。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body sidebar-layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <nav class="nav"><div class="nav-group">输入</div>
+<button type="button" class="nav-item on" data-page="general"><span class="ico">⚙</span><span class="lab">通用</span><span class="desc">录音与偏好</span></button>
+<button type="button" class="nav-item" data-page="models"><span class="ico">▤</span><span class="lab">模型</span><span class="desc">识别引擎</span></button>
+<div class="nav-group">增强</div>
+<button type="button" class="nav-item" data-page="polish"><span class="ico">✦</span><span class="lab">润色</span><span class="desc">后处理接口</span></button>
+<div class="nav-group">其他</div>
+<button type="button" class="nav-item" data-page="about"><span class="ico">ℹ</span><span class="lab">关于</span><span class="desc">版本与诊断</span></button></nav>
+      <div class="status-card"><div class="s1">就绪</div><div class="s2">润色已开启</div></div>
+    </aside>
+    <div class="main-col">
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-6" data-kind="statusbar">
+      <div class="caption"><span class="badge">06</span>
+        <p><strong>顶状态条</strong>：去掉侧栏状态卡，改为内容区上方全局状态条。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body sidebar-layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <nav class="nav"><button type="button" class="nav-item on" data-page="general"><span class="ico">⚙</span><span class="lab">通用</span></button>
+<button type="button" class="nav-item" data-page="models"><span class="ico">▤</span><span class="lab">模型</span></button>
+<button type="button" class="nav-item" data-page="polish"><span class="ico">✦</span><span class="lab">润色</span></button>
+<button type="button" class="nav-item" data-page="about"><span class="ico">ℹ</span><span class="lab">关于</span></button></nav>
+    </aside>
+    <div class="main-col">
+      <div class="status-bar"><span>状态 · <b>就绪</b></span><span class="sep">·</span><span>润色已开启</span><span class="sep">·</span><span>引擎 SenseVoice</span></div>
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-7" data-kind="wide">
+      <div class="caption"><span class="badge">07</span>
+        <p><strong>宽导航说明</strong>：左侧加宽，每项带一行说明，衔接更「可读」。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body sidebar-layout wide-nav">
+    <aside class="sidebar wide">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <div class="status-card"><div class="s1">就绪</div><div class="s2">润色已开启</div></div>
+      <nav class="nav"><button type="button" class="nav-item wide on" data-page="general"><span class="ico">⚙</span><div class="lab-wrap"><span class="lab">通用</span><span class="desc">录音与偏好</span></div></button>
+<button type="button" class="nav-item wide" data-page="models"><span class="ico">▤</span><div class="lab-wrap"><span class="lab">模型</span><span class="desc">识别引擎</span></div></button>
+<button type="button" class="nav-item wide" data-page="polish"><span class="ico">✦</span><div class="lab-wrap"><span class="lab">润色</span><span class="desc">后处理接口</span></div></button>
+<button type="button" class="nav-item wide" data-page="about"><span class="ico">ℹ</span><div class="lab-wrap"><span class="lab">关于</span><span class="desc">版本与诊断</span></div></button></nav>
+    </aside>
+    <div class="main-col">
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-8" data-kind="portal">
+      <div class="caption"><span class="badge">08</span>
+        <p><strong>门户卡片</strong>：先进入四模块门户，再钻入具体页（带回退）。</p></div>
+      
+<div class="win" data-shell data-portal="1">
+  <div class="body stack-layout">
+    <header class="topbar pad">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <button type="button" class="btn-link back" hidden>← 返回模块</button>
+      <div class="top-meta">就绪 · 润色已开启</div>
+    </header>
+    <div class="main-col full">
+      <div class="portal-view">
+        <div class="page-hero"><h2>设置</h2><p>选择要调整的模块</p></div>
+        <div class="portal-grid"><button type="button" class="portal-card" data-page="general"><span class="pt">通用</span><span class="pd">录音与偏好</span></button><button type="button" class="portal-card" data-page="models"><span class="pt">模型</span><span class="pd">识别引擎</span></button><button type="button" class="portal-card" data-page="polish"><span class="pt">润色</span><span class="pd">后处理</span></button><button type="button" class="portal-card" data-page="about"><span class="pt">关于</span><span class="pd">版本信息</span></button></div>
+      </div>
+      <div class="detail-view" hidden>
+        <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+      </div>
+      <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-9" data-kind="crumb">
+      <div class="caption"><span class="badge">09</span>
+        <p><strong>面包屑壳</strong>：顶栏「设置 › 当前页」+ 左侧迷你目录，双层定位。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body stack-layout">
+    <header class="topbar pad">
+      <div class="crumb">设置 <span>/</span> <b data-crumb>通用</b></div>
+      <div class="top-meta">就绪 · 润色已开启</div>
+    </header>
+    <div class="body sidebar-layout inset">
+      <aside class="sidebar mini">
+        <nav class="nav"><button type="button" class="nav-item mini on" data-page="general">通用</button>
+<button type="button" class="nav-item mini" data-page="models">模型</button>
+<button type="button" class="nav-item mini" data-page="polish">润色</button>
+<button type="button" class="nav-item mini" data-page="about">关于</button></nav>
+      </aside>
+      <div class="main-col">
+        <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+        <footer class="footer"><span class="hint">更改会即时生效</span><button type="button" class="btn btn-primary">关闭</button></footer>
+      </div>
+    </div>
+  </div>
+</div>
+    </section>
+    <section class="variant" id="v-10" data-kind="immersive">
+      <div class="caption"><span class="badge">10 · 已选</span>
+        <p><strong>无底栏沉浸</strong>：关闭沉入右上；底栏取消，状态与操作贴顶衔接。</p></div>
+      
+<div class="win" data-shell>
+  <div class="body sidebar-layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark">V</div><div class="name">VoiceInk</div></div>
+      <div class="status-card"><div class="s1">就绪</div><div class="s2">润色已开启</div></div>
+      <nav class="nav"><button type="button" class="nav-item on" data-page="general"><span class="ico">⚙</span><span class="lab">通用</span></button>
+<button type="button" class="nav-item" data-page="models"><span class="ico">▤</span><span class="lab">模型</span></button>
+<button type="button" class="nav-item" data-page="polish"><span class="ico">✦</span><span class="lab">润色</span></button>
+<button type="button" class="nav-item" data-page="about"><span class="ico">ℹ</span><span class="lab">关于</span></button></nav>
+    </aside>
+    <div class="main-col">
+      <div class="immersive-bar">
+        <span class="hint">更改会即时生效</span>
+        <button type="button" class="btn btn-primary">关闭</button>
+      </div>
+      <div class="content" data-page-host>
+<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>
+</div>
+    </div>
+  </div>
+</div>
+    </section>
+  </div>
+  <script>
+    const PAGES = {
+  general: `<div class="page-hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+<div class="sec"><div class="sec-l">录音</div><div class="card">
+  <div class="picker2">
+    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+  </div>
+  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Space" readonly /></div>
+</div></div>
+<div class="sec"><div class="sec-l">音频</div><div class="card">
+  <div class="picker3">
+    <button class="pick"><span class="t">仅麦克风</span></button>
+    <button class="pick"><span class="t">仅电脑声</span></button>
+    <button class="pick on"><span class="t">混合</span></button>
+  </div>
+  <div class="callout">混合模式可能混入背景音；日常口述建议「仅麦克风」。</div>
+  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+</div></div>`,
+  models: `<div class="page-hero"><h2>语音识别</h2><p>SenseVoice · 230 MB · 多语种</p></div>
+<div class="sec"><div class="sec-l">当前引擎</div>
+  <div class="mcard on"><div class="mh"><b>SenseVoice</b><span class="pill">当前引擎</span><span class="dim">230 MB</span></div>
+  <div class="md">极速推理，多语种支持</div></div>
+</div>
+<div class="sec"><div class="sec-l">存储</div><div class="card"><div class="row">
+  <div class="rt"><div class="tt">模型存储</div><div class="td">已下载 2 个 · 约 470 MB</div></div>
+  <button class="btn">更改存储…</button>
+</div></div></div>
+<div class="sec"><div class="sec-l">可下载</div>
+  <div class="mcard"><div class="mh"><b>FireRedASR2</b><span class="dim">740 MB</span></div>
+  <div class="actions"><button class="btn btn-primary">下载</button></div></div>
+</div>`,
+  polish: `<div class="page-hero"><h2>文字润色</h2><p>已开启 · deepseek-chat</p></div>
+<div class="card">
+  <div class="row"><div class="rt"><div class="tt">启用后处理</div><div class="td">关闭时直接输出原文</div></div><button class="toggle on"></button></div>
+  <div class="preview"><div class="pl">效果预览</div>
+    <div><b>原文</b> 嗯那个就是把会议纪要整理一下吧</div>
+    <div style="margin-top:6px"><b>润色</b> 请整理会议纪要。</div>
+  </div>
+</div>
+<div class="sec" style="margin-top:16px"><div class="sec-l">接口配置</div><div class="card">
+  <div class="field"><label>接口地址</label><input class="input" value="https://api.deepseek.com/v1" /></div>
+  <div class="field"><label>模型名称</label><input class="input" value="deepseek-chat" /></div>
+  <div class="row" style="justify-content:flex-end"><button class="btn">测试连接</button></div>
+</div></div>`,
+  about: `<div class="page-hero sm"><h2>关于</h2></div>
+<div class="card dense">
+  <div class="row"><div class="rt"><div class="tt">VoiceInk</div></div><span class="pill">版本 1.3.5</span></div>
+  <div class="row"><div class="rt"><div class="tt">当前模型</div></div><span class="td">SenseVoice</span></div>
+  <div class="row"><div class="rt"><div class="tt">已下载</div></div><span class="td">2 个 · 约 470 MB</span></div>
+  <div class="row"><div class="rt"><div class="tt">快捷键</div></div><span class="td">Ctrl + Space</span></div>
+  <div class="row"><div class="rt"><div class="tt">润色</div></div><span class="td">已开启</span></div>
+</div>
+<div class="callout" style="margin-top:12px">持续转写：按住 Ctrl+Space 开始监听，停顿后自动出字。</div>`
+    };
+    const LABELS = {'general': '通用', 'models': '模型', 'polish': '润色', 'about': '关于'};
+
+    function setPage(root, page) {
+      const host = root.querySelector("[data-page-host]");
+      if (host && PAGES[page]) host.innerHTML = PAGES[page];
+      root.querySelectorAll("[data-page]").forEach((el) => {
+        el.classList.toggle("on", el.getAttribute("data-page") === page);
+      });
+      const crumb = root.querySelector("[data-crumb]");
+      if (crumb) crumb.textContent = LABELS[page] || page;
+    }
+
+    function wireShell(root) {
+      root.querySelectorAll("[data-page]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const page = btn.getAttribute("data-page");
+          if (root.dataset.portal === "1") {
+            const portal = root.querySelector(".portal-view");
+            const detail = root.querySelector(".detail-view");
+            const back = root.querySelector(".back");
+            if (portal && detail) {
+              portal.hidden = true;
+              detail.hidden = false;
+              if (back) back.hidden = false;
+            }
+          }
+          setPage(root, page);
+        });
+      });
+      const back = root.querySelector(".back");
+      if (back) {
+        back.addEventListener("click", () => {
+          const portal = root.querySelector(".portal-view");
+          const detail = root.querySelector(".detail-view");
+          if (portal && detail) {
+            portal.hidden = false;
+            detail.hidden = true;
+            back.hidden = true;
+          }
+        });
+      }
+      root.querySelectorAll(".toggle").forEach((el) => {
+        el.addEventListener("click", () => el.classList.toggle("on"));
+      });
+      root.querySelectorAll(".picker2, .picker3").forEach((group) => {
+        group.querySelectorAll(".pick").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            group.querySelectorAll(".pick").forEach((b) => b.classList.remove("on"));
+            btn.classList.add("on");
+          });
+        });
+      });
+    }
+
+    document.querySelectorAll("[data-shell]").forEach(wireShell);
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        document.querySelectorAll(".variant").forEach((v) => v.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("v-" + tab.dataset.v).classList.add("active");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+
+    const themeToggle = document.getElementById("themeToggle");
+    themeToggle.addEventListener("click", () => {
+      const active = document.querySelector(".variant.active [data-shell]");
+      const next = !active.classList.contains("dark");
+      document.querySelectorAll("[data-shell]").forEach((s) => s.classList.toggle("dark", next));
+      themeToggle.textContent = next ? "预览浅色" : "预览暗色";
+    });
+  </script>
+</body>
+</html>

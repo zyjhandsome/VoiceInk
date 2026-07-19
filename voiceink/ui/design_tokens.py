@@ -1,75 +1,29 @@
-"""VoiceInk design tokens — classic desktop utility."""
+"""VoiceInk design tokens — light/dark axes from design-system/MASTER.md."""
 
-# Brand & accent (rationed)
-ACCENT = "#2563EB"
-ACCENT_HV = "#1D4ED8"
-ACCENT_FOCUS = "#2563EB"
-ACCENT_ON_DARK = "#FFFFFF"  # float default emphasis = neutral white
-ACCENT_BG = "#DBEAFE"
-ACCENT_SOFT = "rgba(37, 99, 235, 0.08)"
-PRIMARY_CONTAINER = "#2563EB"
-SECONDARY_CONTAINER = "#E5E7EB"  # legacy neutral wash (lists / secondary chrome)
+from __future__ import annotations
 
-# Surfaces — single cool axis
-BG = "#F3F4F6"
-NAV_BG = "#F3F4F6"
-SURFACE = "#FFFFFF"
-SURFACE_PEARL = "#F9FAFB"  # cool muted fill (no warm pearl)
-BORDER = "#E5E7EB"
-HAIRLINE = "#E5E7EB"
-OUTLINE_VARIANT = "#D1D5DB"
-DIVIDER_SOFT = "#E5E7EB"
-ROW_SELECTED = "#EFF6FF"  # very light blue wash for list selection only
-INPUT_BG = "#FFFFFF"
-BAR_OFF = "#E5E7EB"
+from typing import Any
 
-# Settings shell — product hierarchy on the same cool axis
-SETTINGS_SIDEBAR_BG = SURFACE  # white rail against gray canvas
-NAV_SELECTED_BG = ACCENT_SOFT  # restrained wash (not saturated fill)
-NAV_SELECTED_BAR_PX = 3  # single strong blue device on selected nav
-
-# Typography
-TEXT = "#111827"
-TEXT_SEC = "#4B5563"
-TEXT_DIM = "#9CA3AF"
-TEXT_MUTED_DARK = "#CCCCCC"
-FONT = (
-    '"Segoe UI Variable", "Microsoft YaHei UI", '
-    '"Segoe UI", system-ui, sans-serif'
+# Shared non-color tokens. Qt stylesheets accept one family, not a CSS-style
+# fallback list. Microsoft YaHei UI gives Win11 native widgets reliable CJK
+# coverage while retaining the same system-UI character as the HTML reference.
+FONT_STACK = (
+    "Segoe UI Variable",
+    "Microsoft YaHei UI",
+    "Segoe UI",
 )
+FONT = '"Microsoft YaHei UI"'
 FONT_DISPLAY = FONT
 FONT_MONO = (
     '"Cascadia Mono", "Consolas", "JetBrains Mono", monospace'
 )
 
-# Semantic (settings actions only — not float state rainbow)
-GREEN = "#16A34A"
-GREEN_BG = "#DCFCE7"
-RED = "#DC2626"
-RED_BG = "#FEE2E2"
-AMBER = "#D97706"
-AMBER_TEXT = "#92400E"
-AMBER_SOFT = "#FFFBEB"
-
-# Shape
 RADIUS_XS = 4
 RADIUS_SM = 6
 RADIUS_MD = 8
 RADIUS_LG = 10
 RADIUS_PILL = 999
 
-# Tray context menu — reference desktop-utility style
-TRAY_MENU_RADIUS = 4
-TRAY_MENU_BORDER = "#E5E7EB"
-TRAY_MENU_SEPARATOR = "#EEEEEE"
-TRAY_MENU_HOVER = "#F5F5F5"
-TRAY_MENU_DISABLED = "#888888"
-TRAY_MENU_CHECK = "#333333"
-TRAY_MENU_ARROW = "#999999"
-TRAY_MENU_PAD_V = 8
-TRAY_MENU_PAD_H = 18
-
-# Spacing scale (4px base, comfortable density)
 SPACE_XS = 8
 SPACE_SM = 12
 SPACE_MD = 16
@@ -80,36 +34,171 @@ PAGE_MARGIN_V = 16
 CONTENT_MAX_WIDTH = 9999
 SIDEBAR_WIDTH = 248
 
-# Interactive controls
-CONTROL_NUMERIC_WIDTH = 120  # shared width for settings numeric spinboxes
-CONTROL_DEVICE_COMBO_WIDTH = 320  # shared width for manual audio device combos
-CONTROL_BORDER = "#D1D5DB"
-CONTROL_BORDER_HOVER = "#9CA3AF"
-TOGGLE_OFF = "#E5E2E3"
-TOGGLE_OFF_HOVER = "#DCD9DA"
+CONTROL_NUMERIC_WIDTH = 120
+CONTROL_DEVICE_COMBO_WIDTH = 320
+
+NAV_SELECTED_BAR_PX = 3
+TRAY_MENU_RADIUS = 4
+TRAY_MENU_PAD_V = 8
+TRAY_MENU_PAD_H = 18
+
 TOGGLE_OFF_TRACK = (60, 60, 67, 48)
 TOGGLE_OFF_TRACK_HOVER = (60, 60, 67, 72)
-TOGGLE_ON = GREEN  # settings switch on — semantic green (not brand blue)
-TOGGLE_ON_HOVER = "#15803D"
-ROW_HOVER = "rgba(0, 0, 0, 0.03)"
-FOCUS_RING = f"2px solid {ACCENT_FOCUS}"
 
-# Dark overlay — floating window (structure unchanged)
-FLOAT_BG = "rgba(39, 39, 41, 245)"
-FLOAT_TILE = "#272729"
-FLOAT_BORDER = "rgba(255, 255, 255, 0.10)"
-FLOAT_BORDER_INNER = "rgba(210, 210, 215, 0.24)"
-CHIP_BG = "rgba(210, 210, 215, 0.40)"
-FLOAT_TEXT = "#FFFFFF"
-FLOAT_TEXT_SEC = "rgba(235, 235, 245, 0.72)"
-FLOAT_SHADOW = "rgba(0, 0, 0, 0.38)"
+_LIGHT: dict[str, Any] = {
+    "ACCENT": "#2563EB",
+    "ACCENT_HV": "#1D4ED8",
+    "ACCENT_FOCUS": "#2563EB",
+    "ACCENT_TEXT": "#2563EB",
+    "ACCENT_TEXT_HOVER": "#1D4ED8",
+    "ACCENT_ON_DARK": "#FFFFFF",
+    "ACCENT_BG": "#DBEAFE",
+    "ACCENT_SOFT": "rgba(37, 99, 235, 0.08)",
+    "PRIMARY_CONTAINER": "#2563EB",
+    "PRIMARY_CONTAINER_HOVER": "#1D4ED8",
+    "PRIMARY_CONTAINER_PRESSED": "#1E40AF",
+    "SECONDARY_CONTAINER": "#E5E7EB",
+    "BG": "#F3F4F6",
+    "NAV_BG": "#F3F4F6",
+    "SURFACE": "#FFFFFF",
+    "SURFACE_PEARL": "#F9FAFB",
+    "BORDER": "#E5E7EB",
+    "HAIRLINE": "#E5E7EB",
+    "OUTLINE_VARIANT": "#D1D5DB",
+    "DIVIDER_SOFT": "#E5E7EB",
+    "ROW_SELECTED": "#EFF6FF",
+    "INPUT_BG": "#FFFFFF",
+    "BAR_OFF": "#E5E7EB",
+    "SETTINGS_SIDEBAR_BG": "#FFFFFF",
+    "NAV_SELECTED_BG": "rgba(37, 99, 235, 0.08)",
+    "TEXT": "#111827",
+    "TEXT_SEC": "#4B5563",
+    "TEXT_DIM": "#667085",
+    "TEXT_MUTED_DARK": "#CCCCCC",
+    "GREEN": "#15803D",
+    "GREEN_BG": "#DCFCE7",
+    "RED": "#C81E1E",
+    "RED_BG": "#FEE2E2",
+    "AMBER": "#D97706",
+    "AMBER_TEXT": "#92400E",
+    "AMBER_SOFT": "#FFFBEB",
+    "CALLOUT_BORDER": "#F5E6B8",
+    "ATTENTION": "#D97706",
+    "CONTROL_BORDER": "#D1D5DB",
+    "CONTROL_BORDER_HOVER": "#9CA3AF",
+    # Cooler off-track than prototype's warm #E5E2E3 so the white knob reads
+    # on SURFACE rows; still a flat gray pill like .toggle.
+    "TOGGLE_OFF": "#D1D5DB",
+    "TOGGLE_OFF_HOVER": "#9CA3AF",
+    "TOGGLE_ON": "#15803D",
+    "TOGGLE_ON_HOVER": "#166534",
+    "ROW_HOVER": "rgba(0, 0, 0, 0.03)",
+    "FOCUS_RING": "2px solid #2563EB",
+    "TRAY_MENU_BORDER": "#E5E7EB",
+    "TRAY_MENU_SEPARATOR": "#E5E7EB",
+    "TRAY_MENU_HOVER": "#F3F4F6",
+    "TRAY_MENU_DISABLED": "#9CA3AF",
+    "TRAY_MENU_CHECK": "#333333",
+    "TRAY_MENU_ARROW": "#9CA3AF",
+    "FLOAT_BG": "rgba(243, 244, 246, 245)",
+    "FLOAT_TILE": "#FFFFFF",
+    "FLOAT_BORDER": "rgba(17, 24, 39, 0.12)",
+    "FLOAT_BORDER_INNER": "rgba(17, 24, 39, 0.08)",
+    "CHIP_BG": "rgba(17, 24, 39, 0.08)",
+    "FLOAT_TEXT": "#111827",
+    "FLOAT_TEXT_SEC": "#4B5563",
+    "FLOAT_SHADOW": "rgba(0, 0, 0, 0.18)",
+    "STATE_RECORD": "#DC2626",
+}
 
-# Float state colors — classic: neutral + recording only
-STATE_RECORD = "#DC2626"
-STATE_LISTEN = FLOAT_TEXT
-STATE_RECOGNIZE = FLOAT_TEXT
-STATE_POLISH = FLOAT_TEXT
-STATE_SUCCESS = FLOAT_TEXT
-STATE_WARN = FLOAT_TEXT_SEC
-STATE_MUTED = FLOAT_TEXT_SEC
-STATE_ERROR = STATE_RECORD
+_DARK: dict[str, Any] = {
+    "ACCENT": "#3B82F6",
+    "ACCENT_HV": "#60A5FA",
+    "ACCENT_FOCUS": "#3B82F6",
+    "ACCENT_TEXT": "#60A5FA",
+    "ACCENT_TEXT_HOVER": "#93C5FD",
+    "ACCENT_ON_DARK": "#FFFFFF",
+    "ACCENT_BG": "#1E3A5F",
+    "ACCENT_SOFT": "rgba(59, 130, 246, 0.16)",
+    "PRIMARY_CONTAINER": "#2563EB",
+    "PRIMARY_CONTAINER_HOVER": "#1D4ED8",
+    "PRIMARY_CONTAINER_PRESSED": "#1E40AF",
+    "SECONDARY_CONTAINER": "#374151",
+    "BG": "#111827",
+    "NAV_BG": "#111827",
+    "SURFACE": "#1F2937",
+    "SURFACE_PEARL": "#374151",
+    "BORDER": "#374151",
+    "HAIRLINE": "#374151",
+    "OUTLINE_VARIANT": "#4B5563",
+    "DIVIDER_SOFT": "#374151",
+    "ROW_SELECTED": "rgba(59, 130, 246, 0.20)",
+    "INPUT_BG": "#1F2937",
+    "BAR_OFF": "#4B5563",
+    "SETTINGS_SIDEBAR_BG": "#1F2937",
+    "NAV_SELECTED_BG": "rgba(59, 130, 246, 0.16)",
+    "TEXT": "#F9FAFB",
+    "TEXT_SEC": "#D1D5DB",
+    "TEXT_DIM": "#9CA3AF",
+    "TEXT_MUTED_DARK": "#9CA3AF",
+    "GREEN": "#22C55E",
+    "GREEN_BG": "#14532D",
+    "RED": "#F87171",
+    "RED_BG": "#7F1D1D",
+    "AMBER": "#FBBF24",
+    "AMBER_TEXT": "#FCD34D",
+    "AMBER_SOFT": "#422006",
+    "CALLOUT_BORDER": "#78350F",
+    "ATTENTION": "#FBBF24",
+    "CONTROL_BORDER": "#4B5563",
+    "CONTROL_BORDER_HOVER": "#6B7280",
+    "TOGGLE_OFF": "#4B5563",
+    "TOGGLE_OFF_HOVER": "#6B7280",
+    "TOGGLE_ON": "#22C55E",
+    "TOGGLE_ON_HOVER": "#16A34A",
+    "ROW_HOVER": "rgba(255, 255, 255, 0.06)",
+    "FOCUS_RING": "2px solid #3B82F6",
+    "TRAY_MENU_BORDER": "#374151",
+    "TRAY_MENU_SEPARATOR": "#4B5563",
+    "TRAY_MENU_HOVER": "#374151",
+    "TRAY_MENU_DISABLED": "#6B7280",
+    "TRAY_MENU_CHECK": "#F9FAFB",
+    "TRAY_MENU_ARROW": "#9CA3AF",
+    "FLOAT_BG": "rgba(39, 39, 41, 245)",
+    "FLOAT_TILE": "#272729",
+    "FLOAT_BORDER": "rgba(255, 255, 255, 0.10)",
+    "FLOAT_BORDER_INNER": "rgba(210, 210, 215, 0.24)",
+    "CHIP_BG": "rgba(210, 210, 215, 0.40)",
+    "FLOAT_TEXT": "#FFFFFF",
+    "FLOAT_TEXT_SEC": "rgba(235, 235, 245, 0.72)",
+    "FLOAT_SHADOW": "rgba(0, 0, 0, 0.38)",
+    "STATE_RECORD": "#F87171",
+}
+
+_COLOR_KEYS = tuple(_LIGHT.keys())
+
+
+def tokens_for(effective: str) -> dict[str, Any]:
+    """Return a copy of the token map for an effective theme (`light`|`dark`)."""
+    axis = _DARK if effective == "dark" else _LIGHT
+    return dict(axis)
+
+
+def activate(effective: str) -> None:
+    """Publish the effective theme onto module-level color aliases."""
+    vals = tokens_for(effective)
+    g = globals()
+    for key in _COLOR_KEYS:
+        g[key] = vals[key]
+    # Float state aliases that follow float text
+    g["STATE_LISTEN"] = vals["FLOAT_TEXT"]
+    g["STATE_RECOGNIZE"] = vals["FLOAT_TEXT"]
+    g["STATE_POLISH"] = vals["FLOAT_TEXT"]
+    g["STATE_SUCCESS"] = vals["FLOAT_TEXT"]
+    g["STATE_WARN"] = vals["FLOAT_TEXT_SEC"]
+    g["STATE_MUTED"] = vals["FLOAT_TEXT_SEC"]
+    g["STATE_ERROR"] = vals["STATE_RECORD"]
+
+
+# Initialize light as the default module namespace (imports before activate).
+activate("light")

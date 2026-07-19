@@ -149,6 +149,48 @@ class FloatingWindow(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.hide)
 
+    def reapply_theme(self) -> None:
+        """Rebuild float chrome from the active theme token axis."""
+        from voiceink.ui import design_tokens as tok
+
+        self._container.setStyleSheet(f"""
+            QWidget#floatingContainer {{
+                background-color: {tok.FLOAT_BG};
+                border-radius: {tok.RADIUS_LG}px;
+                border: 1px solid {tok.FLOAT_BORDER};
+            }}
+        """)
+        self._status_label.setStyleSheet(
+            f"color: {tok.FLOAT_TEXT}; background: transparent;"
+            f" font-family: {tok.FONT_DISPLAY}; letter-spacing: -0.2px;"
+        )
+        # Hover/press deepen the chip wash so light float stays readable.
+        hover_bg = tok.CHIP_BG.replace("0.08", "0.16").replace("0.40", "0.55")
+        press_bg = tok.CHIP_BG.replace("0.08", "0.12").replace("0.40", "0.48")
+        self._close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {tok.CHIP_BG};
+                color: {tok.FLOAT_TEXT};
+                border: none;
+                font-size: 17px;
+                font-weight: 400;
+                border-radius: 14px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background: {hover_bg};
+                color: {tok.FLOAT_TEXT};
+            }}
+            QPushButton:pressed {{
+                background: {press_bg};
+            }}
+        """)
+        self._text_label.setStyleSheet(
+            f"color: {tok.FLOAT_TEXT_SEC}; background: transparent;"
+            f" font-family: {tok.FONT}; letter-spacing: -0.1px;"
+        )
+        self._current_accent = tok.FLOAT_TEXT
+
     def _setup_window(self):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -167,13 +209,6 @@ class FloatingWindow(QWidget):
 
         self._container = QWidget()
         self._container.setObjectName("floatingContainer")
-        self._container.setStyleSheet(f"""
-            QWidget#floatingContainer {{
-                background-color: {FLOAT_BG};
-                border-radius: {RADIUS_LG}px;
-                border: 1px solid {FLOAT_BORDER};
-            }}
-        """)
 
         container_layout = QVBoxLayout(self._container)
         container_layout.setContentsMargins(20, 16, 16, 16)
@@ -188,10 +223,6 @@ class FloatingWindow(QWidget):
 
         self._status_label = QLabel("准备中...")
         self._status_label.setFont(QFont("Segoe UI Variable", 13, QFont.Weight.DemiBold))
-        self._status_label.setStyleSheet(
-            f"color: {FLOAT_TEXT}; background: transparent;"
-            f" font-family: {FONT_DISPLAY}; letter-spacing: -0.2px;"
-        )
         header_row.addWidget(self._status_label)
         header_row.addStretch()
 
@@ -200,24 +231,6 @@ class FloatingWindow(QWidget):
         self._close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._close_btn.setToolTip("关闭浮窗")
         self._close_btn.setAccessibleName("关闭浮窗")
-        self._close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {CHIP_BG};
-                color: {FLOAT_TEXT};
-                border: none;
-                font-size: 17px;
-                font-weight: 400;
-                border-radius: 14px;
-                padding: 0px;
-            }}
-            QPushButton:hover {{
-                background: rgba(255, 255, 255, 0.22);
-                color: {FLOAT_TEXT};
-            }}
-            QPushButton:pressed {{
-                background: rgba(255, 255, 255, 0.14);
-            }}
-        """)
         self._close_btn.clicked.connect(self._on_close_clicked)
         header_row.addWidget(self._close_btn)
         container_layout.addLayout(header_row)
@@ -227,16 +240,13 @@ class FloatingWindow(QWidget):
 
         self._text_label = QLabel("")
         self._text_label.setFont(QFont("Segoe UI Variable", 11))
-        self._text_label.setStyleSheet(
-            f"color: {FLOAT_TEXT_SEC}; background: transparent;"
-            f" font-family: {FONT}; letter-spacing: -0.1px;"
-        )
         self._text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._text_label.setWordWrap(True)
         self._text_label.setMaximumHeight(36)
         container_layout.addWidget(self._text_label)
 
         layout.addWidget(self._container)
+        self.reapply_theme()
 
     def _update_close_button(self) -> None:
         self._close_btn.setVisible(True)

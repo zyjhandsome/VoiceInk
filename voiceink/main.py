@@ -132,7 +132,6 @@ def main():
         set_windows_app_user_model_id()
 
     from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtGui import QIcon
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -147,8 +146,11 @@ def main():
 
     app.setStyle("Fusion")
 
-    from voiceink.ui.app_styles import GLOBAL_APP_STYLESHEET
-    app.setStyleSheet(GLOBAL_APP_STYLESHEET)
+    from voiceink.config import Config
+    from voiceink.ui.theme import apply_theme
+
+    _boot_config = Config()
+    apply_theme(app, mode=_boot_config.get("appearance.theme_mode", "system"))
 
     from voiceink.app import App
     voice_ink = App()

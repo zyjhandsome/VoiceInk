@@ -7,52 +7,38 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF, QPointF
 
-from voiceink.ui.design_tokens import (
-    ACCENT,
-    ACCENT_FOCUS,
-    FONT,
-    SURFACE,
-    TEXT,
-    TRAY_MENU_BORDER,
-    TRAY_MENU_DISABLED,
-    TRAY_MENU_HOVER,
-    TRAY_MENU_PAD_H,
-    TRAY_MENU_PAD_V,
-    TRAY_MENU_RADIUS,
-    TRAY_MENU_SEPARATOR,
-)
-
-
 def _menu_stylesheet() -> str:
+    from voiceink.ui import design_tokens as tok
+
     # Right padding leaves room for submenu chevron / check indicator.
-    pad_right = TRAY_MENU_PAD_H + 22
+    pad_right = tok.TRAY_MENU_PAD_H + 22
     return f"""
     QMenu {{
-        background-color: {SURFACE};
-        color: {TEXT};
-        border: 1px solid {TRAY_MENU_BORDER};
-        border-radius: {TRAY_MENU_RADIUS}px;
+        background-color: {tok.SURFACE};
+        color: {tok.TEXT};
+        border: 1px solid {tok.TRAY_MENU_BORDER};
+        border-radius: {tok.TRAY_MENU_RADIUS}px;
         padding: 4px 0px;
-        font-family: {FONT};
+        font-family: {tok.FONT};
         font-size: 13px;
     }}
     QMenu::item {{
-        padding: {TRAY_MENU_PAD_V}px {pad_right}px {TRAY_MENU_PAD_V}px {TRAY_MENU_PAD_H}px;
+        padding: {tok.TRAY_MENU_PAD_V}px {pad_right}px {tok.TRAY_MENU_PAD_V}px {tok.TRAY_MENU_PAD_H}px;
         margin: 0px;
         border-radius: 0px;
         background: transparent;
     }}
     QMenu::item:selected {{
-        background-color: {TRAY_MENU_HOVER};
-        color: {TEXT};
+        background-color: {tok.TRAY_MENU_HOVER};
+        color: {tok.TEXT};
     }}
     QMenu::item:disabled {{
-        color: {TRAY_MENU_DISABLED};
+        color: {tok.TRAY_MENU_DISABLED};
         background: transparent;
     }}
     QMenu::separator {{
         height: 1px;
-        background: {TRAY_MENU_SEPARATOR};
+        background: {tok.TRAY_MENU_SEPARATOR};
         margin: 2px 0px;
     }}
     QMenu::indicator {{
@@ -68,7 +54,9 @@ def _menu_stylesheet() -> str:
     """
 
 
-def create_microphone_icon(color: str = "#888888", recording: bool = False, size: int = 64) -> QIcon:
+def create_microphone_icon(color: str | None = None, recording: bool = False, size: int = 64) -> QIcon:
+    from voiceink.ui import design_tokens as tok
+
     pixmap = QPixmap(QSize(size, size))
     pixmap.fill(Qt.GlobalColor.transparent)
 
@@ -79,13 +67,18 @@ def create_microphone_icon(color: str = "#888888", recording: bool = False, size
     cx = s / 2
 
     if recording:
+        record = QColor(tok.STATE_RECORD)
+        darker = QColor(record)
+        darker = darker.darker(120)
         bg_grad = QRadialGradient(QPointF(cx, cx), s * 0.45)
-        bg_grad.setColorAt(0, QColor("#FF6961"))
-        bg_grad.setColorAt(1, QColor("#D64545"))
+        bg_grad.setColorAt(0, record)
+        bg_grad.setColorAt(1, darker)
     else:
+        top = QColor(color or tok.ACCENT_FOCUS)
+        bottom = QColor(color or tok.ACCENT)
         bg_grad = QRadialGradient(QPointF(cx, cx), s * 0.45)
-        bg_grad.setColorAt(0, QColor(ACCENT_FOCUS))
-        bg_grad.setColorAt(1, QColor(ACCENT))
+        bg_grad.setColorAt(0, top)
+        bg_grad.setColorAt(1, bottom)
 
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QBrush(bg_grad))
@@ -160,10 +153,8 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self._normal_icon = create_microphone_icon(recording=False)
-        self._recording_icon = create_microphone_icon(recording=True)
-        self._attention_icon = create_microphone_icon(color="#F5A623", recording=False)
-
+        self._icon_kind = "normal"
+        self._rebuild_icons()
         self.setIcon(self._normal_icon)
         self._idle_tooltip = "VoiceInk - 就绪"
         self._status_summary = "就绪"
@@ -173,12 +164,40 @@ class TrayIcon(QSystemTrayIcon):
 
         self._model_menu = None
         self._model_group = None
+        self._menu = None
         self._setup_menu()
         self.activated.connect(self._on_activated)
+
+    def _rebuild_icons(self) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        self._normal_icon = create_microphone_icon(recording=False)
+        self._recording_icon = create_microphone_icon(recording=True)
+        self._attention_icon = create_microphone_icon(color=tok.ATTENTION, recording=False)
+
+    def _apply_icon_kind(self, kind: str) -> None:
+        self._icon_kind = kind
+        if kind == "recording":
+            self.setIcon(self._recording_icon)
+        elif kind == "attention":
+            self.setIcon(self._attention_icon)
+        else:
+            self.setIcon(self._normal_icon)
+
+    def reapply_theme(self) -> None:
+        css = _menu_stylesheet()
+        if self._menu is not None:
+            self._menu.setStyleSheet(css)
+        if self._model_menu is not None:
+            self._model_menu.setStyleSheet(css)
+        kind = getattr(self, "_icon_kind", "normal")
+        self._rebuild_icons()
+        self._apply_icon_kind(kind)
 
     def _setup_menu(self):
         menu_css = _menu_stylesheet()
         menu = QMenu()
+        self._menu = menu
         menu.setStyleSheet(menu_css)
 
         self._status_action = menu.addAction(self._status_summary)
@@ -252,7 +271,7 @@ class TrayIcon(QSystemTrayIcon):
             self.open_settings.emit()
 
     def set_recording(self, is_recording: bool):
-        self.setIcon(self._recording_icon if is_recording else self._normal_icon)
+        self._apply_icon_kind("recording" if is_recording else "normal")
 
     def flash_attention(self, duration_ms: int = 450) -> None:
         """Brief tray icon flash for soft feedback (e.g. short-tap during cooldown)."""
@@ -261,14 +280,14 @@ class TrayIcon(QSystemTrayIcon):
         if self._flash_timer is not None:
             self._flash_timer.stop()
             self._flash_timer.deleteLater()
-        self._flash_restore_recording = self.icon().cacheKey() == self._recording_icon.cacheKey()
-        self.setIcon(self._attention_icon)
+        self._flash_restore_recording = self._icon_kind == "recording"
+        self._apply_icon_kind("attention")
         self._flash_timer = QTimer(self)
         self._flash_timer.setSingleShot(True)
 
         def _restore():
-            self.setIcon(
-                self._recording_icon if self._flash_restore_recording else self._normal_icon
+            self._apply_icon_kind(
+                "recording" if self._flash_restore_recording else "normal"
             )
             self._flash_timer = None
 

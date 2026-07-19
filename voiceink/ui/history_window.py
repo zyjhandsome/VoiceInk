@@ -25,25 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from voiceink.history_store import SegmentRecord, SessionSummary
-from voiceink.ui.design_tokens import (
-    ACCENT,
-    BG,
-    BORDER,
-    FONT_DISPLAY,
-    HAIRLINE,
-    RADIUS_MD,
-    RADIUS_SM,
-    ROW_SELECTED,
-    SURFACE,
-    SURFACE_PEARL,
-    TEXT,
-)
-from voiceink.ui.settings_styles import (
-    BTN_DANGER_SM,
-    BTN_GHOST_SM,
-    BTN_PRIMARY,
-    WINDOW_CSS,
-)
+from voiceink.ui.settings_styles import WINDOW_CSS
 
 
 def _format_dt(ms: int) -> str:
@@ -142,6 +124,7 @@ class HistoryWindow(QDialog):
         self._store = store
         self._sessions_by_id: dict[str, SessionSummary] = {}
         self._pending_delete: list[SessionSummary] = []
+        self._search_query = ""
         self._setup_window()
         self._setup_ui()
         self.refresh()
@@ -158,47 +141,129 @@ class HistoryWindow(QDialog):
         )
         self.setStyleSheet(WINDOW_CSS)
 
+    def reapply_theme(self) -> None:
+        from voiceink.ui import settings_styles as ss
+
+        self.setStyleSheet(ss.WINDOW_CSS)
+        self._paint_history_styles()
+
+    def _paint_history_styles(self) -> None:
+        """Apply construct-parity styles from the active token axis (also used by reapply)."""
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui import settings_styles as ss
+
+        if hasattr(self, "_left_pane"):
+            self._left_pane.setStyleSheet(f"""
+                QWidget#historyLeftPane {{
+                    background: {tok.SURFACE};
+                    border-right: 1px solid {tok.BORDER};
+                }}
+            """)
+        if hasattr(self, "_title_label"):
+            self._title_label.setStyleSheet(
+                f"font-family: {tok.FONT_DISPLAY}; font-size: 22px; font-weight: 700;"
+                f" background: transparent; color: {tok.TEXT}; letter-spacing: -0.02em;"
+            )
+        if hasattr(self, "_right_pane"):
+            self._right_pane.setStyleSheet(f"background: {tok.BG};")
+        if hasattr(self, "_search_edit"):
+            self._search_edit.setStyleSheet(f"""
+                QLineEdit {{
+                    background: {tok.SURFACE_PEARL};
+                    color: {tok.TEXT};
+                    border: 1px solid {tok.HAIRLINE};
+                    border-radius: {tok.RADIUS_MD}px;
+                    padding: 10px 14px;
+                    font-size: 13px;
+                }}
+                QLineEdit:focus {{
+                    border: 2px solid {tok.ACCENT};
+                    padding: 9px 13px;
+                }}
+            """)
+        if hasattr(self, "_session_list"):
+            self._session_list.setStyleSheet(f"""
+                QListWidget {{
+                    background: transparent;
+                    color: {tok.TEXT};
+                    border: none;
+                    padding: 0;
+                    outline: none;
+                }}
+                QListWidget::item {{
+                    padding: 10px 12px;
+                    border-radius: {tok.RADIUS_SM}px;
+                    margin: 2px 0;
+                }}
+                QListWidget::item:selected {{
+                    background: {tok.ROW_SELECTED};
+                    border-left: 3px solid {tok.ACCENT};
+                    color: {tok.TEXT};
+                }}
+                QListWidget::item:hover:!selected {{
+                    background: {tok.SURFACE_PEARL};
+                }}
+            """)
+        if hasattr(self, "_detail_title"):
+            self._detail_title.setStyleSheet(
+                f"font-size: 16px; font-weight: 600; color: {tok.TEXT};"
+                f" background: transparent;"
+            )
+        if hasattr(self, "_feedback_label"):
+            self._feedback_label.setStyleSheet(
+                f"color: {tok.TEXT}; font-size: 12px; background: transparent;"
+            )
+        if hasattr(self, "_details"):
+            self._details.setStyleSheet(f"""
+                QTextEdit {{
+                    background: transparent;
+                    color: {tok.TEXT};
+                    border: none;
+                    padding: 12px 0;
+                    font-size: 14px;
+                }}
+            """)
+        if hasattr(self, "_undo_bar"):
+            self._undo_bar.setStyleSheet(f"""
+                QFrame {{
+                    background: {tok.SURFACE_PEARL};
+                    border: 1px solid {tok.BORDER};
+                    border-radius: {tok.RADIUS_SM}px;
+                }}
+            """)
+        if hasattr(self, "_export_btn"):
+            self._export_btn.setStyleSheet(ss.BTN_PRIMARY)
+        if hasattr(self, "_close_btn"):
+            self._close_btn.setStyleSheet(ss.BTN_PRIMARY)
+        if hasattr(self, "_delete_btn"):
+            self._delete_btn.setStyleSheet(ss.BTN_DANGER_SM)
+        if hasattr(self, "_clear_all_btn"):
+            self._clear_all_btn.setStyleSheet(ss.BTN_DANGER_SM)
+        if hasattr(self, "_copy_raw_btn"):
+            self._copy_raw_btn.setStyleSheet(ss.BTN_GHOST_SM)
+        if hasattr(self, "_copy_polished_btn"):
+            self._copy_polished_btn.setStyleSheet(ss.BTN_GHOST_SM)
+        if hasattr(self, "_undo_btn"):
+            self._undo_btn.setStyleSheet(ss.BTN_GHOST_SM)
+
     def _setup_ui(self) -> None:
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         left = QWidget()
+        self._left_pane = left
         left.setObjectName("historyLeftPane")
-        left.setStyleSheet(f"""
-            QWidget#historyLeftPane {{
-                background: {SURFACE};
-                border-right: 1px solid {BORDER};
-            }}
-        """)
         left.setFixedWidth(340)
         left_lay = QVBoxLayout(left)
         left_lay.setContentsMargins(16, 16, 16, 16)
         left_lay.setSpacing(12)
 
-        title = QLabel("历史")
-        title.setStyleSheet(
-            f"font-family: {FONT_DISPLAY}; font-size: 22px; font-weight: 700;"
-            f" background: transparent; color: {TEXT}; letter-spacing: -0.02em;"
-        )
-        left_lay.addWidget(title)
+        self._title_label = QLabel("历史")
+        left_lay.addWidget(self._title_label)
 
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("搜索会话…")
-        self._search_edit.setStyleSheet(f"""
-            QLineEdit {{
-                background: {SURFACE_PEARL};
-                color: {TEXT};
-                border: 1px solid {HAIRLINE};
-                border-radius: {RADIUS_MD}px;
-                padding: 10px 14px;
-                font-size: 13px;
-            }}
-            QLineEdit:focus {{
-                border: 2px solid {ACCENT};
-                padding: 9px 13px;
-            }}
-        """)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(200)
@@ -210,33 +275,11 @@ class HistoryWindow(QDialog):
         self._session_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self._session_list.itemDoubleClicked.connect(self._expand_session)
         self._session_list.itemSelectionChanged.connect(self._on_selection_changed)
-        self._session_list.setStyleSheet(f"""
-            QListWidget {{
-                background: transparent;
-                color: {TEXT};
-                border: none;
-                padding: 0;
-                outline: none;
-            }}
-            QListWidget::item {{
-                padding: 10px 12px;
-                border-radius: {RADIUS_SM}px;
-                margin: 2px 0;
-            }}
-            QListWidget::item:selected {{
-                background: {ROW_SELECTED};
-                border-left: 3px solid {ACCENT};
-                color: {TEXT};
-            }}
-            QListWidget::item:hover:!selected {{
-                background: {SURFACE_PEARL};
-            }}
-        """)
         left_lay.addWidget(self._session_list, 1)
         root.addWidget(left)
 
         right = QWidget()
-        right.setStyleSheet(f"background: {BG};")
+        self._right_pane = right
         right_lay = QVBoxLayout(right)
         right_lay.setContentsMargins(20, 16, 20, 16)
         right_lay.setSpacing(12)
@@ -244,36 +287,26 @@ class HistoryWindow(QDialog):
         header = QHBoxLayout()
         header.setSpacing(8)
         self._detail_title = QLabel("会话详情")
-        self._detail_title.setStyleSheet(
-            f"font-size: 16px; font-weight: 600; color: {TEXT}; background: transparent;"
-        )
         header.addWidget(self._detail_title, 1)
 
         self._copy_raw_btn = QPushButton("复制原文")
-        self._copy_raw_btn.setStyleSheet(BTN_GHOST_SM)
         self._copy_raw_btn.clicked.connect(self._copy_selected_raw)
         header.addWidget(self._copy_raw_btn)
 
         self._copy_polished_btn = QPushButton("复制润色")
-        self._copy_polished_btn.setStyleSheet(BTN_GHOST_SM)
         self._copy_polished_btn.clicked.connect(self._copy_selected_polished)
         header.addWidget(self._copy_polished_btn)
 
         self._export_btn = QPushButton("导出")
-        self._export_btn.setStyleSheet(BTN_PRIMARY)
         self._export_btn.clicked.connect(self._export_selected)
         header.addWidget(self._export_btn)
 
         self._delete_btn = QPushButton("删除")
-        self._delete_btn.setStyleSheet(BTN_DANGER_SM)
         self._delete_btn.clicked.connect(self._delete_selected_sessions)
         header.addWidget(self._delete_btn)
         right_lay.addLayout(header)
 
         self._feedback_label = QLabel("")
-        self._feedback_label.setStyleSheet(
-            f"color: {TEXT}; font-size: 12px; background: transparent;"
-        )
         self._feedback_label.setVisible(False)
         right_lay.addWidget(self._feedback_label)
         self._feedback_timer = QTimer(self)
@@ -294,33 +327,16 @@ class HistoryWindow(QDialog):
         self._details = QTextEdit()
         self._details.setReadOnly(True)
         self._details.setPlaceholderText("选择左侧会话查看分段内容")
-        self._details.setStyleSheet(f"""
-            QTextEdit {{
-                background: transparent;
-                color: {TEXT};
-                border: none;
-                padding: 12px 0;
-                font-size: 14px;
-            }}
-        """)
         detail_lay.addWidget(self._details)
         right_lay.addWidget(detail_card, 1)
 
         self._undo_bar = QFrame()
         self._undo_bar.setVisible(False)
-        self._undo_bar.setStyleSheet(f"""
-            QFrame {{
-                background: {SURFACE_PEARL};
-                border: 1px solid {BORDER};
-                border-radius: {RADIUS_SM}px;
-            }}
-        """)
         undo_lay = QHBoxLayout(self._undo_bar)
         undo_lay.setContentsMargins(12, 8, 8, 8)
         self._undo_label = QLabel("")
         undo_lay.addWidget(self._undo_label, 1)
         self._undo_btn = QPushButton("撤销")
-        self._undo_btn.setStyleSheet(BTN_GHOST_SM)
         self._undo_btn.clicked.connect(self._undo_pending_delete)
         undo_lay.addWidget(self._undo_btn)
         right_lay.addWidget(self._undo_bar)
@@ -332,17 +348,16 @@ class HistoryWindow(QDialog):
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self._clear_all_btn = QPushButton("清空全部历史")
-        self._clear_all_btn.setStyleSheet(BTN_DANGER_SM)
         self._clear_all_btn.clicked.connect(self._clear_all_history)
         actions.addWidget(self._clear_all_btn)
         actions.addStretch()
         self._close_btn = QPushButton("关闭")
-        self._close_btn.setStyleSheet(BTN_PRIMARY)
         self._close_btn.clicked.connect(self.close)
         actions.addWidget(self._close_btn)
         right_lay.addLayout(actions)
 
         root.addWidget(right, 1)
+        self._paint_history_styles()
 
     def refresh(self) -> None:
         self._load_sessions(self._store.list_sessions())

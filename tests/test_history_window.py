@@ -80,6 +80,7 @@ def test_renders_sessions_as_reverse_order_group_rows(qapp):
     store = FakeHistoryStore()
     window = HistoryWindow(store)
 
+    assert not hasattr(window, "_history_web")
     assert window._session_list.count() == 2
     first = window._session_list.item(0)
     second = window._session_list.item(1)

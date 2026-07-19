@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 设置 › 通用 · 10 版原型全貌</title>
+  <style>
+    :root {
+      --accent: #2563EB;
+      --accent-hv: #1D4ED8;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --bg: #F3F4F6;
+      --surface: #FFFFFF;
+      --surface-muted: #F9FAFB;
+      --text: #111827;
+      --text-sec: #4B5563;
+      --text-dim: #6B7280;
+      --border: #E5E7EB;
+      --control-border: #D1D5DB;
+      --green: #16A34A;
+      --amber-soft: #FFFBEB;
+      --amber-border: #F5E6B8;
+      --amber-text: #92400E;
+      --radius-md: 8px;
+      --radius-lg: 10px;
+      --sidebar: 248px;
+      --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: #0f1218;
+      color: #e5e7eb;
+      min-height: 100vh;
+    }
+
+    .gallery-bar {
+      position: sticky; top: 0; z-index: 40;
+      display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+      padding: 12px 20px 14px;
+      background: rgba(15, 18, 24, 0.94);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .gallery-bar h1 { font-size: 14px; font-weight: 600; color: #f9fafb; padding-top: 6px; }
+    .gallery-bar .meta { font-size: 12px; color: #9ca3af; width: 100%; order: 3; }
+    .tabs { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; }
+    .tab {
+      appearance: none; border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04); color: #d1d5db;
+      font: inherit; font-size: 11px; font-weight: 550;
+      padding: 6px 10px; border-radius: 999px; cursor: pointer;
+    }
+    .tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .tab.active { background: #2563EB; border-color: #2563EB; color: #fff; }
+    .theme-toggle {
+      appearance: none; border: 1px solid rgba(255,255,255,0.12);
+      background: transparent; color: #9ca3af; font: inherit; font-size: 12px;
+      padding: 6px 12px; border-radius: 999px; cursor: pointer; margin-top: 2px;
+    }
+
+    .stage { padding: 24px 20px 56px; display: flex; justify-content: center; }
+    .variant { display: none; width: min(980px, 100%); }
+    .variant.active { display: block; }
+
+    .caption {
+      display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px;
+    }
+    .caption .badge {
+      flex-shrink: 0; font-size: 11px; font-weight: 650; letter-spacing: 0.03em;
+      color: #93c5fd; background: rgba(37,99,235,0.2);
+      border: 1px solid rgba(37,99,235,0.35); padding: 4px 8px; border-radius: 6px;
+    }
+    .caption p { font-size: 13px; line-height: 1.5; color: #9ca3af; }
+    .caption strong { color: #e5e7eb; font-weight: 600; }
+
+    /* Full-height shell: no inner scrollbar — page grows with content */
+    .app {
+      width: 100%;
+      height: auto;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: var(--sidebar) 1fr;
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 12px;
+      overflow: visible;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06);
+    }
+    .app.dark {
+      --accent: #3B82F6; --accent-hv: #60A5FA;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+      --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+      --border: #374151; --control-border: #4B5563; --green: #22C55E;
+      --amber-soft: #422006; --amber-border: #78350f; --amber-text: #FCD34D;
+    }
+
+    .sidebar {
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 16px 12px;
+      align-self: stretch;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; }
+    .brand-mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(145deg, #2563EB, #1D4ED8);
+      display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 700;
+    }
+    .brand-name { font-size: 14px; font-weight: 650; }
+    .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; border-radius: var(--radius-md);
+      font-size: 13px; color: var(--text-sec); position: relative;
+    }
+    .nav-item.active {
+      background: var(--accent-soft); color: var(--accent); font-weight: 600;
+    }
+    .nav-item.active::before {
+      content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+      width: 3px; border-radius: 0 2px 2px 0; background: var(--accent);
+    }
+    .nav-ico {
+      width: 16px; height: 16px; opacity: 0.7;
+      border: 1.5px solid currentColor; border-radius: 3px;
+    }
+    .status-chip {
+      margin: auto 8px 0; padding: 8px 10px; border-radius: var(--radius-md);
+      background: var(--surface-muted); border: 1px solid var(--border);
+      font-size: 11px; color: var(--text-dim);
+    }
+    .status-chip b { color: var(--green); font-weight: 600; }
+
+    .main { min-width: 0; background: var(--bg); }
+    .main-body {
+      padding: 20px 22px 32px;
+      overflow: visible;
+    }
+
+    .hero { margin-bottom: 18px; }
+    .hero h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+    .hero p { margin-top: 4px; font-size: 13px; color: var(--text-dim); }
+    .hero.sm h2 { font-size: 17px; }
+
+    .section { margin-bottom: 18px; }
+    .section-label {
+      font-size: 12px; font-weight: 600; color: var(--text-dim);
+      margin: 0 0 8px 2px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden;
+    }
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; min-height: 52px;
+    }
+    .row + .row, .row + .stack, .field + .row, .row + .field { border-top: 1px solid var(--border); }
+    .row-text { flex: 1; min-width: 0; }
+    .row-title { font-size: 13px; font-weight: 550; }
+    .row-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; }
+
+    .toggle {
+      width: 42px; height: 24px; border-radius: 999px; background: #E5E2E3;
+      position: relative; flex-shrink: 0; border: none; cursor: pointer;
+    }
+    .app.dark .toggle { background: #4B5563; }
+    .toggle.on { background: var(--green); }
+    .toggle::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 20px; height: 20px; border-radius: 50%; background: #fff;
+      box-shadow: var(--shadow-sm); transition: transform .15s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    .seg {
+      display: flex; gap: 0; background: var(--surface-muted);
+      border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px;
+    }
+    .seg button {
+      appearance: none; border: none; background: transparent; font: inherit;
+      font-size: 12px; font-weight: 500; color: var(--text-sec);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+    }
+    .seg button.on {
+      background: var(--surface); color: var(--text); font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+    .picker.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+    .pick {
+      appearance: none; text-align: left; border: 1px solid var(--border);
+      background: var(--surface-muted); border-radius: var(--radius-md);
+      padding: 12px; cursor: pointer; color: var(--text); font: inherit;
+    }
+    .pick.on {
+      border-color: var(--accent); background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .pick .t { font-size: 13px; font-weight: 600; display: block; }
+    .pick .d { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.35; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
+    .field label { font-size: 12px; font-weight: 550; color: var(--text-sec); }
+    .input, .select, .spin {
+      appearance: none; font: inherit; font-size: 13px; color: var(--text);
+      background: var(--surface); border: 1px solid var(--control-border);
+      border-radius: var(--radius-md); padding: 10px 12px; outline: none;
+    }
+    .spin { width: 120px; }
+    .hint { font-size: 12px; color: var(--text-dim); padding: 0 16px 12px; line-height: 1.4; }
+
+    .btn {
+      appearance: none; font: inherit; font-size: 13px; font-weight: 550;
+      border-radius: var(--radius-md); padding: 9px 14px; cursor: pointer;
+      border: 1px solid var(--control-border); background: var(--surface); color: var(--text);
+    }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-ghost { background: transparent; }
+    .btn-link {
+      appearance: none; border: none; background: none; font: inherit;
+      font-size: 13px; color: var(--accent); cursor: pointer; padding: 4px 0; font-weight: 550;
+    }
+    .callout {
+      margin: 0 12px 12px; padding: 10px 12px;
+      background: var(--amber-soft); border: 1px solid var(--amber-border);
+      border-radius: var(--radius-md); font-size: 12px; color: var(--amber-text); line-height: 1.45;
+    }
+    .footnote { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 8px; }
+
+    .split { display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; align-items: start; }
+    .split3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
+    .col { min-width: 0; }
+
+    .subtabs {
+      display: flex; gap: 4px; margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .subtab {
+      appearance: none; border: none; background: transparent; font: inherit;
+      font-size: 13px; font-weight: 550; color: var(--text-dim);
+      padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .subtab.on { color: var(--accent); border-bottom-color: var(--accent); }
+    .pane { display: none; }
+    .pane.on { display: block; }
+
+    .compact-hero {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 14px; gap: 12px;
+    }
+    .dense .row { min-height: 44px; padding: 8px 14px; }
+    .dense .section { margin-bottom: 12px; }
+    .inline-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    .workflow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+    .wf-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 14px;
+    }
+    .wf-card .step { font-size: 11px; font-weight: 650; color: var(--accent); margin-bottom: 6px; }
+    .wf-card h3 { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
+    .wf-card .pick, .wf-card .input, .wf-card .btn { width: 100%; }
+    .wf-card .pick { margin-bottom: 6px; padding: 8px 10px; }
+    .wf-card .pick .d { display: none; }
+
+    /* F: accordion */
+    .acc-item { border-bottom: 1px solid var(--border); }
+    .acc-item:last-child { border-bottom: none; }
+    .acc-head {
+      width: 100%; appearance: none; border: none; background: transparent;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; font: inherit; font-size: 13px; font-weight: 600;
+      color: var(--text); cursor: pointer; text-align: left;
+    }
+    .acc-head span { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+    .acc-body { display: none; padding: 0 0 8px; border-top: 1px solid var(--border); }
+    .acc-item.open .acc-body { display: block; }
+
+    /* G: master-detail */
+    .md { display: grid; grid-template-columns: 180px 1fr; gap: 0; min-height: 520px; }
+    .md-nav { border-right: 1px solid var(--border); padding: 8px; background: var(--surface); }
+    .md-nav button {
+      width: 100%; appearance: none; border: none; background: transparent;
+      text-align: left; font: inherit; font-size: 13px; color: var(--text-sec);
+      padding: 10px 12px; border-radius: var(--radius-md); cursor: pointer; margin-bottom: 2px;
+    }
+    .md-nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+    .md-panel { padding: 16px 18px; }
+
+    /* H: flat no cards */
+    .flat-block { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .flat-block:last-of-type { border-bottom: none; }
+    .flat-block h3 { font-size: 15px; font-weight: 650; margin-bottom: 12px; }
+
+    /* I: sticky section rail */
+    .with-rail { display: grid; grid-template-columns: 120px 1fr; gap: 20px; }
+    .rail { position: sticky; top: 72px; align-self: start; }
+    .rail a {
+      display: block; font-size: 12px; color: var(--text-dim); text-decoration: none;
+      padding: 6px 0; border-left: 2px solid transparent; padding-left: 10px;
+    }
+    .rail a.on { color: var(--accent); border-left-color: var(--accent); font-weight: 600; }
+
+    /* J: dashboard summary */
+    .summary {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px;
+    }
+    .sum-tile {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 12px 14px;
+    }
+    .sum-tile .k { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+    .sum-tile .v { font-size: 13px; font-weight: 650; }
+
+    @media (max-width: 820px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .split, .split3, .workflow, .summary, .with-rail, .md { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="gallery-bar">
+    <h1>设置 › 通用 · 10 版全貌</h1>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-v="1">1 纵向分组</button>
+      <button class="tab" data-v="2">2 双栏分区</button>
+      <button class="tab" data-v="3">3 子页签</button>
+      <button class="tab" data-v="4">4 紧凑列表</button>
+      <button class="tab" data-v="5">5 工作流</button>
+      <button class="tab" data-v="6">6 手风琴</button>
+      <button class="tab" data-v="7">7 主从面板</button>
+      <button class="tab" data-v="8">8 扁平分区</button>
+      <button class="tab" data-v="9">9 锚点目录</button>
+      <button class="tab" data-v="10">10 摘要卡片</button>
+    </div>
+    <button class="theme-toggle" id="themeToggle" type="button">预览暗色</button>
+    <p class="meta">窗口随内容拉长，无内部滚动条。浏览器整页可滚，设置窗本体一次看全。</p>
+  </header>
+
+  <div class="stage">
+
+    <!-- 1 -->
+    <section class="variant active" id="v-1">
+      <div class="caption"><span class="badge">01</span>
+        <p><strong>纵向分组</strong>：接近现状。Hero + 卡片分段，改动最小。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body" data-full></div></div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="variant" id="v-2">
+      <div class="caption"><span class="badge">02</span>
+        <p><strong>双栏分区</strong>：左录音核心，右外观/偏好/历史。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero"><h2>通用设置</h2><p>左侧管录音，右侧管偏好</p></div>
+          <div class="split">
+            <div class="col">
+              <div class="section"><div class="section-label">触发与快捷键</div>
+                <div class="card">
+                  <div class="picker">
+                    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始/结束</span></button>
+                    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音</span></button>
+                  </div>
+                  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+                </div>
+              </div>
+              <div class="section"><div class="section-label">音频</div>
+                <div class="card">
+                  <div class="picker cols3">
+                    <button class="pick on"><span class="t">麦克风</span></button>
+                    <button class="pick"><span class="t">电脑声</span></button>
+                    <button class="pick"><span class="t">混合</span></button>
+                  </div>
+                  <div class="row">
+                    <button class="btn btn-primary">测试声音（约 2 秒）</button>
+                    <button class="btn btn-ghost">手动设备…</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="section"><div class="section-label">外观</div>
+                <div class="card"><div class="row">
+                  <div class="row-text"><div class="row-title">主题</div></div>
+                  <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div>
+                </div></div>
+              </div>
+              <div class="section"><div class="section-label">开机与提示</div>
+                <div class="card">
+                  <div class="row"><div class="row-text"><div class="row-title">开机自启</div></div><button class="toggle" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+                </div>
+              </div>
+              <div class="section"><div class="section-label">历史</div>
+                <div class="card">
+                  <div class="row"><div class="row-text"><div class="row-title">保存历史</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+                  <div class="row"><div class="row-text"><div class="row-title">最大会话</div></div><input class="spin" type="number" value="500" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="variant" id="v-3">
+      <div class="caption"><span class="badge">03 · 已选</span>
+        <p><strong>纵向三段</strong>：录音 → 音频 → 偏好，样式与应用实现一致（带边框白卡片 + 选择块）。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero"><h2>通用设置</h2><p>录音、音频与偏好</p></div>
+          <div class="section"><div class="section-label">录音</div><div class="card">
+            <div class="picker">
+              <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+              <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+            </div>
+            <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+          </div></div>
+          <div class="section"><div class="section-label">音频</div><div class="card">
+            <div class="picker cols3">
+              <button class="pick on"><span class="t">仅麦克风</span><span class="d">日常口述</span></button>
+              <button class="pick"><span class="t">仅电脑声</span><span class="d">会议回放</span></button>
+              <button class="pick"><span class="t">混合</span><span class="d">麦 + 系统</span></button>
+            </div>
+            <div class="callout">混合模式可能混入背景音导致识别杂乱。日常口述建议「仅麦克风」。</div>
+            <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+            <div class="row"><button class="btn-link">手动选择音频设备</button></div>
+          </div></div>
+          <div class="section"><div class="section-label">偏好</div><div class="card">
+            <div class="row">
+              <div class="row-text"><div class="row-title">主题</div><div class="row-desc">跟随系统时按 Windows 外观显示</div></div>
+              <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div>
+            </div>
+            <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div></div><button class="toggle" type="button"></button></div>
+            <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+            <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+            <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+            <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+            <div class="row"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+          </div></div>
+          <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="variant" id="v-4">
+      <div class="caption"><span class="badge">04</span>
+        <p><strong>紧凑列表</strong>：弱 Hero，控件右对齐，密度接近系统设置。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body dense">
+          <div class="compact-hero">
+            <h2 style="font-size:17px;font-weight:650">通用</h2>
+            <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div>
+          </div>
+          <div class="section"><div class="section-label">录音</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">触发方式</div></div>
+                <div class="seg"><button class="on">连续口述</button><button>按住说话</button></div></div>
+              <div class="row"><div class="row-text"><div class="row-title">录音快捷键</div></div>
+                <input class="input" style="width:200px" value="Ctrl + Win + Space" readonly /></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">音频</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">音频来源</div></div>
+                <div class="seg"><button class="on">麦克风</button><button>电脑声</button><button>混合</button></div></div>
+              <div class="row"><div class="row-text"><div class="row-title">检测</div></div>
+                <div class="inline-controls"><button class="btn">测试声音</button><button class="btn-link">手动设备</button></div></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">开机与提示</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div><div class="row-desc">登录后托盘运行</div></div><button class="toggle" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">历史</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+              <div class="row"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="variant" id="v-5">
+      <div class="caption"><span class="badge">05</span>
+        <p><strong>录音工作流</strong>：顶栏三步卡片，偏好下沉。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero"><h2>通用设置</h2><p>先配好录音三步，再调偏好</p></div>
+          <div class="workflow">
+            <div class="wf-card">
+              <div class="step">1 · 触发</div><h3>怎么开始录音</h3>
+              <button class="pick on"><span class="t">连续口述</span></button>
+              <button class="pick"><span class="t">按住说话</span></button>
+            </div>
+            <div class="wf-card">
+              <div class="step">2 · 快捷键</div><h3>按哪个键</h3>
+              <input class="input" value="Ctrl + Win + Space" readonly />
+              <p class="hint" style="padding:8px 0 0">点击后重录组合键</p>
+            </div>
+            <div class="wf-card">
+              <div class="step">3 · 声源</div><h3>听谁说话</h3>
+              <button class="pick on"><span class="t">仅麦克风</span></button>
+              <button class="pick"><span class="t">仅电脑声</span></button>
+              <button class="pick"><span class="t">混合</span></button>
+              <button class="btn" style="margin-top:8px">测试声音</button>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">外观与偏好</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">主题</div></div>
+                <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div></div>
+              <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div></div><button class="toggle" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">历史</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">保留天数 / 最大会话</div></div>
+                <div class="inline-controls">
+                  <input class="spin" type="number" value="30" /><input class="spin" type="number" value="500" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 6 accordion - all open for full view -->
+    <section class="variant" id="v-6">
+      <div class="caption"><span class="badge">06</span>
+        <p><strong>手风琴</strong>：分组可折叠。全貌预览默认全部展开。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero sm"><h2>通用设置</h2><p>点击分组标题可折叠（预览中已全部展开）</p></div>
+          <div class="card">
+            <div class="acc-item open">
+              <button class="acc-head" type="button">触发与快捷键 <span>连续口述 · Ctrl+Win+Space</span></button>
+              <div class="acc-body">
+                <div class="picker">
+                  <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始/结束</span></button>
+                  <button class="pick"><span class="t">按住说话</span><span class="d">按住录音</span></button>
+                </div>
+                <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+              </div>
+            </div>
+            <div class="acc-item open">
+              <button class="acc-head" type="button">音频 <span>仅麦克风</span></button>
+              <div class="acc-body">
+                <div class="picker cols3">
+                  <button class="pick on"><span class="t">仅麦克风</span></button>
+                  <button class="pick"><span class="t">仅电脑声</span></button>
+                  <button class="pick"><span class="t">混合</span></button>
+                </div>
+                <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button><button class="btn-link">手动设备</button></div>
+              </div>
+            </div>
+            <div class="acc-item open">
+              <button class="acc-head" type="button">外观 <span>跟随系统</span></button>
+              <div class="acc-body">
+                <div class="row"><div class="row-text"><div class="row-title">主题</div></div>
+                  <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div></div>
+              </div>
+            </div>
+            <div class="acc-item open">
+              <button class="acc-head" type="button">开机与提示 <span>3 项</span></button>
+              <div class="acc-body">
+                <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div></div><button class="toggle" type="button"></button></div>
+                <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+                <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+              </div>
+            </div>
+            <div class="acc-item open">
+              <button class="acc-head" type="button">历史 <span>开 · 30 天 · 500 场</span></button>
+              <div class="acc-body">
+                <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+                <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+                <div class="row"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+              </div>
+            </div>
+          </div>
+          <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 7 master-detail - all panels stacked for full view -->
+    <section class="variant" id="v-7">
+      <div class="caption"><span class="badge">07</span>
+        <p><strong>主从面板</strong>：左目录右详情。全貌模式把四个详情区纵向排开。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body" style="padding:0">
+          <div class="md" style="grid-template-columns:180px 1fr; min-height:0">
+            <div class="md-nav">
+              <button class="on" type="button">录音控制</button>
+              <button type="button">音频设备</button>
+              <button type="button">外观</button>
+              <button type="button">偏好与历史</button>
+            </div>
+            <div class="md-panel">
+              <div class="section"><div class="section-label">录音控制</div>
+                <div class="card">
+                  <div class="picker">
+                    <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始/结束</span></button>
+                    <button class="pick"><span class="t">按住说话</span><span class="d">按住录音</span></button>
+                  </div>
+                  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+                </div>
+              </div>
+              <div class="section"><div class="section-label">音频设备</div>
+                <div class="card">
+                  <div class="picker cols3">
+                    <button class="pick on"><span class="t">仅麦克风</span></button>
+                    <button class="pick"><span class="t">仅电脑声</span></button>
+                    <button class="pick"><span class="t">混合</span></button>
+                  </div>
+                  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+                  <div class="row"><button class="btn-link">手动选择音频设备</button></div>
+                </div>
+              </div>
+              <div class="section"><div class="section-label">外观</div>
+                <div class="card"><div class="row">
+                  <div class="row-text"><div class="row-title">主题</div><div class="row-desc">跟随系统 / 浅色 / 暗色</div></div>
+                  <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div>
+                </div></div>
+              </div>
+              <div class="section"><div class="section-label">偏好与历史</div>
+                <div class="card">
+                  <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div></div><button class="toggle" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+                  <div class="row"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 8 flat -->
+    <section class="variant" id="v-8">
+      <div class="caption"><span class="badge">08</span>
+        <p><strong>扁平分区</strong>：去掉卡片壳，用分隔线与标题分区，更轻。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero"><h2>通用设置</h2><p>快捷键、触发方式与音频输入</p></div>
+          <div class="flat-block">
+            <h3>触发方式</h3>
+            <div class="picker" style="padding:0">
+              <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+              <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+            </div>
+          </div>
+          <div class="flat-block">
+            <h3>快捷键</h3>
+            <label style="font-size:12px;color:var(--text-sec)">录音快捷键</label>
+            <input class="input" style="margin-top:6px;max-width:320px" value="Ctrl + Win + Space" readonly />
+            <p class="hint" style="padding:8px 0 0">点击后按下新组合键即可修改。</p>
+          </div>
+          <div class="flat-block">
+            <h3>音频来源</h3>
+            <div class="picker cols3" style="padding:0">
+              <button class="pick on"><span class="t">仅麦克风</span><span class="d">日常口述</span></button>
+              <button class="pick"><span class="t">仅电脑声</span><span class="d">会议回放</span></button>
+              <button class="pick"><span class="t">混合</span><span class="d">麦 + 系统</span></button>
+            </div>
+            <div style="margin-top:12px" class="inline-controls">
+              <button class="btn btn-primary">测试声音（约 2 秒）</button>
+              <button class="btn-link">手动选择音频设备</button>
+            </div>
+          </div>
+          <div class="flat-block">
+            <h3>外观</h3>
+            <div class="seg" style="display:inline-flex">
+              <button class="on">跟随系统</button><button>浅色</button><button>暗色</button>
+            </div>
+          </div>
+          <div class="flat-block">
+            <h3>开机与提示</h3>
+            <div class="row" style="padding-left:0"><div class="row-text"><div class="row-title">开机时自动启动</div><div class="row-desc">登录后托盘运行</div></div><button class="toggle" type="button"></button></div>
+            <div class="row" style="padding-left:0"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+            <div class="row" style="padding-left:0"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+          </div>
+          <div class="flat-block">
+            <h3>历史</h3>
+            <div class="row" style="padding-left:0"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+            <div class="row" style="padding-left:0"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+            <div class="row" style="padding-left:0"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+          </div>
+          <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 9 anchor rail -->
+    <section class="variant" id="v-9">
+      <div class="caption"><span class="badge">09</span>
+        <p><strong>锚点目录</strong>：内容区左侧小目录，长页快速跳转（全貌已全部展开）。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero"><h2>通用设置</h2><p>带页内目录的长表单</p></div>
+          <div class="with-rail">
+            <nav class="rail">
+              <a class="on" href="#r-trig">触发</a>
+              <a href="#r-hk">快捷键</a>
+              <a href="#r-audio">音频</a>
+              <a href="#r-appear">外观</a>
+              <a href="#r-pref">偏好</a>
+              <a href="#r-hist">历史</a>
+            </nav>
+            <div>
+              <div class="section" id="r-trig"><div class="section-label">触发方式</div>
+                <div class="card"><div class="picker">
+                  <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始/结束</span></button>
+                  <button class="pick"><span class="t">按住说话</span><span class="d">按住录音</span></button>
+                </div></div>
+              </div>
+              <div class="section" id="r-hk"><div class="section-label">快捷键</div>
+                <div class="card">
+                  <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+                  <p class="hint">点击后按下新组合键即可修改。</p>
+                </div>
+              </div>
+              <div class="section" id="r-audio"><div class="section-label">音频</div>
+                <div class="card">
+                  <div class="picker cols3">
+                    <button class="pick on"><span class="t">仅麦克风</span></button>
+                    <button class="pick"><span class="t">仅电脑声</span></button>
+                    <button class="pick"><span class="t">混合</span></button>
+                  </div>
+                  <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div>
+                  <div class="row"><button class="btn-link">手动选择音频设备</button></div>
+                </div>
+              </div>
+              <div class="section" id="r-appear"><div class="section-label">外观</div>
+                <div class="card"><div class="row">
+                  <div class="row-text"><div class="row-title">主题</div></div>
+                  <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div>
+                </div></div>
+              </div>
+              <div class="section" id="r-pref"><div class="section-label">开机与提示</div>
+                <div class="card">
+                  <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div></div><button class="toggle" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+                </div>
+              </div>
+              <div class="section" id="r-hist"><div class="section-label">历史</div>
+                <div class="card">
+                  <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+                  <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+                  <div class="row"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+                </div>
+              </div>
+              <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- 10 summary tiles -->
+    <section class="variant" id="v-10">
+      <div class="caption"><span class="badge">10</span>
+        <p><strong>摘要卡片</strong>：顶部四格当前状态，下方完整设置。</p></div>
+      <div class="app" data-shell>
+        <aside class="sidebar">
+          <div class="brand"><div class="brand-mark">V</div><div class="brand-name">VoiceInk</div></div>
+          <nav class="nav">
+            <div class="nav-item active"><span class="nav-ico"></span>通用</div>
+            <div class="nav-item"><span class="nav-ico"></span>语音识别</div>
+            <div class="nav-item"><span class="nav-ico"></span>文本润色</div>
+            <div class="nav-item"><span class="nav-ico"></span>关于</div>
+          </nav>
+          <div class="status-chip">状态 · <b>就绪</b></div>
+        </aside>
+        <div class="main"><div class="main-body">
+          <div class="hero"><h2>通用设置</h2><p>一眼看到当前配置，再细调</p></div>
+          <div class="summary">
+            <div class="sum-tile"><div class="k">触发</div><div class="v">连续口述</div></div>
+            <div class="sum-tile"><div class="k">快捷键</div><div class="v">Ctrl+Win+Space</div></div>
+            <div class="sum-tile"><div class="k">声源</div><div class="v">仅麦克风</div></div>
+            <div class="sum-tile"><div class="k">主题</div><div class="v">跟随系统</div></div>
+          </div>
+          <div class="section"><div class="section-label">触发方式</div>
+            <div class="card"><div class="picker">
+              <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始/结束</span></button>
+              <button class="pick"><span class="t">按住说话</span><span class="d">按住录音</span></button>
+            </div></div>
+          </div>
+          <div class="section"><div class="section-label">快捷键</div>
+            <div class="card">
+              <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">音频</div>
+            <div class="card">
+              <div class="picker cols3">
+                <button class="pick on"><span class="t">仅麦克风</span></button>
+                <button class="pick"><span class="t">仅电脑声</span></button>
+                <button class="pick"><span class="t">混合</span></button>
+              </div>
+              <div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button><button class="btn-link">手动设备</button></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">外观</div>
+            <div class="card"><div class="row">
+              <div class="row-text"><div class="row-title">主题</div></div>
+              <div class="seg"><button class="on">系统</button><button>浅色</button><button>暗色</button></div>
+            </div></div>
+          </div>
+          <div class="section"><div class="section-label">开机与提示</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div></div><button class="toggle" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">录音提示音</div></div><button class="toggle on" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div><button class="toggle on" type="button"></button></div>
+            </div>
+          </div>
+          <div class="section"><div class="section-label">历史</div>
+            <div class="card">
+              <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div></div><button class="toggle on" type="button"></button></div>
+              <div class="row"><div class="row-text"><div class="row-title">保留天数</div></div><input class="spin" type="number" value="30" /></div>
+              <div class="row"><div class="row-text"><div class="row-title">最大会话数</div></div><input class="spin" type="number" value="500" /></div>
+            </div>
+          </div>
+          <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+        </div></div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // Shared full content for variant 1 (canonical stack)
+    const FULL_HTML = `
+      <div class="hero"><h2>通用设置</h2><p>快捷键、触发方式与音频输入</p></div>
+      <div class="section"><div class="section-label">触发方式</div>
+        <div class="card"><div class="picker">
+          <button class="pick on"><span class="t">连续口述</span><span class="d">按一次开始，再按一次结束</span></button>
+          <button class="pick"><span class="t">按住说话</span><span class="d">按住录音，松开结束</span></button>
+        </div></div>
+      </div>
+      <div class="section"><div class="section-label">快捷键</div>
+        <div class="card">
+          <div class="field"><label>录音快捷键</label><input class="input" value="Ctrl + Win + Space" readonly /></div>
+          <p class="hint">点击输入框后按下新组合键即可修改。</p>
+        </div>
+      </div>
+      <div class="section"><div class="section-label">音频来源</div>
+        <div class="card"><div class="picker cols3">
+          <button class="pick on"><span class="t">仅麦克风</span><span class="d">日常口述</span></button>
+          <button class="pick"><span class="t">仅电脑声</span><span class="d">会议回放</span></button>
+          <button class="pick"><span class="t">混合</span><span class="d">麦 + 系统</span></button>
+        </div></div>
+      </div>
+      <div class="section"><div class="section-label">检测音频</div>
+        <div class="card"><div class="row"><button class="btn btn-primary">测试声音（约 2 秒）</button></div></div>
+      </div>
+      <div class="section"><div class="section-label">手动设备</div>
+        <div class="card"><div class="row"><button class="btn-link">手动选择音频设备</button></div></div>
+      </div>
+      <div class="section"><div class="section-label">外观</div>
+        <div class="card">
+          <div class="field"><label>主题</label>
+            <select class="select"><option>跟随系统</option><option>浅色</option><option>暗色</option></select>
+          </div>
+          <p class="hint">跟随系统时按 Windows 浅/深色外观显示；可随时覆盖。</p>
+        </div>
+      </div>
+      <div class="section"><div class="section-label">开机与提示</div>
+        <div class="card">
+          <div class="row"><div class="row-text"><div class="row-title">开机时自动启动</div><div class="row-desc">登录 Windows 后自动在托盘运行</div></div><button class="toggle" type="button"></button></div>
+          <div class="row"><div class="row-text"><div class="row-title">录音提示音</div><div class="row-desc">开始和结束录音时播放短促提示音</div></div><button class="toggle on" type="button"></button></div>
+          <div class="row"><div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div><div class="row-desc">粘贴成功后把剪贴板还原为粘贴前的内容</div></div><button class="toggle on" type="button"></button></div>
+        </div>
+      </div>
+      <div class="section"><div class="section-label">历史</div>
+        <div class="card">
+          <div class="row"><div class="row-text"><div class="row-title">保存语音历史</div><div class="row-desc">记录未来识别结果；关闭后不会删除已有历史</div></div><button class="toggle on" type="button"></button></div>
+          <div class="row"><div class="row-text"><div class="row-title">保留天数</div><div class="row-desc">超过天数的旧会话会在清理时删除</div></div><input class="spin" type="number" value="30" /></div>
+          <div class="row"><div class="row-text"><div class="row-title">最大会话数</div><div class="row-desc">超出后优先清理最旧会话</div></div><input class="spin" type="number" value="500" /></div>
+        </div>
+      </div>
+      <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+    `;
+
+    document.querySelectorAll("[data-full]").forEach((el) => { el.innerHTML = FULL_HTML; });
+
+    function wireInteractive(root = document) {
+      root.querySelectorAll(".toggle").forEach((el) => {
+        if (el.dataset.wired) return;
+        el.dataset.wired = "1";
+        el.addEventListener("click", () => el.classList.toggle("on"));
+      });
+      root.querySelectorAll(".picker").forEach((group) => {
+        group.querySelectorAll(".pick").forEach((btn) => {
+          if (btn.dataset.wired) return;
+          btn.dataset.wired = "1";
+          btn.addEventListener("click", () => {
+            group.querySelectorAll(".pick").forEach((b) => b.classList.remove("on"));
+            btn.classList.add("on");
+          });
+        });
+      });
+      root.querySelectorAll(".seg").forEach((group) => {
+        group.querySelectorAll("button").forEach((btn) => {
+          if (btn.dataset.wired) return;
+          btn.dataset.wired = "1";
+          btn.addEventListener("click", () => {
+            group.querySelectorAll("button").forEach((b) => b.classList.remove("on"));
+            btn.classList.add("on");
+          });
+        });
+      });
+      root.querySelectorAll(".acc-head").forEach((btn) => {
+        if (btn.dataset.wired) return;
+        btn.dataset.wired = "1";
+        btn.addEventListener("click", () => btn.parentElement.classList.toggle("open"));
+      });
+    }
+    wireInteractive();
+
+    document.querySelectorAll("#subtabs-c .subtab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#subtabs-c .subtab").forEach((b) => b.classList.remove("on"));
+        document.querySelectorAll("#v-3 .pane").forEach((p) => p.classList.remove("on"));
+        btn.classList.add("on");
+        document.getElementById(btn.dataset.pane).classList.add("on");
+      });
+    });
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        document.querySelectorAll(".variant").forEach((v) => v.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("v-" + tab.dataset.v).classList.add("active");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+
+    const themeToggle = document.getElementById("themeToggle");
+    themeToggle.addEventListener("click", () => {
+      const active = document.querySelector(".variant.active .app");
+      const next = !active.classList.contains("dark");
+      document.querySelectorAll("[data-shell]").forEach((s) => s.classList.toggle("dark", next));
+      themeToggle.textContent = next ? "预览浅色" : "预览暗色";
+    });
+  </script>
+</body>
+</html>

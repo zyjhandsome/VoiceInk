@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceInk · 通用设置</title>
+  <style>
+    :root {
+      --accent: #2563EB;
+      --accent-hv: #1D4ED8;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --bg: #F3F4F6;
+      --surface: #FFFFFF;
+      --surface-muted: #F9FAFB;
+      --text: #111827;
+      --text-sec: #4B5563;
+      --text-dim: #6B7280;
+      --border: #E5E7EB;
+      --control-border: #D1D5DB;
+      --green: #16A34A;
+      --amber-soft: #FFFBEB;
+      --amber-border: #F5E6B8;
+      --amber-text: #92400E;
+      --radius-md: 8px;
+      --radius-lg: 10px;
+      --font: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100%;
+      /* Limit layout thrash while the host window is resized. */
+      contain: layout style;
+    }
+    body.dark {
+      --accent: #3B82F6; --accent-hv: #60A5FA;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --bg: #111827; --surface: #1F2937; --surface-muted: #374151;
+      --text: #F9FAFB; --text-sec: #D1D5DB; --text-dim: #9CA3AF;
+      --border: #374151; --control-border: #4B5563; --green: #22C55E;
+      --amber-soft: #422006; --amber-border: #78350f; --amber-text: #FCD34D;
+    }
+    body.dark .toggle { background: #4B5563; }
+    body.dark .toggle.on { background: var(--green); }
+
+    /* Horizontal pad is light: outer Qt content_wrap already adds ~20px. */
+    .main-body { padding: 20px 2px 32px; }
+    .hero { margin-bottom: 18px; }
+    .hero h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+    .hero p { margin-top: 4px; font-size: 13px; color: var(--text-dim); }
+
+    .section { margin-bottom: 18px; }
+    .section-label {
+      font-size: 12px; font-weight: 600; color: var(--text-dim);
+      margin: 0 0 8px 2px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden;
+      contain: layout paint;
+    }
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; min-height: 52px;
+    }
+    .row + .row, .field + .row, .row + .field, .picker + .callout,
+    .callout + .row, .row + .adv, .adv + .row { border-top: 1px solid var(--border); }
+    .row-text { flex: 1; min-width: 0; }
+    .row-title { font-size: 13px; font-weight: 550; }
+    .row-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; }
+
+    .toggle {
+      width: 42px; height: 24px; border-radius: 999px; background: #E5E2E3;
+      position: relative; flex-shrink: 0; border: none; cursor: pointer;
+    }
+    .toggle.on { background: var(--green); }
+    .toggle::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 20px; height: 20px; border-radius: 50%; background: #fff;
+      box-shadow: var(--shadow-sm); transition: transform .15s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    .seg {
+      display: flex; gap: 0; background: var(--surface-muted);
+      border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px;
+    }
+    .seg button {
+      appearance: none; border: none; background: transparent; font: inherit;
+      font-size: 12px; font-weight: 500; color: var(--text-sec);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+    }
+    .seg button.on {
+      background: var(--surface); color: var(--text); font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .picker {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px;
+      contain: layout;
+    }
+    .picker.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+    .pick {
+      appearance: none; text-align: left; border: 1px solid var(--border);
+      background: var(--surface-muted); border-radius: var(--radius-md);
+      padding: 12px; cursor: pointer; color: var(--text); font: inherit;
+    }
+    .pick.on {
+      border-color: var(--accent); background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .pick .t { font-size: 13px; font-weight: 600; display: block; }
+    .pick .d { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.35; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
+    .field label { font-size: 12px; font-weight: 550; color: var(--text-sec); }
+    .input, .select, .spin {
+      appearance: none; font: inherit; font-size: 13px; color: var(--text);
+      background: var(--surface); border: 1px solid var(--control-border);
+      border-radius: var(--radius-md); padding: 10px 12px; outline: none;
+      width: 100%;
+    }
+    .spin { width: 120px; }
+    .hint { font-size: 12px; color: var(--text-dim); padding: 0 16px 12px; line-height: 1.4; }
+
+    .btn {
+      appearance: none; font: inherit; font-size: 13px; font-weight: 550;
+      border-radius: var(--radius-md); padding: 9px 14px; cursor: pointer;
+      border: 1px solid var(--control-border); background: var(--surface); color: var(--text);
+    }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-ghost { background: var(--surface-muted); }
+    .btn-link {
+      appearance: none; border: none; background: none; font: inherit;
+      font-size: 13px; color: var(--accent); cursor: pointer; padding: 4px 0; font-weight: 550;
+    }
+    .callout {
+      margin: 0 12px 12px; padding: 10px 12px;
+      background: var(--amber-soft); border: 1px solid var(--amber-border);
+      border-radius: var(--radius-md); font-size: 12px; color: var(--amber-text); line-height: 1.45;
+    }
+    .footnote { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 8px; }
+    .status { font-size: 12px; color: var(--text-sec); margin-top: 6px; }
+    .adv { display: none; padding: 0; }
+    .adv.open { display: block; }
+    .adv .row { border-top: 1px solid var(--border); }
+    .inline-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .hotkey-input { cursor: pointer; font-family: "Cascadia Mono", Consolas, monospace; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="main-body">
+    <div class="hero">
+      <h2>通用设置</h2>
+      <p>录音、音频与偏好</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">录音</div>
+      <div class="card">
+        <div class="picker" id="triggerPicker">
+          <button type="button" class="pick on" data-trigger="continuous">
+            <span class="t">连续口述</span>
+            <span class="d">按一次开始，再按一次结束</span>
+          </button>
+          <button type="button" class="pick" data-trigger="hotkey">
+            <span class="t">按住说话</span>
+            <span class="d">按住录音，松开结束</span>
+          </button>
+        </div>
+        <div class="field">
+          <label for="hotkeyInput">录音快捷键</label>
+          <input id="hotkeyInput" class="input hotkey-input" type="text" readonly value="" />
+        </div>
+        <p class="hint" id="hotkeyHint"></p>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">音频</div>
+      <div class="card">
+        <div class="picker cols3" id="sourcePicker">
+          <button type="button" class="pick on" data-source="microphone">
+            <span class="t">仅麦克风</span><span class="d">日常口述</span>
+          </button>
+          <button type="button" class="pick" data-source="system">
+            <span class="t">仅电脑声</span><span class="d">会议回放</span>
+          </button>
+          <button type="button" class="pick" data-source="mixed">
+            <span class="t">混合</span><span class="d">麦 + 系统</span>
+          </button>
+        </div>
+        <div class="callout">混合模式可能混入背景音导致识别杂乱。日常口述建议「仅麦克风」。</div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;">
+          <button type="button" class="btn btn-primary" id="micTestBtn">测试声音（约 2 秒）</button>
+          <div class="status" id="micTestStatus"></div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn-link" id="advToggle">手动选择音频设备</button>
+        </div>
+        <div class="adv" id="advPanel">
+          <div class="row">
+            <div class="row-text"><div class="row-title">麦克风</div></div>
+            <select class="select" id="micDevice" style="max-width:320px"></select>
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title">电脑声</div></div>
+            <select class="select" id="sysDevice" style="max-width:320px"></select>
+          </div>
+          <div class="row">
+            <div class="inline-btns">
+              <button type="button" class="btn btn-ghost" id="refreshDevices">刷新列表</button>
+              <button type="button" class="btn btn-ghost" id="resetDevices">恢复自动选择</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">偏好</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">主题</div>
+            <div class="row-desc">跟随系统时按 Windows 外观显示</div>
+          </div>
+          <div class="seg" id="themeSeg">
+            <button type="button" data-theme="system" class="on">系统</button>
+            <button type="button" data-theme="light">浅色</button>
+            <button type="button" data-theme="dark">暗色</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">开机时自动启动</div></div>
+          <button type="button" class="toggle" id="togAuto" data-key="auto_start"></button>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">录音提示音</div></div>
+          <button type="button" class="toggle" id="togSound" data-key="sound_enabled"></button>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">粘贴后恢复剪贴板</div></div>
+          <button type="button" class="toggle" id="togClip" data-key="restore_clipboard"></button>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">保存语音历史</div></div>
+          <button type="button" class="toggle" id="togHist" data-key="history_enabled"></button>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">保留天数</div></div>
+          <input class="spin" id="spinDays" type="number" min="1" max="3650" />
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">最大会话数</div></div>
+          <input class="spin" id="spinMax" type="number" min="1" max="100000" step="100" />
+        </div>
+      </div>
+    </div>
+
+    <p class="footnote">若与输入法冲突，可改为 Alt+Space。</p>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script>
+    let bridge = null;
+    let applying = false;
+
+    function setPickGroup(root, attr, value) {
+      root.querySelectorAll(".pick").forEach((el) => {
+        el.classList.toggle("on", el.getAttribute(attr) === value);
+      });
+    }
+
+    function setToggle(el, on) {
+      el.classList.toggle("on", !!on);
+    }
+
+    function setThemeSeg(mode) {
+      document.querySelectorAll("#themeSeg button").forEach((btn) => {
+        btn.classList.toggle("on", btn.getAttribute("data-theme") === mode);
+      });
+    }
+
+    function fillSelect(sel, items, selected) {
+      sel.innerHTML = "";
+      (items || []).forEach((it) => {
+        const opt = document.createElement("option");
+        opt.value = String(it.value);
+        opt.textContent = it.label;
+        if (String(it.value) === String(selected)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    window.applyState = function (state) {
+      applying = true;
+      try {
+        document.body.classList.toggle("dark", !!state.effectiveDark);
+        setPickGroup(document.getElementById("triggerPicker"), "data-trigger", state.triggerMode);
+        setPickGroup(document.getElementById("sourcePicker"), "data-source", state.inputSource);
+        document.getElementById("hotkeyInput").value = state.hotkeyDisplay || "";
+        document.getElementById("hotkeyHint").textContent = state.hotkeyHint || "";
+        document.getElementById("micTestStatus").textContent = state.micTestStatus || "";
+        setThemeSeg(state.themeMode || "system");
+        setToggle(document.getElementById("togAuto"), state.autoStart);
+        setToggle(document.getElementById("togSound"), state.soundEnabled);
+        setToggle(document.getElementById("togClip"), state.restoreClipboard);
+        setToggle(document.getElementById("togHist"), state.historyEnabled);
+        document.getElementById("spinDays").value = state.retentionDays;
+        document.getElementById("spinMax").value = state.maxEntries;
+        const adv = document.getElementById("advPanel");
+        const advBtn = document.getElementById("advToggle");
+        adv.classList.toggle("open", !!state.advancedOpen);
+        advBtn.textContent = state.advancedOpen ? "收起手动设备" : "手动选择音频设备";
+        fillSelect(document.getElementById("micDevice"), state.micDevices, state.micDevice);
+        fillSelect(document.getElementById("sysDevice"), state.sysDevices, state.sysDevice);
+      } finally {
+        applying = false;
+      }
+    };
+
+    window.setMicTestStatus = function (text) {
+      document.getElementById("micTestStatus").textContent = text || "";
+    };
+
+    function wire() {
+      document.querySelectorAll("#triggerPicker .pick").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (applying || !bridge) return;
+          const mode = btn.getAttribute("data-trigger");
+          setPickGroup(document.getElementById("triggerPicker"), "data-trigger", mode);
+          bridge.setTriggerMode(mode);
+        });
+      });
+      document.querySelectorAll("#sourcePicker .pick").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (applying || !bridge) return;
+          const source = btn.getAttribute("data-source");
+          setPickGroup(document.getElementById("sourcePicker"), "data-source", source);
+          bridge.setInputSource(source);
+        });
+      });
+      document.querySelectorAll("#themeSeg button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (applying || !bridge) return;
+          const mode = btn.getAttribute("data-theme");
+          setThemeSeg(mode);
+          bridge.setThemeMode(mode);
+        });
+      });
+      document.querySelectorAll(".toggle").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (applying || !bridge) return;
+          const next = !btn.classList.contains("on");
+          setToggle(btn, next);
+          bridge.setToggle(btn.getAttribute("data-key"), next);
+        });
+      });
+      document.getElementById("spinDays").addEventListener("change", (e) => {
+        if (applying || !bridge) return;
+        bridge.setSpin("retention_days", parseInt(e.target.value, 10) || 1);
+      });
+      document.getElementById("spinMax").addEventListener("change", (e) => {
+        if (applying || !bridge) return;
+        bridge.setSpin("max_entries", parseInt(e.target.value, 10) || 1);
+      });
+      document.getElementById("micTestBtn").addEventListener("click", () => {
+        if (bridge) bridge.requestMicTest();
+      });
+      document.getElementById("advToggle").addEventListener("click", () => {
+        if (!bridge) return;
+        const adv = document.getElementById("advPanel");
+        const open = !adv.classList.contains("open");
+        adv.classList.toggle("open", open);
+        document.getElementById("advToggle").textContent =
+          open ? "收起手动设备" : "手动选择音频设备";
+        bridge.toggleAdvanced(open);
+      });
+      document.getElementById("hotkeyInput").addEventListener("click", () => {
+        if (bridge) bridge.requestHotkeyCapture();
+      });
+      document.getElementById("micDevice").addEventListener("change", (e) => {
+        if (applying || !bridge) return;
+        bridge.setMicDevice(e.target.value);
+      });
+      document.getElementById("sysDevice").addEventListener("change", (e) => {
+        if (applying || !bridge) return;
+        bridge.setSysDevice(e.target.value);
+      });
+      document.getElementById("refreshDevices").addEventListener("click", () => {
+        if (bridge) bridge.refreshDevices();
+      });
+      document.getElementById("resetDevices").addEventListener("click", () => {
+        if (bridge) bridge.resetDevices();
+      });
+    }
+
+    new QWebChannel(qt.webChannelTransport, (channel) => {
+      bridge = channel.objects.bridge;
+      wire();
+      if (bridge && bridge.ready) bridge.ready();
+    });
+  </script>
+</body>
+</html>
