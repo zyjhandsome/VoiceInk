@@ -2,8 +2,73 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from voiceink.ui import design_tokens as t
 from voiceink.ui import settings_components as sc
+
+_SPIN_ICON_DIR = Path(__file__).resolve().parent / "icons"
+
+
+def _spin_arrow_urls() -> tuple[str, str]:
+    """POSIX paths for PNG chevrons — Qt QSS loads PNG reliably; SVG often fails."""
+    up = (_SPIN_ICON_DIR / "spin_chevron_up.png").resolve().as_posix()
+    down = (_SPIN_ICON_DIR / "spin_chevron_down.png").resolve().as_posix()
+    return up, down
+
+
+def build_spinbox_css() -> str:
+    """Flat numeric stepper shared by every settings QSpinBox."""
+    up, down = _spin_arrow_urls()
+    return f"""
+    QSpinBox {{
+        background: {t.SURFACE};
+        color: {t.TEXT};
+        border: 1px solid {t.CONTROL_BORDER};
+        border-radius: {t.RADIUS_MD}px;
+        padding: 4px 28px 4px 10px;
+        font-size: 13px;
+        min-height: 32px;
+        max-height: 34px;
+    }}
+    QSpinBox:focus {{
+        border: 2px solid {t.ACCENT_FOCUS};
+        padding: 3px 27px 3px 9px;
+    }}
+    QSpinBox::up-button, QSpinBox::down-button {{
+        subcontrol-origin: border;
+        width: 22px;
+        background: {t.SURFACE_PEARL};
+        border: none;
+        border-left: 1px solid {t.HAIRLINE};
+    }}
+    QSpinBox::up-button {{
+        subcontrol-position: top right;
+        margin: 1px 1px 0 0;
+        border-top-right-radius: {t.RADIUS_MD - 1}px;
+    }}
+    QSpinBox::down-button {{
+        subcontrol-position: bottom right;
+        margin: 0 1px 1px 0;
+        border-bottom-right-radius: {t.RADIUS_MD - 1}px;
+    }}
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+        background: {t.SURFACE};
+    }}
+    QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {{
+        background: {t.ACCENT_SOFT};
+    }}
+    QSpinBox::up-arrow {{
+        image: url("{up}");
+        width: 10px;
+        height: 6px;
+    }}
+    QSpinBox::down-arrow {{
+        image: url("{down}");
+        width: 10px;
+        height: 6px;
+    }}
+"""
 
 
 def build_window_css() -> str:
@@ -23,14 +88,15 @@ def build_window_css() -> str:
         color: {t.TEXT};
         border: 1px solid {t.CONTROL_BORDER};
         border-radius: {t.RADIUS_MD}px;
-        padding: 10px 14px;
-        font-size: 14px;
+        padding: 8px 12px;
+        font-size: 13px;
+        min-height: 36px;
         selection-background-color: {t.PRIMARY_CONTAINER};
         selection-color: white;
     }}
     QLineEdit:focus {{
         border: 2px solid {t.ACCENT_FOCUS};
-        padding: 10px 14px;
+        padding: 7px 11px;
     }}
     {sc.ROW_RADIO_STYLE}
     {sc.NAV_BTN_STYLE}
@@ -85,19 +151,7 @@ def build_window_css() -> str:
     QComboBox QAbstractItemView::item:hover {{
         background: {t.SURFACE_PEARL};
     }}
-    QSpinBox {{
-        background: {t.SURFACE};
-        color: {t.TEXT};
-        border: 1px solid {t.CONTROL_BORDER};
-        border-radius: {t.RADIUS_MD}px;
-        padding: 8px 28px 8px 12px;
-        font-size: 13px;
-        min-height: 34px;
-    }}
-    QSpinBox:focus {{
-        border: 2px solid {t.ACCENT_FOCUS};
-        padding: 8px 28px 8px 12px;
-    }}
+    {build_spinbox_css()}
     QScrollBar:vertical {{
         background: transparent;
         width: 6px;
@@ -152,13 +206,19 @@ def build_btn_ghost() -> str:
 
 
 def build_btn_ghost_sm() -> str:
+    # min-height + balanced padding keeps CJK (显示/恢复默认) from clipping
+    # when Fusion paints the label inside the border box.
     return f"""
     QPushButton {{
         background: {t.SURFACE_PEARL}; color: {t.TEXT_SEC}; border: 1px solid {t.HAIRLINE};
-        border-radius: {t.RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
+        border-radius: {t.RADIUS_SM}px; padding: 6px 12px; font-size: 13px;
+        font-weight: 500; min-height: 32px;
     }}
-    QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; }}
-    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 8px 15px; }}
+    QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; border-color: {t.CONTROL_BORDER}; }}
+    QPushButton:checked {{
+        background: {t.SURFACE}; color: {t.TEXT}; border: 1px solid {t.CONTROL_BORDER};
+    }}
+    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 5px 11px; }}
 """
 
 
@@ -166,10 +226,11 @@ def build_btn_danger_sm() -> str:
     return f"""
     QPushButton {{
         background: transparent; color: {t.RED}; border: 1px solid {t.RED_BG};
-        border-radius: {t.RADIUS_SM}px; padding: 8px 15px; font-size: 12px;
+        border-radius: {t.RADIUS_SM}px; padding: 6px 12px; font-size: 13px;
+        font-weight: 500; min-height: 32px;
     }}
     QPushButton:hover {{ background: {t.RED_BG}; color: {t.RED}; }}
-    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 8px 15px; }}
+    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 5px 11px; }}
 """
 
 

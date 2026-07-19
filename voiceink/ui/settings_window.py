@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
+    QAbstractSpinBox,
     QDialog, QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QMessageBox, QFrame,
@@ -58,31 +59,15 @@ from voiceink.ui.settings_components import (
 from voiceink.ui.hotkey_edit import HotkeyEdit
 from voiceink.ui.model_card import ModelCard, RATING_TOOLTIP, format_model_ratings
 from voiceink.ui.nav_icons import nav_icon
+from voiceink.ui import design_tokens as _tok
 from voiceink.ui import settings_styles as _settings_styles
-from voiceink.ui.settings_styles import (
-    BTN_GHOST as _BTN_GHOST,
-    BTN_GHOST_SM as _BTN_GHOST_SM,
-    BTN_PRIMARY as _BTN_PRIMARY,
-)
 from voiceink.ui.theme import normalize_theme_mode
-from voiceink.ui.design_tokens import (
-    ACCENT as _ACCENT,
-    ACCENT_FOCUS as _ACCENT_FOCUS,
-    BAR_OFF as _BAR_OFF,
-    BG as _BG,
-    CONTROL_DEVICE_COMBO_WIDTH as _CONTROL_DEVICE_COMBO_WIDTH,
-    CONTROL_NUMERIC_WIDTH as _CONTROL_NUMERIC_WIDTH,
-    FONT as _FONT,
-    FONT_DISPLAY as _FONT_DISPLAY,
-    HAIRLINE as _HAIRLINE,
-    INPUT_BG as _INPUT_BG,
-    RADIUS_MD as _RADIUS_MD,
-    RADIUS_PILL as _RADIUS_PILL,
-    SURFACE_PEARL as _SURFACE_PEARL,
-    TEXT as _TEXT,
-    TEXT_DIM as _TEXT_DIM,
-    TEXT_SEC as _TEXT_SEC,
-)
+
+# Non-color layout constants (theme-independent).
+_CONTROL_DEVICE_COMBO_WIDTH = _tok.CONTROL_DEVICE_COMBO_WIDTH
+_CONTROL_NUMERIC_WIDTH = _tok.CONTROL_NUMERIC_WIDTH
+# Shared width so 显示 / 测试连接 / 恢复默认 share one right-edge column.
+_LLM_ACTION_BTN_WIDTH = 88
 
 # ── Settings Window ──────────────────────────────────────────────
 
@@ -111,6 +96,8 @@ class SettingsWindow(QDialog):
         self._setup_window()
         self._setup_ui()
         self._load_settings()
+        # Paint from the active axis (construct-time helpers may use cached fragments).
+        self.reapply_theme()
 
     def _setup_window(self):
         self.setWindowTitle("设置")
@@ -146,6 +133,8 @@ class SettingsWindow(QDialog):
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
         if hasattr(self, "_content_wrap"):
             self._content_wrap.setStyleSheet(f"background: {tok.BG};")
+        if hasattr(self, "_pages_host"):
+            self._pages_host.setStyleSheet(f"background: {tok.BG};")
         if hasattr(self, "_pages"):
             self._pages.setStyleSheet(f"background: {tok.BG};")
         if hasattr(self, "_sidebar"):
@@ -212,8 +201,17 @@ class SettingsWindow(QDialog):
             row.reapply_styles()
         for card in self.findChildren(CompactPickCard):
             card.reapply_styles()
+        for card in self.findChildren(ModelCard):
+            card.reapply_styles()
         for sw in self.findChildren(SwitchControl):
             sw.update()
+        # Hero card is rebuilt from live tokens (not QLabel viRole walk).
+        if hasattr(self, "_model_hero_layout"):
+            self._refresh_active_model_hero()
+        if hasattr(self, "_storage_summary_label"):
+            self._storage_summary_label.setStyleSheet(
+                f"color: {tok.TEXT_SEC}; font-size: 13px; background: transparent;"
+            )
 
         for frame in self.findChildren(QFrame):
             name = frame.objectName() or ""
@@ -317,15 +315,18 @@ class SettingsWindow(QDialog):
 
         for btn in self.findChildren(QPushButton):
             name = btn.objectName() or ""
-            if name in ("", "settingsNavBtn", "deviceSelectionLink", "themeModeSegBtn"):
+            if name in ("settingsNavBtn", "deviceSelectionLink", "themeModeSegBtn"):
                 continue
             # Ghost / primary buttons rebuilt from active styles when tagged.
+            # Do not skip empty objectName — most action buttons have none.
             role = btn.property("viBtn")
             if role == "primary":
                 btn.setStyleSheet(_settings_styles.BTN_PRIMARY)
             elif role == "ghostSm":
                 btn.setStyleSheet(_settings_styles.BTN_GHOST_SM)
 
+        if hasattr(self, "_llm_prompt_edit"):
+            self._paint_llm_prompt_edit()
         if hasattr(self, "_about_version_label"):
             self._about_version_label.setStyleSheet(
                 f"color: {tok.TEXT_SEC}; font-size: 11px; font-weight: 600;"
@@ -359,22 +360,25 @@ class SettingsWindow(QDialog):
         # auto-saved, so persistent action chrome would only consume space.
         content_wrap = QWidget()
         self._content_wrap = content_wrap
-        content_wrap.setStyleSheet(f"background: {_BG};")
+        content_wrap.setStyleSheet(f"background: {_tok.BG};")
         content_lay = QVBoxLayout(content_wrap)
         content_lay.setContentsMargins(0, 0, 0, 0)
         content_lay.setSpacing(0)
 
         pages_host = QWidget()
-        pages_host.setStyleSheet(f"background: {_BG};")
+        self._pages_host = pages_host
+        pages_host.setStyleSheet(f"background: {_tok.BG};")
         pages_lay = QHBoxLayout(pages_host)
-        pages_lay.setContentsMargins(20, 0, 20, 0)
+        # Top/bottom inset so section titles (e.g. 偏好) are not flush-clipped
+        # against the content column edge when scrolled.
+        pages_lay.setContentsMargins(20, 12, 20, 12)
         pages_lay.setSpacing(0)
 
         self._pages = QStackedWidget()
         self._pages.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
         )
-        self._pages.setStyleSheet(f"background: {_BG};")
+        self._pages.setStyleSheet(f"background: {_tok.BG};")
         self._pages.addWidget(self._create_general_page())
         self._pages.addWidget(self._create_model_page())
         self._pages.addWidget(self._create_polish_page())
@@ -423,8 +427,11 @@ class SettingsWindow(QDialog):
         # Product help under the field (not in prototype chrome); keep for usability.
         self._hotkey_hint = QLabel()
         self._hotkey_hint.setWordWrap(True)
+        self._hotkey_hint.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
         self._hotkey_hint.setStyleSheet(
-            f"color: {_TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f"color: {_tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
             f" background: transparent; padding: 0 16px 12px 16px;"
         )
         record_lay.addWidget(stacked_field_row("录音快捷键", self._hotkey_edit))
@@ -466,7 +473,7 @@ class SettingsWindow(QDialog):
         test_row_lay.setSpacing(6)
         self._mic_test_btn = QPushButton("测试声音（约 2 秒）")
         self._mic_test_btn.setProperty("viBtn", "primary")
-        self._mic_test_btn.setStyleSheet(_BTN_PRIMARY)
+        self._mic_test_btn.setStyleSheet(_settings_styles.BTN_PRIMARY)
         self._mic_test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._mic_test_btn.setFixedHeight(36)
         self._mic_test_btn.clicked.connect(self._run_mic_probe)
@@ -474,7 +481,7 @@ class SettingsWindow(QDialog):
         self._mic_test_status = QLabel("")
         self._mic_test_status.setProperty("viRole", "hint")
         self._mic_test_status.setStyleSheet(
-            f"color: {_TEXT_SEC}; font-size: 12px; background: transparent;"
+            f"color: {_tok.TEXT_SEC}; font-size: 12px; background: transparent;"
         )
         self._mic_test_status.setWordWrap(True)
         test_row_lay.addWidget(self._mic_test_status)
@@ -513,11 +520,13 @@ class SettingsWindow(QDialog):
         dev_btn_row.setSpacing(8)
         refresh_btn = QPushButton("刷新列表")
         refresh_btn.setProperty("viBtn", "ghostSm")
-        refresh_btn.setStyleSheet(_BTN_GHOST_SM)
+        refresh_btn.setMinimumHeight(32)
+        refresh_btn.setStyleSheet(_settings_styles.BTN_GHOST_SM)
         refresh_btn.clicked.connect(self._refresh_audio_device_lists)
         reset_btn = QPushButton("恢复自动选择")
         reset_btn.setProperty("viBtn", "ghostSm")
-        reset_btn.setStyleSheet(_BTN_GHOST_SM)
+        reset_btn.setMinimumHeight(32)
+        reset_btn.setStyleSheet(_settings_styles.BTN_GHOST_SM)
         reset_btn.setToolTip("让程序自动挑选设备，避免选到打不开的声卡")
         reset_btn.clicked.connect(self._reset_audio_devices_to_auto)
         dev_btn_row.addWidget(refresh_btn)
@@ -537,7 +546,7 @@ class SettingsWindow(QDialog):
         self._theme_combo.currentIndexChanged.connect(self._on_theme_mode_changed)
         theme_row = QWidget()
         theme_row_lay = QHBoxLayout(theme_row)
-        theme_row_lay.setContentsMargins(16, 12, 16, 12)
+        theme_row_lay.setContentsMargins(16, 10, 16, 10)
         theme_row_lay.setSpacing(12)
         theme_text = QWidget()
         theme_text_lay = QVBoxLayout(theme_text)
@@ -546,12 +555,12 @@ class SettingsWindow(QDialog):
         self._theme_title_label = QLabel("主题")
         self._theme_title_label.setProperty("viRole", "rowTitle")
         self._theme_title_label.setStyleSheet(
-            f"color: {_TEXT}; font-size: 13px; font-weight: 500; background: transparent;"
+            f"color: {_tok.TEXT}; font-size: 13px; font-weight: 500; background: transparent;"
         )
         self._theme_desc_label = QLabel("跟随系统时按 Windows 外观显示")
         self._theme_desc_label.setProperty("viRole", "rowSubtitle")
         self._theme_desc_label.setStyleSheet(
-            f"color: {_TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f"color: {_tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
             f" background: transparent;"
         )
         theme_text_lay.addWidget(self._theme_title_label)
@@ -579,22 +588,32 @@ class SettingsWindow(QDialog):
         self._history_retention_days_spin = QSpinBox()
         self._history_retention_days_spin.setRange(1, 3650)
         self._history_retention_days_spin.setSuffix(" 天")
-        self._history_retention_days_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
+        self._configure_numeric_spin(self._history_retention_days_spin)
         self._history_retention_days_spin.setAccessibleName("历史保留天数")
         self._history_max_entries_spin = QSpinBox()
         self._history_max_entries_spin.setRange(1, 100000)
         self._history_max_entries_spin.setSingleStep(100)
         self._history_max_entries_spin.setSuffix(" 场")
-        self._history_max_entries_spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
+        self._configure_numeric_spin(self._history_max_entries_spin)
         self._history_max_entries_spin.setAccessibleName("最多保留会话数")
         self._history_enabled_row.toggled.connect(self._on_history_enabled_toggled)
         self._history_retention_days_spin.valueChanged.connect(self._on_history_limits_changed)
         self._history_max_entries_spin.valueChanged.connect(self._on_history_limits_changed)
         prefs_lay.addWidget(self._history_enabled_row)
         prefs_lay.addWidget(group_divider())
-        prefs_lay.addWidget(labeled_row("保留天数", self._history_retention_days_spin))
+        self._history_retention_row = labeled_row(
+            "保留天数", self._history_retention_days_spin
+        )
+        self._history_max_entries_row = labeled_row(
+            "最大会话数", self._history_max_entries_spin
+        )
+        prefs_lay.addWidget(self._history_retention_row)
         prefs_lay.addWidget(group_divider())
-        prefs_lay.addWidget(labeled_row("最大会话数", self._history_max_entries_spin))
+        prefs_lay.addWidget(self._history_max_entries_row)
+        # Bottom inset so the last preference row is not flush with the card edge.
+        prefs_bottom = QWidget()
+        prefs_bottom.setFixedHeight(4)
+        prefs_lay.addWidget(prefs_bottom)
         page.add(settings_section("偏好", prefs_card))
 
         for rb in (self._src_mic_rb, self._src_sys_rb, self._src_mixed_rb):
@@ -611,10 +630,18 @@ class SettingsWindow(QDialog):
         self._general_footer_note.setObjectName("generalFooterNote")
         self._general_footer_note.setAccessibleName("设置保存与快捷键提示")
         page.add(self._general_footer_note)
-        # content_wrap already pads ~20px; page adds ~2px → ≈ prototype 22px.
-        page._layout.setContentsMargins(2, 20, 2, 28)
+        # Tight bottom inset — avoid a tall empty band past the footer note.
+        page._layout.setContentsMargins(2, 20, 2, 12)
         page.set_spacing(18)
         return page
+
+    def _configure_numeric_spin(self, spin: QSpinBox) -> None:
+        """Shared metrics for flat themed QSpinBox steppers."""
+        spin.setFixedWidth(_CONTROL_NUMERIC_WIDTH)
+        spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.UpDownArrows)
+        spin.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
     def _set_mic_test_status(self, text: str) -> None:
         if hasattr(self, "_mic_test_status"):
@@ -639,13 +666,14 @@ class SettingsWindow(QDialog):
         storage_lay.setSpacing(10)
         self._storage_summary_label = QLabel()
         self._storage_summary_label.setStyleSheet(
-            f"color: {_TEXT_SEC}; font-size: 13px; background: transparent;"
+            f"color: {_tok.TEXT_SEC}; font-size: 13px; background: transparent;"
         )
         self._storage_summary_label.setWordWrap(True)
         storage_lay.addWidget(self._storage_summary_label, 1)
         chg = QPushButton("更改存储…")
-        chg.setFixedHeight(32)
-        chg.setStyleSheet(_BTN_GHOST_SM)
+        chg.setProperty("viBtn", "ghostSm")
+        chg.setMinimumHeight(32)
+        chg.setStyleSheet(_settings_styles.BTN_GHOST_SM)
         chg.clicked.connect(self._change_model_dir)
         storage_lay.addWidget(chg)
         page.add(settings_section("存储", storage_group))
@@ -745,34 +773,45 @@ class SettingsWindow(QDialog):
 
         head = QHBoxLayout()
         title = QLabel(info["name"])
+        title.setProperty("viRole", "engineHeroTitle")
         title.setStyleSheet(
-            f"color: {_TEXT}; font-family: {_FONT_DISPLAY}; font-size: 18px;"
+            f"color: {_tok.TEXT}; font-family: {_tok.FONT_DISPLAY}; font-size: 18px;"
             f" font-weight: 600; background: transparent;"
         )
         head.addWidget(title)
         badge = QLabel("当前引擎")
+        badge.setProperty("viRole", "engineHeroBadge")
         badge.setStyleSheet(
-            f"background: {_SURFACE_PEARL}; color: {_TEXT_SEC};"
-            f" border-radius: {_RADIUS_PILL}px; padding: 3px 10px;"
+            f"background: {_tok.ACCENT_SOFT}; color: {_tok.ACCENT_TEXT};"
+            f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
             f" font-size: 11px; font-weight: 600;"
         )
         head.addWidget(badge)
         head.addStretch()
         size = QLabel(f"{info['size_mb']} MB")
-        size.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;")
+        size.setProperty("viRole", "engineHeroSize")
+        size.setStyleSheet(
+            f"color: {_tok.TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
         head.addWidget(size)
         lay.addLayout(head)
 
         desc = QLabel(info["description"])
+        desc.setProperty("viRole", "engineHeroDesc")
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {_TEXT_SEC}; font-size: 13px; background: transparent;")
+        desc.setStyleSheet(
+            f"color: {_tok.TEXT_SEC}; font-size: 13px; background: transparent;"
+        )
         lay.addWidget(desc)
 
         meta = QLabel(
             f"{info['languages']} · "
             f"{format_model_ratings(info['accuracy'], info['speed'])}"
         )
-        meta.setStyleSheet(f"color: {_TEXT_DIM}; font-size: 12px; background: transparent;")
+        meta.setProperty("viRole", "engineHeroMeta")
+        meta.setStyleSheet(
+            f"color: {_tok.TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
         meta.setToolTip(RATING_TOOLTIP)
         lay.addWidget(meta)
 
@@ -799,7 +838,7 @@ class SettingsWindow(QDialog):
             if title:
                 hdr = QLabel(title)
                 hdr.setStyleSheet(
-                    f"color: {_TEXT_SEC}; font-size: 12px; font-weight: 600;"
+                    f"color: {_tok.TEXT_SEC}; font-size: 12px; font-weight: 600;"
                     f" padding: 0 4px; background: transparent;"
                     f" letter-spacing: 0.02em;"
                 )
@@ -944,61 +983,55 @@ class SettingsWindow(QDialog):
         self._llm_key_edit = QLineEdit()
         self._llm_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._llm_key_edit.setPlaceholderText("sk-...")
+        self._llm_key_edit.setMinimumHeight(36)
         self._llm_key_toggle = QPushButton("显示")
-        self._llm_key_toggle.setFixedWidth(52)
+        self._style_llm_action_btn(self._llm_key_toggle)
         self._llm_key_toggle.setCheckable(True)
-        self._llm_key_toggle.setStyleSheet(_BTN_GHOST_SM)
         self._llm_key_toggle.toggled.connect(
             self._toggle_llm_key_visibility
         )
         key_row.addWidget(self._llm_key_edit, 1)
-        key_row.addWidget(self._llm_key_toggle)
+        key_row.addWidget(
+            self._llm_key_toggle, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         conn_lay.addWidget(group_divider())
         conn_lay.addWidget(stacked_field_row("API 密钥", key_wrap))
+
+        model_wrap = QWidget()
+        model_row = QHBoxLayout(model_wrap)
+        model_row.setContentsMargins(0, 0, 0, 0)
+        model_row.setSpacing(8)
         self._llm_model_edit = QLineEdit()
         self._llm_model_edit.setPlaceholderText("deepseek-chat")
-        conn_lay.addWidget(group_divider())
-        conn_lay.addWidget(stacked_field_row("模型名称", self._llm_model_edit))
-
-        test_inner = QWidget()
-        test_row = QHBoxLayout(test_inner)
-        test_row.setContentsMargins(0, 0, 0, 0)
-        test_row.addStretch()
+        self._llm_model_edit.setMinimumHeight(36)
+        self._llm_url_edit.setMinimumHeight(36)
         self._llm_test_btn = QPushButton("测试连接")
-        self._llm_test_btn.setStyleSheet(_BTN_GHOST_SM)
-        self._llm_test_btn.setFixedHeight(32)
+        self._style_llm_action_btn(self._llm_test_btn)
         self._llm_test_btn.clicked.connect(self._test_llm)
-        test_row.addWidget(self._llm_test_btn)
+        model_row.addWidget(self._llm_model_edit, 1)
+        model_row.addWidget(
+            self._llm_test_btn, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         conn_lay.addWidget(group_divider())
-        conn_lay.addWidget(inline_action_row(test_inner, margins=(16, 8, 16, 12)))
+        conn_lay.addWidget(stacked_field_row("模型名称", model_wrap))
         c_lay.addWidget(settings_section("接口配置", conn_group))
 
         prompt_group = settings_group()
         prompt_lay = QVBoxLayout(prompt_group)
         prompt_lay.setContentsMargins(16, 12, 16, 12)
         prompt_lay.setSpacing(8)
-        ph = QHBoxLayout()
-        ph.setContentsMargins(0, 0, 0, 0)
-        ph.addStretch()
+        prompt_head = QHBoxLayout()
+        prompt_head.setContentsMargins(0, 0, 0, 0)
+        prompt_head.setSpacing(8)
+        prompt_head.addStretch(1)
         self._prompt_reset_btn = QPushButton("恢复默认")
-        self._prompt_reset_btn.setStyleSheet(_BTN_GHOST_SM)
-        self._prompt_reset_btn.setFixedHeight(28)
+        self._style_llm_action_btn(self._prompt_reset_btn)
         self._prompt_reset_btn.clicked.connect(self._reset_prompt)
-        ph.addWidget(self._prompt_reset_btn)
-        prompt_lay.addLayout(ph)
+        prompt_head.addWidget(self._prompt_reset_btn)
+        prompt_lay.addLayout(prompt_head)
         self._llm_prompt_edit = QTextEdit()
         self._llm_prompt_edit.setFixedHeight(128)
-        self._llm_prompt_edit.setStyleSheet(f"""
-            QTextEdit {{
-                background: {_INPUT_BG}; color: {_TEXT};
-                border: 1px solid {_HAIRLINE}; border-radius: {_RADIUS_MD}px;
-                padding: 10px 12px; font-size: 13px; font-family: {_FONT};
-            }}
-            QTextEdit:focus {{
-                border: 2px solid {_ACCENT_FOCUS};
-                padding: 9px 11px;
-            }}
-        """)
+        self._paint_llm_prompt_edit()
         self._llm_prompt_edit.setPlaceholderText("留空则使用内置默认提示词")
         prompt_lay.addWidget(self._llm_prompt_edit)
         c_lay.addWidget(settings_section("提示词", prompt_group))
@@ -1022,21 +1055,76 @@ class SettingsWindow(QDialog):
         return page
 
     def _on_llm_enable_toggled(self, enabled: bool):
+        # Keep the enable row visually stable while the tall config block
+        # mounts/unmounts (avoids scroll jumping the switch under the cursor).
+        page = self._polish_scroll_page()
+        anchor_y = 0
+        scroll_before = 0
+        if page is not None and page.widget() is not None:
+            anchor_y = self._llm_enable_row.mapTo(page.widget(), self._llm_enable_row.rect().topLeft()).y()
+            scroll_before = page.verticalScrollBar().value()
+
         self._llm_container.setVisible(enabled)
         self._llm_preview_card.setVisible(True)
         if hasattr(self, "_llm_preview_divider"):
             self._llm_preview_divider.setVisible(True)
         self._refresh_polish_hero_status()
+
+        if page is not None and page.widget() is not None:
+            def _restore() -> None:
+                if page.widget() is None:
+                    return
+                new_y = self._llm_enable_row.mapTo(
+                    page.widget(), self._llm_enable_row.rect().topLeft()
+                ).y()
+                page.verticalScrollBar().setValue(
+                    max(0, scroll_before + (new_y - anchor_y))
+                )
+                page._sync_scroll_gutter(
+                    page.verticalScrollBar().minimum(),
+                    page.verticalScrollBar().maximum(),
+                )
+
+            QTimer.singleShot(0, _restore)
+
         if self._loading:
             return
         self._config.set("llm.enabled", enabled)
         self._flush_llm_fields()
+
+    def _polish_scroll_page(self):
+        w = self._llm_enable_row.parentWidget()
+        while w is not None:
+            if isinstance(w, SettingsPage):
+                return w
+            w = w.parentWidget()
+        return None
 
     def _toggle_llm_key_visibility(self, visible: bool) -> None:
         self._llm_key_edit.setEchoMode(
             QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password
         )
         self._llm_key_toggle.setText("隐藏" if visible else "显示")
+
+    def _style_llm_action_btn(self, btn: QPushButton) -> None:
+        """Shared metrics so polish actions share one right-edge column."""
+        btn.setProperty("viBtn", "ghostSm")
+        btn.setFixedWidth(_LLM_ACTION_BTN_WIDTH)
+        btn.setMinimumHeight(32)
+        btn.setStyleSheet(_settings_styles.BTN_GHOST_SM)
+
+    def _paint_llm_prompt_edit(self) -> None:
+        self._llm_prompt_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background: {_tok.INPUT_BG}; color: {_tok.TEXT};
+                border: 1px solid {_tok.HAIRLINE}; border-radius: {_tok.RADIUS_MD}px;
+                padding: 10px 12px; font-size: 13px; font-family: {_tok.FONT};
+            }}
+            QTextEdit:focus {{
+                border: 2px solid {_tok.ACCENT_FOCUS};
+                padding: 9px 11px;
+            }}
+        """)
 
     def _reset_prompt(self):
         from voiceink.text_polisher import POLISH_PROMPT
@@ -1062,16 +1150,16 @@ class SettingsWindow(QDialog):
         brand_name = QLabel("VoiceInk")
         brand_name.setProperty("viRole", "kvKey")
         brand_name.setStyleSheet(
-            f"color: {_TEXT}; font-size: 13px; font-weight: 550;"
+            f"color: {_tok.TEXT}; font-size: 13px; font-weight: 550;"
             f" background: transparent;"
         )
         brand_lay.addWidget(brand_name)
         brand_lay.addStretch(1)
         self._about_version_label = QLabel(f"版本 {VERSION}")
         self._about_version_label.setStyleSheet(
-            f"color: {_TEXT_SEC}; font-size: 11px; font-weight: 600;"
-            f" background: {_SURFACE_PEARL}; border: 1px solid {_HAIRLINE};"
-            f" border-radius: {_RADIUS_PILL}px; padding: 3px 10px;"
+            f"color: {_tok.TEXT_SEC}; font-size: 11px; font-weight: 600;"
+            f" background: {_tok.SURFACE_PEARL}; border: 1px solid {_tok.HAIRLINE};"
+            f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
         )
         brand_lay.addWidget(self._about_version_label)
         self._about_info_lay.addWidget(brand_row)
@@ -1222,7 +1310,7 @@ class SettingsWindow(QDialog):
     def _add_sep(layout: QVBoxLayout):
         s = QFrame()
         s.setFixedHeight(1)
-        s.setStyleSheet(f"background: {_BAR_OFF};")
+        s.setStyleSheet(f"background: {_tok.BAR_OFF};")
         layout.addWidget(s)
 
     # ── Load / Save ────────────────────────────────────

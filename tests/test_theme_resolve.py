@@ -141,6 +141,93 @@ class TestSettingsAppearanceEntry:
             win.close()
             apply_theme(mode="light")
 
+    def test_light_reapply_clears_dark_settings_chrome(self, tmp_path: Path, monkeypatch):
+        """Regression: dark→light must refresh pages host, ghost buttons, prompt edit."""
+        import sys
+
+        from PyQt6.QtWidgets import QApplication, QLabel
+
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.model_card import ModelCard
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        card = ModelCard(
+            {
+                "id": "demo",
+                "name": "示例模型",
+                "size_mb": 12,
+                "description": "测试",
+                "languages": "中文",
+                "accuracy": 5,
+                "speed": 4,
+            },
+            is_downloaded=False,
+            is_active=False,
+            parent=win,
+        )
+        try:
+            apply_theme(mode="dark", surfaces=(win,))
+            card.reapply_styles()
+            assert "#1F2937" in card.styleSheet().upper()
+
+            apply_theme(mode="light", surfaces=(win,))
+            card.reapply_styles()
+            assert tok.BG.upper() == "#F3F4F6"
+            assert "#F3F4F6" in win._pages_host.styleSheet().upper()
+            assert "#111827" not in win._pages_host.styleSheet().upper()
+
+            ghost = win._llm_key_toggle.styleSheet().upper()
+            assert tok.SURFACE_PEARL.upper() in ghost
+            assert "#374151" not in ghost
+
+            prompt = win._llm_prompt_edit.styleSheet().upper()
+            assert tok.INPUT_BG.upper() in prompt
+            assert "#1F2937" not in prompt
+
+            assert tok.SURFACE.upper() in card.styleSheet().upper()
+            assert "#1F2937" not in card.styleSheet().upper()
+
+            # Current-engine hero must repaint with light TEXT (not pale-on-white).
+            win._rebuild_model_cards = lambda: None  # type: ignore[method-assign]
+            # Force hero rebuild under light tokens with a stubbed active model.
+            from voiceink.speech_recognizer import DEFAULT_MODEL_ID, MODEL_REGISTRY
+
+            info = next(m for m in MODEL_REGISTRY if m["id"] == DEFAULT_MODEL_ID)
+            monkeypatch.setattr(
+                "voiceink.speech_recognizer.get_model_info", lambda _id: info
+            )
+            monkeypatch.setattr(
+                "voiceink.speech_recognizer.is_model_downloaded", lambda _id: True
+            )
+            win._config.set("stt.model_id", DEFAULT_MODEL_ID)
+            win._refresh_active_model_hero()
+            title = next(
+                lb for lb in win._model_hero_host.findChildren(QLabel)
+                if lb.property("viRole") == "engineHeroTitle"
+            )
+            assert tok.TEXT.upper() in title.styleSheet().upper()
+            assert "#F9FAFB" not in title.styleSheet().upper()
+            badge = next(
+                lb for lb in win._model_hero_host.findChildren(QLabel)
+                if lb.property("viRole") == "engineHeroBadge"
+            )
+            assert tok.ACCENT_TEXT.upper() in badge.styleSheet().upper()
+
+            # Polish action buttons share one right-edge column width.
+            assert win._llm_key_toggle.width() == win._llm_test_btn.width() == win._prompt_reset_btn.width()
+        finally:
+            card.close()
+            win.close()
+            apply_theme(mode="light")
+
 
 class TestSurfaceThemeReapply:
     def test_system_mode_updates_application_palette_for_both_axes(self):

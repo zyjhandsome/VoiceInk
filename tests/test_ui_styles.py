@@ -345,6 +345,19 @@ class TestCursorInspiredSettingsPolish:
         finally:
             sw.close()
 
+    def test_switch_track_is_compact(self):
+        from voiceink.ui.settings_components import SwitchControl
+
+        assert SwitchControl._TRACK_W == 36
+        assert SwitchControl._TRACK_H == 20
+
+    def test_ghost_sm_button_reserves_cjk_label_space(self):
+        import voiceink.ui.settings_styles as st
+
+        assert "min-height: 32px" in st.BTN_GHOST_SM
+        assert "font-size: 13px" in st.BTN_GHOST_SM
+        assert "QPushButton:checked" in st.BTN_GHOST_SM
+
     def test_labeled_row_puts_control_on_the_right(self):
         import sys
 
@@ -394,9 +407,17 @@ class TestSettingsControlAlignment:
         assert f"border-radius: {RADIUS_MD}px" in st.WINDOW_CSS
         assert "QSpinBox:focus" in st.WINDOW_CSS
         assert f"2px solid {ACCENT_FOCUS}" in st.WINDOW_CSS
-        # Styling ::up/down-button without arrows clears native steppers on Windows.
-        assert "QSpinBox::up-button" not in st.WINDOW_CSS
-        assert "QSpinBox::down-button" not in st.WINDOW_CSS
+        # Flat steppers: buttons + explicit chevron images (bare buttons hide arrows).
+        assert "QSpinBox::up-button" in st.WINDOW_CSS
+        assert "QSpinBox::down-button" in st.WINDOW_CSS
+        assert "QSpinBox::up-arrow" in st.WINDOW_CSS
+        assert "QSpinBox::down-arrow" in st.WINDOW_CSS
+        assert "spin_chevron_up.png" in st.WINDOW_CSS
+        assert "min-height: 32px" in st.build_spinbox_css()
+        from pathlib import Path
+
+        assert Path(st._spin_arrow_urls()[0]).is_file()
+        assert Path(st._spin_arrow_urls()[1]).is_file()
         # Same pitfall for combos: ::drop-down without ::down-arrow hides the chevron.
         assert "QComboBox::drop-down" not in st.WINDOW_CSS
         assert "QComboBox {" in st.WINDOW_CSS
@@ -460,9 +481,9 @@ class TestSettingsControlAlignment:
         import sys
 
         from PyQt6.QtCore import Qt
-        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication, QSizePolicy
 
-        from voiceink.ui.settings_components import SettingsPage
+        from voiceink.ui.settings_components import SettingsPage, footnote
 
         QApplication.instance() or QApplication(sys.argv)
         page = SettingsPage()
@@ -471,5 +492,15 @@ class TestSettingsControlAlignment:
                 page.verticalScrollBarPolicy()
                 == Qt.ScrollBarPolicy.ScrollBarAsNeeded
             )
+            # No overflow → reserve gutter so later tall content won't widen/narrow.
+            page._sync_scroll_gutter(0, 0)
+            assert page.viewportMargins().right() > 0
+            page._sync_scroll_gutter(0, 100)
+            assert page.viewportMargins().right() == 0
+            body = page.widget()
+            assert body is not None
+            assert body.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Maximum
+            note = footnote("测试脚注换行高度不应虚高")
+            assert note.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Maximum
         finally:
             page.close()

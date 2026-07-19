@@ -99,7 +99,7 @@ Effective theme is always `light` or `dark`.
 | `SPACE_LG` / `--space-lg` | `24px` | Section padding |
 | `SPACE_XL` | `32px` | Large gaps |
 | `SIDEBAR_WIDTH` | `248px` | Settings rail |
-| `CONTROL_NUMERIC_WIDTH` | `120px` | History spinboxes (alignment spec) |
+| `CONTROL_NUMERIC_WIDTH` | `120px` | History spinboxes (flat stepper + suffix) |
 
 ### Shape
 
@@ -135,7 +135,7 @@ Effective theme is always `light` or `dark`.
 ### Inputs
 
 - Surface / input bg, control border, focus ring accent
-- Numeric spinboxes share `CONTROL_NUMERIC_WIDTH` (120px)
+- Numeric spinboxes share `CONTROL_NUMERIC_WIDTH` (120px); flat up/down PNG chevrons
 
 ### Floating window
 

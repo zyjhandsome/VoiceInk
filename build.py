@@ -127,6 +127,9 @@ def build():
         print(f"\n[ERROR] Missing runtime hook: {win_dll_rthook}")
         sys.exit(1)
 
+    import os
+
+    spin_icons = SCRIPT_DIR / "voiceink" / "ui" / "icons"
     args = [
         main_script,
         f"--name={app_name}",
@@ -137,6 +140,8 @@ def build():
         "--clean",
         f"--runtime-hook={win_dll_rthook}",
         f"--icon={SCRIPT_DIR / 'voiceink' / 'icon.ico'}",
+        # Non-imported PNG steppers used by settings QSS (Path(__file__).parent/icons).
+        f"--add-data={spin_icons}{os.pathsep}voiceink/ui/icons",
     ]
 
     if sys.platform == "win32":

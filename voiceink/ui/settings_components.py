@@ -67,7 +67,7 @@ def reload_styles() -> None:
     )
     PAGE_TITLE = (
         f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY}; font-size: 20px;"
-        f" font-weight: 600; letter-spacing: 0;"
+        f" font-weight: 600; letter-spacing: 0; padding: 2px 0 0 0;"
     )
     PAGE_SUBTITLE = (
         f"color: {tok.TEXT_DIM}; font-size: 13px; padding: 0;"
@@ -262,8 +262,10 @@ class PageHero(QWidget):
             f"color: {TEXT_DIM}; font-size: 12px; font-weight: 500;"
             f" background: transparent;"
         )
+        # Reserve status width so 已关闭 ↔ 已开启 · … does not shove the title.
+        self._inline_status.setMinimumWidth(120)
         self._inline_status.setSizePolicy(
-            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
         )
         self._inline_status.setVisible(False)
         top.addWidget(self._inline_status, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -398,6 +400,9 @@ def footnote(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setProperty("viRole", "footnote")
     lbl.setWordWrap(True)
+    # Maximum: word-wrapped QLabels otherwise report a huge heightHint inside
+    # QScrollArea and leave a tall empty band below the last line of text.
+    lbl.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
     lbl.setStyleSheet(FOOTNOTE)
     return lbl
 
@@ -476,8 +481,16 @@ def settings_group() -> QFrame:
     return frame
 
 
-def settings_section(title: str, group: QFrame) -> QWidget:
-    """Section title above a soft white settings container."""
+def settings_section(
+    title: str,
+    group: QFrame,
+    *,
+    header_action: QWidget | None = None,
+) -> QWidget:
+    """Section title above a soft white settings container.
+
+    Optional ``header_action`` sits on the title row (e.g. 恢复默认).
+    """
     wrap = QWidget()
     wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
     lay = QVBoxLayout(wrap)
@@ -488,10 +501,19 @@ def settings_section(title: str, group: QFrame) -> QWidget:
         hdr.setObjectName("settingsGroupTitle")
         hdr.setStyleSheet(
             f"color: {TEXT_DIM}; font-size: 12px; font-weight: 600;"
-            f" padding: 0 2px 2px 2px; background: transparent;"
+            f" padding: 2px 2px 2px 2px; background: transparent;"
             f" letter-spacing: 0;"
         )
-        lay.addWidget(hdr)
+        if header_action is None:
+            lay.addWidget(hdr)
+        else:
+            head = QHBoxLayout()
+            head.setContentsMargins(0, 0, 0, 0)
+            head.setSpacing(8)
+            head.addWidget(hdr, 0, Qt.AlignmentFlag.AlignVCenter)
+            head.addStretch(1)
+            head.addWidget(header_action, 0, Qt.AlignmentFlag.AlignVCenter)
+            lay.addLayout(head)
     lay.addWidget(group)
     return wrap
 
@@ -1161,7 +1183,8 @@ class ThemeModeSegment(QWidget):
                     color: {tok.TEXT_SEC};
                     font-size: 12px;
                     font-weight: 500;
-                    padding: 6px 12px;
+                    padding: 5px 10px;
+                    min-height: 28px;
                     border-radius: 6px;
                 }}
                 QPushButton#themeModeSegBtn:checked {{
@@ -1398,21 +1421,22 @@ class SettingsSidebar(QWidget):
             }}
         """)
         status_lay = QVBoxLayout(status_card)
-        status_lay.setContentsMargins(10, 8, 10, 8)
-        status_lay.setSpacing(2)
+        status_lay.setContentsMargins(12, 10, 12, 10)
+        status_lay.setSpacing(4)
 
         self._status_primary = QLabel("")
         self._status_primary.setWordWrap(True)
         self._status_primary.setStyleSheet(
             f"color: {TEXT_DIM}; font-size: 11px; font-weight: 500;"
-            f" background: transparent;"
+            f" background: transparent; padding: 0;"
         )
         status_lay.addWidget(self._status_primary)
 
         self._status_secondary = QLabel("")
-        self._status_secondary.setWordWrap(False)
+        self._status_secondary.setWordWrap(True)
         self._status_secondary.setStyleSheet(
             f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+            f" padding: 0;"
         )
         status_lay.addWidget(self._status_secondary)
 
@@ -1479,8 +1503,8 @@ class SettingsSidebar(QWidget):
 def _option_text_column(title: str, subtitle: str) -> QWidget:
     wrap = QWidget()
     lay = QHBoxLayout(wrap)
-    # Prototype .row: padding 12px 16px; min-height ~52 with switch.
-    lay.setContentsMargins(SPACE_MD, 12, SPACE_SM, 12)
+    # Row padding tuned for 36×20 switch + 13px title (was 12/12 for 42×24).
+    lay.setContentsMargins(SPACE_MD, 10, SPACE_SM, 10)
     lay.setSpacing(0)
     lay.addWidget(option_row(title, subtitle), 1)
     return wrap
@@ -1522,13 +1546,13 @@ class RadioOptionRow(QWidget):
 
 
 class SwitchControl(QCheckBox):
-    """Prototype v3 pill switch: gray off track, green on, white knob."""
+    """Compact pill switch: gray off track, green on, white knob."""
 
     toggled = pyqtSignal(bool)
 
-    # Match prototypes/settings-general-variants.html .toggle (42×24).
-    _TRACK_W = 42
-    _TRACK_H = 24
+    # Slightly smaller than prototype 42×24 so switches don't dominate row text.
+    _TRACK_W = 36
+    _TRACK_H = 20
     _KNOB_MARGIN = 2
 
     def __init__(self, parent=None):
@@ -1638,7 +1662,7 @@ class SwitchControl(QCheckBox):
         radius = h / 2.0
         on = self._checked or self._knob_pos > 0.5
 
-        # Flat pill track (prototype .toggle) — no custom focus ring chrome.
+        # Flat pill track — no custom focus ring chrome.
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self._track_color())
         p.drawRoundedRect(0, 0, w, h, radius, radius)
@@ -1648,8 +1672,8 @@ class SwitchControl(QCheckBox):
         knob_x = self._KNOB_MARGIN + int(travel * self._knob_pos)
         knob_y = self._KNOB_MARGIN
 
-        # Prototype shadow-sm under the white knob.
-        shadow = QColor(0, 0, 0, 20 if on else 14)
+        # Hairline shadow only — heavy drop-shadow made the control feel chunky.
+        shadow = QColor(0, 0, 0, 10 if on else 6)
         p.setBrush(shadow)
         p.drawEllipse(knob_x, knob_y + 1, knob_d, knob_d)
 
@@ -1720,7 +1744,7 @@ class ToggleOptionRow(QWidget):
         lay.setSpacing(12)
         lay.addWidget(text_col, 1)
         lay.addWidget(switch_slot, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
-        self.setMinimumHeight(52)
+        self.setMinimumHeight(48)
 
     def reapply_styles(self) -> None:
         from voiceink.ui import design_tokens as tok
@@ -1820,14 +1844,33 @@ class SettingsPage(QScrollArea):
         self.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         body = QWidget()
+        # Maximum keeps the scroll document as tall as real content — not the
+        # viewport — so AlignTop slack is not scrollable empty space.
         body.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
         self._layout = QVBoxLayout(body)
         self._layout.setContentsMargins(PAGE_MARGIN_H, PAGE_MARGIN_V, PAGE_MARGIN_H, PAGE_MARGIN_V)
         self._layout.setSpacing(SPACE_LG + SPACE_XS)  # 24+8 — clearer section rhythm
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.setWidget(body)
+        # Keep AsNeeded, but reserve the bar gutter when it is hidden so
+        # tall sections (e.g. 润色接口配置) don't shift rows horizontally.
+        self.verticalScrollBar().rangeChanged.connect(self._sync_scroll_gutter)
+        self._sync_scroll_gutter(
+            self.verticalScrollBar().minimum(),
+            self.verticalScrollBar().maximum(),
+        )
+
+    def _sync_scroll_gutter(self, vmin: int = 0, vmax: int = 0) -> None:
+        bar = self.verticalScrollBar()
+        gutter = bar.sizeHint().width()
+        if gutter <= 0:
+            gutter = 6
+        if vmax > vmin:
+            self.setViewportMargins(0, 0, 0, 0)
+        else:
+            self.setViewportMargins(0, 0, gutter, 0)
 
     def set_compact(self, compact: bool = True) -> None:
         m = (18, 12, 18, 14) if compact else (PAGE_MARGIN_H, PAGE_MARGIN_V, PAGE_MARGIN_H, PAGE_MARGIN_V)

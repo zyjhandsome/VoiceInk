@@ -34,6 +34,7 @@ PAGE_MARGIN_V = 16
 CONTENT_MAX_WIDTH = 9999
 SIDEBAR_WIDTH = 248
 
+# Wide enough for values like「5500 场」plus a 22px flat stepper column.
 CONTROL_NUMERIC_WIDTH = 120
 CONTROL_DEVICE_COMBO_WIDTH = 320
 
@@ -75,6 +76,8 @@ _LIGHT: dict[str, Any] = {
     "TEXT_SEC": "#4B5563",
     "TEXT_DIM": "#667085",
     "TEXT_MUTED_DARK": "#CCCCCC",
+    # Keep AA contrast as small text on BG; visual weight of switches is
+    # reduced via track size / shadow, not by lightening this green.
     "GREEN": "#15803D",
     "GREEN_BG": "#DCFCE7",
     "RED": "#C81E1E",
@@ -141,7 +144,8 @@ _DARK: dict[str, Any] = {
     "TEXT_SEC": "#D1D5DB",
     "TEXT_DIM": "#9CA3AF",
     "TEXT_MUTED_DARK": "#9CA3AF",
-    "GREEN": "#22C55E",
+    # Mid green (not neon #22C55E) so dark-theme ON switches stay quieter.
+    "GREEN": "#16A34A",
     "GREEN_BG": "#14532D",
     "RED": "#F87171",
     "RED_BG": "#7F1D1D",
@@ -154,8 +158,8 @@ _DARK: dict[str, Any] = {
     "CONTROL_BORDER_HOVER": "#6B7280",
     "TOGGLE_OFF": "#4B5563",
     "TOGGLE_OFF_HOVER": "#6B7280",
-    "TOGGLE_ON": "#22C55E",
-    "TOGGLE_ON_HOVER": "#16A34A",
+    "TOGGLE_ON": "#16A34A",
+    "TOGGLE_ON_HOVER": "#15803D",
     "ROW_HOVER": "rgba(255, 255, 255, 0.06)",
     "FOCUS_RING": "2px solid #3B82F6",
     "TRAY_MENU_BORDER": "#374151",
