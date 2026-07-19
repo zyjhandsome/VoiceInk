@@ -358,10 +358,56 @@ class TestCursorInspiredSettingsPolish:
 
     def test_ghost_sm_button_reserves_cjk_label_space(self):
         import voiceink.ui.settings_styles as st
+        from voiceink.ui.design_tokens import (
+            CONTROL_BTN_SM_FONT_PX,
+            CONTROL_BTN_SM_HEIGHT,
+        )
 
-        assert "min-height: 32px" in st.BTN_GHOST_SM
-        assert "font-size: 13px" in st.BTN_GHOST_SM
+        assert f"min-height: {CONTROL_BTN_SM_HEIGHT}px" in st.BTN_GHOST_SM
+        assert f"max-height: {CONTROL_BTN_SM_HEIGHT}px" in st.BTN_GHOST_SM
+        assert f"font-size: {CONTROL_BTN_SM_FONT_PX}px" in st.BTN_GHOST_SM
         assert "QPushButton:checked" in st.BTN_GHOST_SM
+
+    def test_accent_and_ghost_sm_share_size_box(self):
+        import voiceink.ui.settings_styles as st
+        from voiceink.ui.design_tokens import (
+            CONTROL_BTN_SM_FONT_PX,
+            CONTROL_BTN_SM_HEIGHT,
+            CONTROL_BTN_SM_PAD_H,
+        )
+
+        for sheet in (st.BTN_ACCENT_SM, st.BTN_GHOST_SM):
+            assert f"min-height: {CONTROL_BTN_SM_HEIGHT}px" in sheet
+            assert f"max-height: {CONTROL_BTN_SM_HEIGHT}px" in sheet
+            assert f"font-size: {CONTROL_BTN_SM_FONT_PX}px" in sheet
+            assert f"padding: 0px {CONTROL_BTN_SM_PAD_H}px" in sheet
+            assert "border: 1px solid" in sheet
+
+    def test_model_card_select_and_delete_match_height(self):
+        from voiceink.ui.design_tokens import CONTROL_BTN_SM_HEIGHT
+        from voiceink.ui.model_card import ModelCard
+
+        card = ModelCard(
+            {
+                "id": "demo",
+                "name": "示例模型",
+                "size_mb": 12,
+                "description": "测试",
+                "languages": "中文",
+                "accuracy": 5,
+                "speed": 4,
+            },
+            is_downloaded=True,
+            is_active=False,
+        )
+        try:
+            assert card._select_btn is not None
+            assert card._delete_btn is not None
+            assert card._select_btn.height() == CONTROL_BTN_SM_HEIGHT
+            assert card._delete_btn.height() == CONTROL_BTN_SM_HEIGHT
+            assert card._select_btn.height() == card._delete_btn.height()
+        finally:
+            card.close()
 
     def test_labeled_row_puts_control_on_the_right(self):
         import sys

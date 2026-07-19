@@ -205,32 +205,45 @@ def build_btn_ghost() -> str:
 """
 
 
+def _btn_sm_metrics() -> tuple[int, int, int, int]:
+    """height, pad_h, focus_pad_h, font_px — shared accent/ghost SM box."""
+    h = t.CONTROL_BTN_SM_HEIGHT
+    pad_h = t.CONTROL_BTN_SM_PAD_H
+    return h, pad_h, max(0, pad_h - 1), t.CONTROL_BTN_SM_FONT_PX
+
+
 def build_btn_ghost_sm() -> str:
-    # min-height + balanced padding keeps CJK (显示/恢复默认) from clipping
-    # when Fusion paints the label inside the border box.
+    # Same outer box as accent SM (1px border + fixed height + 0 vertical pad).
+    h, pad_h, focus_pad_h, font_px = _btn_sm_metrics()
     return f"""
     QPushButton {{
-        background: {t.SURFACE_PEARL}; color: {t.TEXT_SEC}; border: 1px solid {t.HAIRLINE};
-        border-radius: {t.RADIUS_SM}px; padding: 6px 12px; font-size: 13px;
-        font-weight: 500; min-height: 32px;
+        background: {t.SURFACE_PEARL}; color: {t.TEXT_SEC};
+        border: 1px solid {t.HAIRLINE};
+        border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
+        font-weight: 500; min-height: {h}px; max-height: {h}px;
     }}
     QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; border-color: {t.CONTROL_BORDER}; }}
     QPushButton:checked {{
         background: {t.SURFACE}; color: {t.TEXT}; border: 1px solid {t.CONTROL_BORDER};
     }}
-    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 5px 11px; }}
+    QPushButton:focus {{
+        border: 2px solid {t.ACCENT_FOCUS}; padding: 0px {focus_pad_h}px;
+    }}
 """
 
 
 def build_btn_danger_sm() -> str:
+    h, pad_h, focus_pad_h, font_px = _btn_sm_metrics()
     return f"""
     QPushButton {{
         background: transparent; color: {t.RED}; border: 1px solid {t.RED_BG};
-        border-radius: {t.RADIUS_SM}px; padding: 6px 12px; font-size: 13px;
-        font-weight: 500; min-height: 32px;
+        border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
+        font-weight: 500; min-height: {h}px; max-height: {h}px;
     }}
     QPushButton:hover {{ background: {t.RED_BG}; color: {t.RED}; }}
-    QPushButton:focus {{ border: 2px solid {t.ACCENT_FOCUS}; padding: 5px 11px; }}
+    QPushButton:focus {{
+        border: 2px solid {t.ACCENT_FOCUS}; padding: 0px {focus_pad_h}px;
+    }}
 """
 
 
@@ -246,13 +259,26 @@ def build_btn_green_sm() -> str:
 
 
 def build_btn_accent_sm() -> str:
+    # 1px border matching fill keeps the box identical to ghost SM.
+    h, pad_h, focus_pad_h, font_px = _btn_sm_metrics()
     return f"""
     QPushButton {{
-        background: {t.PRIMARY_CONTAINER}; color: white; border: none;
-        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+        background: {t.PRIMARY_CONTAINER}; color: white;
+        border: 1px solid {t.PRIMARY_CONTAINER};
+        border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
+        font-weight: 600; min-height: {h}px; max-height: {h}px;
     }}
-    QPushButton:hover {{ background: {t.PRIMARY_CONTAINER_HOVER}; }}
-    QPushButton:pressed {{ background: {t.PRIMARY_CONTAINER_PRESSED}; }}
+    QPushButton:hover {{
+        background: {t.PRIMARY_CONTAINER_HOVER};
+        border-color: {t.PRIMARY_CONTAINER_HOVER};
+    }}
+    QPushButton:pressed {{
+        background: {t.PRIMARY_CONTAINER_PRESSED};
+        border-color: {t.PRIMARY_CONTAINER_PRESSED};
+    }}
+    QPushButton:focus {{
+        border: 2px solid {t.ACCENT_FOCUS}; padding: 0px {focus_pad_h}px;
+    }}
 """
 
 

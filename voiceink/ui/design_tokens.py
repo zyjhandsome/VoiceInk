@@ -38,6 +38,12 @@ SIDEBAR_WIDTH = 248
 CONTROL_NUMERIC_WIDTH = 120
 CONTROL_DEVICE_COMBO_WIDTH = 320
 
+# Shared box for settings small actions (accent + ghost) so paired
+# buttons like「使用此模型」/「删除」paint at the same outer height.
+CONTROL_BTN_SM_HEIGHT = 32
+CONTROL_BTN_SM_PAD_H = 14
+CONTROL_BTN_SM_FONT_PX = 13
+
 NAV_SELECTED_BAR_PX = 3
 TRAY_MENU_RADIUS = 4
 TRAY_MENU_PAD_V = 8

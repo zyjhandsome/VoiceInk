@@ -92,23 +92,27 @@ class ModelCard(QFrame):
 
         actions = QHBoxLayout()
         actions.setSpacing(10)
+        actions.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        btn_h = tok.CONTROL_BTN_SM_HEIGHT
         if self._is_downloaded:
             if not self._is_active:
                 self._select_btn = QPushButton("使用此模型")
-                self._select_btn.setFixedHeight(32)
+                self._select_btn.setFixedHeight(btn_h)
                 self._select_btn.clicked.connect(
                     lambda: self.action_clicked.emit(self._model_id, "select")
                 )
                 actions.addWidget(self._select_btn)
             self._delete_btn = QPushButton("删除")
-            self._delete_btn.setFixedHeight(32)
+            self._delete_btn.setFixedHeight(btn_h)
             self._delete_btn.clicked.connect(
                 lambda: self.action_clicked.emit(self._model_id, "delete")
             )
             actions.addWidget(self._delete_btn)
         else:
             self._action_btn = QPushButton("下载")
-            self._action_btn.setFixedHeight(32)
+            self._action_btn.setFixedHeight(btn_h)
             self._action_btn.setMinimumWidth(96)
             self._action_btn.clicked.connect(
                 lambda: self.action_clicked.emit(self._model_id, "download")
