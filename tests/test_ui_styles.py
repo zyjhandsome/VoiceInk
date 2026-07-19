@@ -143,6 +143,11 @@ class TestSettingsStyles:
             assert f"background: {SURFACE_PEARL}" in badge_sheet
             assert f"color: {TEXT_SEC}" in badge_sheet
             assert ACCENT_SOFT not in badge_sheet
+
+            import voiceink.ui.settings_styles as st
+
+            assert card._delete_btn is not None
+            assert card._delete_btn.styleSheet() == st.BTN_GHOST_SM
         finally:
             card.close()
 

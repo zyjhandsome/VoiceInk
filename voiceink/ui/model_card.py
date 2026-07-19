@@ -161,7 +161,8 @@ class ModelCard(QFrame):
         if self._select_btn is not None:
             self._select_btn.setStyleSheet(ss.BTN_ACCENT_SM)
         if self._delete_btn is not None:
-            self._delete_btn.setStyleSheet(ss.BTN_DANGER_SM)
+            # Secondary ghost — same family as「更改存储…»; confirm dialog keeps safety.
+            self._delete_btn.setStyleSheet(ss.BTN_GHOST_SM)
         if self._action_btn is not None:
             self._action_btn.setStyleSheet(ss.BTN_ACCENT_SM)
 
