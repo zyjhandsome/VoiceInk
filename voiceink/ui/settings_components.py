@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from voiceink.ui import design_tokens as tok
 from voiceink.ui.design_tokens import (
     ACCENT,
     ACCENT_FOCUS,
@@ -61,20 +62,20 @@ def reload_styles() -> None:
     from voiceink.ui import design_tokens as tok
 
     SECTION_LABEL = (
-        f"color: {tok.TEXT_DIM}; font-size: 12px; font-weight: 600;"
+        f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 600;"
         f" padding: 0 2px 2px 2px; letter-spacing: 0;"
         f" background: transparent;"
     )
     PAGE_TITLE = (
-        f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY}; font-size: 20px;"
+        f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY}; font-size: {tok.TYPE_TITLE_LG}px;"
         f" font-weight: 600; letter-spacing: 0; padding: 2px 0 0 0;"
     )
     PAGE_SUBTITLE = (
-        f"color: {tok.TEXT_DIM}; font-size: 13px; padding: 0;"
+        f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; padding: 0;"
         f" line-height: 1.45; letter-spacing: 0;"
     )
     FOOTNOTE = (
-        f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.45;"
+        f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.45;"
         f" padding: 0 2px 0 2px; letter-spacing: 0;"
     )
     GROUP_STYLE = f"""
@@ -89,7 +90,7 @@ def reload_styles() -> None:
     QRadioButton {{
         color: {tok.TEXT};
         spacing: 12px;
-        font-size: 14px;
+        font-size: {tok.TYPE_BODY}px;
         padding: 10px 14px;
         background: transparent;
         border: none;
@@ -129,7 +130,7 @@ def reload_styles() -> None:
         border-left: {tok.NAV_SELECTED_BAR_PX}px solid transparent;
         border-radius: {tok.RADIUS_MD}px;
         color: {tok.TEXT_SEC};
-        font-size: 13px;
+        font-size: {tok.TYPE_BODY_SM}px;
         font-weight: 500;
         background: transparent;
     }}
@@ -152,7 +153,7 @@ def reload_styles() -> None:
     LINK_BTN_STYLE = f"""
     QPushButton {{
         color: {tok.TEXT_SEC}; background: transparent; border: none;
-        font-size: 12px; text-align: left; padding: 4px 0;
+        font-size: {tok.TYPE_FOOTNOTE}px; text-align: left; padding: 4px 0;
     }}
     QPushButton:hover {{ color: {tok.TEXT}; }}
     QPushButton:focus {{
@@ -175,7 +176,7 @@ def reload_styles() -> None:
         border-bottom: 2px solid transparent;
         border-radius: 0;
         color: {tok.TEXT_DIM};
-        font-size: 13px;
+        font-size: {tok.TYPE_BODY_SM}px;
         font-weight: 500;
         background: transparent;
         min-width: 56px;
@@ -259,7 +260,7 @@ class PageHero(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._inline_status.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 12px; font-weight: 500;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500;"
             f" background: transparent;"
         )
         # Reserve status width so 已关闭 ↔ 已开启 · … does not shove the title.
@@ -291,7 +292,7 @@ class PageHero(QWidget):
         self._title.setStyleSheet(PAGE_TITLE)
         self._subtitle.setStyleSheet(PAGE_SUBTITLE)
         self._inline_status.setStyleSheet(
-            f"color: {tok.TEXT_DIM}; font-size: 12px; font-weight: 500;"
+            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500;"
             f" background: transparent;"
         )
 
@@ -325,22 +326,32 @@ def usage_tip_bar(text: str) -> QFrame:
     """Inline hint strip below hero (shortcut / how-to)."""
     frame = QFrame()
     frame.setObjectName("usageTipBar")
-    frame.setStyleSheet(f"""
-        QFrame#usageTipBar {{
-            background: {SURFACE_PEARL};
-            border: 1px solid {HAIRLINE};
-            border-radius: {RADIUS_MD}px;
-        }}
-    """)
     lay = QHBoxLayout(frame)
     lay.setContentsMargins(16, 12, 16, 12)
     lbl = QLabel(text)
+    lbl.setObjectName("usageTipBarText")
     lbl.setWordWrap(True)
-    lbl.setStyleSheet(
-        f"color: {TEXT_SEC}; font-size: 13px; line-height: 1.45; background: transparent;"
-    )
     lay.addWidget(lbl)
+    paint_usage_tip_bar(frame)
     return frame
+
+
+def paint_usage_tip_bar(frame: QFrame) -> None:
+    """Refresh a usage tip bar from the active token axis."""
+    from voiceink.ui import design_tokens as live
+
+    frame.setStyleSheet(f"""
+        QFrame#usageTipBar {{
+            background: {live.SURFACE_PEARL};
+            border: 1px solid {live.HAIRLINE};
+            border-radius: {live.RADIUS_MD}px;
+        }}
+    """)
+    for child in frame.findChildren(QLabel):
+        child.setStyleSheet(
+            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_BODY_SM}px;"
+            f" line-height: 1.45; background: transparent;"
+        )
 
 
 def polish_preview_content() -> QWidget:
@@ -354,7 +365,7 @@ def polish_preview_content() -> QWidget:
     head = QLabel("效果预览")
     head.setProperty("viRole", "polishPreviewHeading")
     head.setStyleSheet(
-        f"color: {TEXT}; font-size: 16px; font-weight: 600; background: transparent;"
+        f"color: {TEXT}; font-size: {tok.TYPE_TITLE}px; font-weight: 600; background: transparent;"
     )
     lay.addWidget(head)
 
@@ -366,7 +377,7 @@ def polish_preview_content() -> QWidget:
         tag = QLabel(label)
         tag.setProperty("viRole", "polishPreviewLabel")
         tag.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 13px; font-weight: 600;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600;"
             f" background: transparent;"
         )
         row_lay.addWidget(tag, 0, Qt.AlignmentFlag.AlignTop)
@@ -374,7 +385,7 @@ def polish_preview_content() -> QWidget:
         txt.setProperty("viRole", "polishPreviewText")
         txt.setWordWrap(True)
         txt.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 13px; line-height: 1.5;"
+            f"color: {TEXT_SEC}; font-size: {tok.TYPE_BODY_SM}px; line-height: 1.5;"
             f" background: transparent;"
         )
         row_lay.addWidget(txt, 1)
@@ -436,7 +447,7 @@ def paint_info_callout(frame: QFrame) -> None:
     """)
     for child in frame.findChildren(QLabel):
         child.setStyleSheet(
-            f"color: {tok.AMBER_TEXT}; font-size: 12px; line-height: 1.45;"
+            f"color: {tok.AMBER_TEXT}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.45;"
             f" background: transparent;"
         )
 
@@ -446,7 +457,7 @@ def empty_state(text: str) -> QLabel:
     lbl.setWordWrap(True)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setStyleSheet(
-        f"color: {TEXT_DIM}; font-size: 13px; padding: 20px 12px;"
+        f"color: {TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; padding: 20px 12px;"
         f" background: transparent;"
     )
     return lbl
@@ -500,7 +511,7 @@ def settings_section(
         hdr = QLabel(title)
         hdr.setObjectName("settingsGroupTitle")
         hdr.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 12px; font-weight: 600;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 600;"
             f" padding: 2px 2px 2px 2px; background: transparent;"
             f" letter-spacing: 0;"
         )
@@ -629,7 +640,7 @@ def option_row(title: str, subtitle: str = "") -> QWidget:
     t = QLabel(title)
     t.setProperty("viRole", "rowTitle")
     t.setStyleSheet(
-        f"color: {TEXT}; font-size: 13px; font-weight: 500; background: transparent;"
+        f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 500; background: transparent;"
     )
     lay.addWidget(t)
     if subtitle:
@@ -637,7 +648,7 @@ def option_row(title: str, subtitle: str = "") -> QWidget:
         s.setProperty("viRole", "rowSubtitle")
         s.setWordWrap(True)
         s.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
             f" background: transparent;"
         )
         lay.addWidget(s)
@@ -671,7 +682,7 @@ def stacked_field_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
     lbl = QLabel(label)
     lbl.setProperty("viRole", "fieldLabel")
     lbl.setStyleSheet(
-        f"color: {TEXT_SEC}; font-size: 12px; font-weight: 500; background: transparent;"
+        f"color: {TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500; background: transparent;"
     )
     lbl.setBuddy(widget)
     outer.addWidget(lbl)
@@ -682,7 +693,7 @@ def stacked_field_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
         h.setProperty("viRole", "hint")
         h.setWordWrap(True)
         h.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 12px; line-height: 1.4; background: transparent;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.4; background: transparent;"
         )
         outer.addWidget(h)
     return row
@@ -709,7 +720,7 @@ def kv_row(key: str, value: str, *, mono: bool = False) -> QWidget:
     k = QLabel(key)
     k.setProperty("viRole", "kvKey")
     k.setStyleSheet(
-        f"color: {TEXT}; font-size: 13px; font-weight: 550; min-width: 80px;"
+        f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 550; min-width: 80px;"
     )
     k.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     v = QLabel(value)
@@ -719,10 +730,10 @@ def kv_row(key: str, value: str, *, mono: bool = False) -> QWidget:
     v.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     if mono:
         v.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 12px; font-family: {FONT_MONO};"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-family: {FONT_MONO};"
         )
     else:
-        v.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px;")
+        v.setStyleSheet(f"color: {TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px;")
     lay.addWidget(k)
     lay.addWidget(v, 1)
     return row
@@ -816,7 +827,7 @@ class ChoiceCard(QFrame):
         t = QLabel(title)
         t.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         t.setStyleSheet(
-            f"color: {TEXT}; font-size: 13px; font-weight: 600; background: transparent;"
+            f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600; background: transparent;"
         )
         lay.addWidget(t)
 
@@ -824,7 +835,7 @@ class ChoiceCard(QFrame):
         s.setWordWrap(True)
         s.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         s.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 11px; line-height: 1.35; background: transparent;"
+            f"color: {TEXT_SEC}; font-size: {tok.TYPE_CAPTION}px; line-height: 1.35; background: transparent;"
         )
         lay.addWidget(s)
 
@@ -907,13 +918,13 @@ class VerticalChoiceCard(QFrame):
         text_col.setSpacing(2)
         t = QLabel(title)
         t.setStyleSheet(
-            f"color: {TEXT}; font-size: 14px; font-weight: 600; background: transparent;"
+            f"color: {TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 600; background: transparent;"
         )
         text_col.addWidget(t)
         s = QLabel(subtitle)
         s.setWordWrap(True)
         s.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 12px; line-height: 1.35; background: transparent;"
+            f"color: {TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.35; background: transparent;"
         )
         text_col.addWidget(s)
         lay.addLayout(text_col, 1)
@@ -1015,11 +1026,11 @@ class CompactPickCard(QFrame):
             f"{self._subtitle}，{'已选中' if checked else '未选中'}".strip("，")
         )
         self._title_label.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: 13px; font-weight: 600;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600;"
             f" background: transparent;"
         )
         self._subtitle_label.setStyleSheet(
-            f"color: {tok.TEXT_DIM}; font-size: 11px; line-height: 1.35;"
+            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; line-height: 1.35;"
             f" background: transparent;"
         )
         # Prototype v3: muted tile idle; accent fill + double ring when selected.
@@ -1181,7 +1192,7 @@ class ThemeModeSegment(QWidget):
                     border: none;
                     background: transparent;
                     color: {tok.TEXT_SEC};
-                    font-size: 12px;
+                    font-size: {tok.TYPE_FOOTNOTE}px;
                     font-weight: 500;
                     padding: 5px 10px;
                     min-height: 28px;
@@ -1264,7 +1275,7 @@ class WideTestButton(QWidget):
 
         self._label = QLabel(text)
         self._label.setStyleSheet(
-            f"color: {TEXT}; font-size: 14px; font-weight: 500; background: transparent;"
+            f"color: {TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 500; background: transparent;"
         )
         lay.addWidget(self._label, 1, Qt.AlignmentFlag.AlignVCenter)
 
@@ -1330,7 +1341,7 @@ def paint_device_selection_link(btn: QPushButton) -> None:
     btn.setStyleSheet(f"""
         QPushButton#deviceSelectionLink {{
             color: {tok.ACCENT_TEXT}; background: transparent; border: none;
-            font-size: 13px; font-weight: 500; text-align: left; padding: 4px 0;
+            font-size: {tok.TYPE_BODY_SM}px; font-weight: 500; text-align: left; padding: 4px 0;
         }}
         QPushButton#deviceSelectionLink:hover {{ color: {tok.ACCENT_TEXT_HOVER}; }}
         QPushButton#deviceSelectionLink:focus {{
@@ -1349,7 +1360,7 @@ def collapsible_toggle_btn(text: str) -> QPushButton:
             color: {TEXT_SEC};
             background: transparent;
             border: none;
-            font-size: 13px;
+            font-size: {tok.TYPE_BODY_SM}px;
             font-weight: 500;
             text-align: left;
             padding: 6px 4px;
@@ -1403,7 +1414,7 @@ class SettingsSidebar(QWidget):
         brand.addWidget(self._brand_icon)
         self._brand_label = QLabel("VoiceInk")
         self._brand_label.setStyleSheet(
-            f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: 14px;"
+            f"color: {TEXT}; font-family: {FONT_DISPLAY}; font-size: {tok.TYPE_BODY}px;"
             f" font-weight: 600; letter-spacing: 0; background: transparent;"
         )
         brand.addWidget(self._brand_label, 1)
@@ -1427,7 +1438,7 @@ class SettingsSidebar(QWidget):
         self._status_primary = QLabel("")
         self._status_primary.setWordWrap(True)
         self._status_primary.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; font-weight: 500;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; font-weight: 500;"
             f" background: transparent; padding: 0;"
         )
         status_lay.addWidget(self._status_primary)
@@ -1435,7 +1446,7 @@ class SettingsSidebar(QWidget):
         self._status_secondary = QLabel("")
         self._status_secondary.setWordWrap(True)
         self._status_secondary.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; background: transparent;"
             f" padding: 0;"
         )
         status_lay.addWidget(self._status_secondary)
@@ -1471,7 +1482,7 @@ class SettingsSidebar(QWidget):
         footer.setContentsMargins(4, SPACE_SM, 4, 0)
         self._footer_status = QLabel(version)
         self._footer_status.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: 12px; font-weight: 500; background: transparent;"
+            f"color: {TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500; background: transparent;"
         )
         footer.addWidget(self._footer_status, 1)
         root.addLayout(footer)
@@ -1753,12 +1764,12 @@ class ToggleOptionRow(QWidget):
             role = label.property("viRole")
             if role == "rowTitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 500;"
+                    f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 500;"
                     f" background: transparent;"
                 )
             elif role == "rowSubtitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                    f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
                     f" background: transparent;"
                 )
         self._sync_row_style()

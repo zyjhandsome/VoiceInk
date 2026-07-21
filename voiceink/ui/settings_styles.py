@@ -27,7 +27,7 @@ def build_spinbox_css() -> str:
         border: 1px solid {t.CONTROL_BORDER};
         border-radius: {t.RADIUS_MD}px;
         padding: 4px 28px 4px 10px;
-        font-size: 13px;
+        font-size: {t.TYPE_BODY_SM}px;
         min-height: 32px;
         max-height: 34px;
     }}
@@ -77,7 +77,7 @@ def build_window_css() -> str:
         background: {t.BG};
         color: {t.TEXT};
         font-family: {t.FONT};
-        font-size: 14px;
+        font-size: {t.TYPE_BODY}px;
     }}
     QLabel {{
         color: {t.TEXT};
@@ -89,7 +89,7 @@ def build_window_css() -> str:
         border: 1px solid {t.CONTROL_BORDER};
         border-radius: {t.RADIUS_MD}px;
         padding: 8px 12px;
-        font-size: 13px;
+        font-size: {t.TYPE_BODY_SM}px;
         min-height: 36px;
         selection-background-color: {t.PRIMARY_CONTAINER};
         selection-color: white;
@@ -106,7 +106,7 @@ def build_window_css() -> str:
         border: 1px solid {t.CONTROL_BORDER};
         border-radius: {t.RADIUS_MD}px;
         padding: 10px 12px;
-        font-size: 13px;
+        font-size: {t.TYPE_BODY_SM}px;
         font-weight: 600;
         font-family: {t.FONT_MONO};
         min-height: 24px;
@@ -126,7 +126,7 @@ def build_window_css() -> str:
         border: 1px solid {t.CONTROL_BORDER};
         border-radius: {t.RADIUS_MD}px;
         padding: 8px 28px 8px 12px;
-        font-size: 13px;
+        font-size: {t.TYPE_BODY_SM}px;
         min-height: 32px;
     }}
     QComboBox:focus {{
@@ -179,7 +179,7 @@ def build_btn_primary() -> str:
     QPushButton {{
         background: {t.PRIMARY_CONTAINER}; color: white;
         border: 1px solid {t.PRIMARY_CONTAINER};
-        border-radius: {t.RADIUS_MD}px; padding: 9px 14px; font-size: 13px; font-weight: 600;
+        border-radius: {t.RADIUS_MD}px; padding: 9px 14px; font-size: {t.TYPE_BODY_SM}px; font-weight: 600;
     }}
     QPushButton:hover {{
         background: {t.PRIMARY_CONTAINER_HOVER};
@@ -198,7 +198,7 @@ def build_btn_ghost() -> str:
     return f"""
     QPushButton {{
         background: {t.SURFACE_PEARL}; color: {t.TEXT}; border: 1px solid {t.HAIRLINE};
-        border-radius: {t.RADIUS_MD}px; padding: 10px 22px; font-size: 14px;
+        border-radius: {t.RADIUS_MD}px; padding: 10px 22px; font-size: {t.TYPE_BODY}px;
     }}
     QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; border-color: {t.TEXT_DIM}; }}
     QPushButton:focus {{ outline: none; border: 2px solid {t.ACCENT_FOCUS}; }}
@@ -251,7 +251,7 @@ def build_btn_green_sm() -> str:
     return f"""
     QPushButton {{
         background: {t.GREEN_BG}; color: {t.GREEN}; border: none;
-        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: {t.TYPE_FOOTNOTE}px; font-weight: 600;
     }}
     QPushButton:hover {{ background: {t.GREEN_BG}; }}
     QPushButton:disabled {{ background: {t.BAR_OFF}; color: {t.TEXT_DIM}; }}

@@ -20,7 +20,7 @@ def _menu_stylesheet() -> str:
         border-radius: {tok.TRAY_MENU_RADIUS}px;
         padding: 4px 0px;
         font-family: {tok.FONT};
-        font-size: 13px;
+        font-size: {tok.TYPE_BODY_SM}px;
     }}
     QMenu::item {{
         padding: {tok.TRAY_MENU_PAD_V}px {pad_right}px {tok.TRAY_MENU_PAD_V}px {tok.TRAY_MENU_PAD_H}px;

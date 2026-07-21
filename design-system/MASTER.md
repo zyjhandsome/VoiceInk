@@ -68,7 +68,7 @@ Effective theme is always `light` or `dark`.
 | Border | `#374151` | `BORDER` |
 | Control Border | `#4B5563` | `CONTROL_BORDER` |
 | Destructive / Record | `#F87171` | `RED` / `STATE_RECORD` |
-| Success | `#22C55E` | `GREEN` |
+| Success / toggle on | `#16A34A` | `GREEN` / `TOGGLE_ON` (quiet mid-green; not neon `#22C55E`) |
 | Focus Ring | `#3B82F6` | `ACCENT_FOCUS` |
 | Row Selected | `rgba(59, 130, 246, 0.20)` | `ROW_SELECTED` |
 
@@ -81,13 +81,30 @@ Effective theme is always `light` or `dark`.
 | Float Border | `rgba(17, 24, 39, 0.12)` | `rgba(255, 255, 255, 0.10)` |
 | Float Text | `#111827` | `#FFFFFF` |
 | Float Text Sec | `#4B5563` | `rgba(235, 235, 245, 0.72)` |
+| Chip BG | `rgba(17, 24, 39, 0.08)` | `rgba(210, 210, 215, 0.40)` |
+| Chip BG Hover | `rgba(17, 24, 39, 0.16)` | `rgba(210, 210, 215, 0.55)` |
+| Chip BG Press | `rgba(17, 24, 39, 0.12)` | `rgba(210, 210, 215, 0.48)` |
 
 ### Typography
 
-- **UI Font:** `"Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif`
+- **UI Font resolve (runtime):** prefer `Segoe UI Variable` when installed, else `Microsoft YaHei UI`, else `Segoe UI` (`resolve_ui_font_family` / `FONT_STACK`)
+- **UI Font stack (docs):** `"Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI"`
 - **Mono:** `"Cascadia Mono", "Consolas", "JetBrains Mono", monospace`
 - **Mood:** technical, precision, clean, premium desktop utility
 - **Do not** ship runtime Google Fonts imports in the desktop app
+
+| Token | Size | Typical use |
+|-------|------|-------------|
+| `TYPE_CAPTION` | `11px` | Badges, meta captions |
+| `TYPE_FOOTNOTE` | `12px` | Footnotes, section labels, tips |
+| `TYPE_BODY_SM` | `13px` | Inputs, nav, tray menu, secondary body |
+| `TYPE_BODY` | `14px` | Global baseline, brand, primary body |
+| `TYPE_TITLE_SM` | `15px` | Model card titles |
+| `TYPE_TITLE` | `16px` | Detail titles |
+| `TYPE_ICON_LG` | `17px` | Float close glyph |
+| `TYPE_HERO` | `18px` | Engine hero title |
+| `TYPE_TITLE_LG` | `20px` | Settings page titles |
+| `TYPE_DISPLAY` | `22px` | History window title |
 
 ### Spacing
 

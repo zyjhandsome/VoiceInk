@@ -134,24 +134,24 @@ class ModelCard(QFrame):
             f" border-radius: {tok.RADIUS_MD}px; }}"
         )
         self._name_lbl.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: 15px; font-weight: 600;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_TITLE_SM}px; font-weight: 600;"
             f" background: transparent;"
         )
         if self._badge is not None:
             self._badge.setStyleSheet(
                 f"background: {tok.SURFACE_PEARL}; color: {tok.TEXT_SEC};"
                 f" border-radius: {tok.RADIUS_PILL}px;"
-                "padding: 3px 9px; font-size: 11px; font-weight: 600;"
+                f"padding: 3px 9px; font-size: {tok.TYPE_CAPTION}px; font-weight: 600;"
             )
         self._size_lbl.setStyleSheet(
-            f"color: {tok.TEXT_DIM}; font-size: 12px; background: transparent;"
+            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; background: transparent;"
         )
         self._desc_lbl.setStyleSheet(
-            f"color: {tok.TEXT_SEC}; font-size: 13px; line-height: 1.45;"
+            f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_BODY_SM}px; line-height: 1.45;"
             f" background: transparent;"
         )
         self._meta_lbl.setStyleSheet(
-            f"color: {tok.TEXT_DIM}; font-size: 12px; background: transparent;"
+            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; background: transparent;"
         )
         if self._progress_bar is not None:
             self._progress_bar.setStyleSheet(f"""

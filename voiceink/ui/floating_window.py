@@ -160,31 +160,32 @@ class FloatingWindow(QWidget):
                 border: 1px solid {tok.FLOAT_BORDER};
             }}
         """)
+        self._status_label.setFont(
+            QFont(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.DemiBold)
+        )
         self._status_label.setStyleSheet(
             f"color: {tok.FLOAT_TEXT}; background: transparent;"
             f" font-family: {tok.FONT_DISPLAY}; letter-spacing: -0.2px;"
         )
-        # Hover/press deepen the chip wash so light float stays readable.
-        hover_bg = tok.CHIP_BG.replace("0.08", "0.16").replace("0.40", "0.55")
-        press_bg = tok.CHIP_BG.replace("0.08", "0.12").replace("0.40", "0.48")
         self._close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {tok.CHIP_BG};
                 color: {tok.FLOAT_TEXT};
                 border: none;
-                font-size: 17px;
+                font-size: {tok.TYPE_ICON_LG}px;
                 font-weight: 400;
                 border-radius: 14px;
                 padding: 0px;
             }}
             QPushButton:hover {{
-                background: {hover_bg};
+                background: {tok.CHIP_BG_HOVER};
                 color: {tok.FLOAT_TEXT};
             }}
             QPushButton:pressed {{
-                background: {press_bg};
+                background: {tok.CHIP_BG_PRESS};
             }}
         """)
+        self._text_label.setFont(QFont(tok.UI_FONT_FAMILY, tok.TYPE_CAPTION))
         self._text_label.setStyleSheet(
             f"color: {tok.FLOAT_TEXT_SEC}; background: transparent;"
             f" font-family: {tok.FONT}; letter-spacing: -0.1px;"
@@ -221,8 +222,12 @@ class FloatingWindow(QWidget):
         self._dot = _DotIndicator()
         header_row.addWidget(self._dot)
 
+        from voiceink.ui import design_tokens as tok
+
         self._status_label = QLabel("准备中...")
-        self._status_label.setFont(QFont("Segoe UI Variable", 13, QFont.Weight.DemiBold))
+        self._status_label.setFont(
+            QFont(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.DemiBold)
+        )
         header_row.addWidget(self._status_label)
         header_row.addStretch()
 
@@ -239,7 +244,7 @@ class FloatingWindow(QWidget):
         container_layout.addWidget(self._waveform)
 
         self._text_label = QLabel("")
-        self._text_label.setFont(QFont("Segoe UI Variable", 11))
+        self._text_label.setFont(QFont(tok.UI_FONT_FAMILY, tok.TYPE_CAPTION))
         self._text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._text_label.setWordWrap(True)
         self._text_label.setMaximumHeight(36)

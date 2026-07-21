@@ -127,6 +127,7 @@ class SettingsWindow(QDialog):
             ToggleOptionRow,
             paint_device_selection_link,
             paint_info_callout,
+            paint_usage_tip_bar,
             recolor_group_divider,
         )
 
@@ -149,7 +150,7 @@ class SettingsWindow(QDialog):
             if brand is not None:
                 brand.setStyleSheet(
                     f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY};"
-                    f" font-size: 14px; font-weight: 600; background: transparent;"
+                    f" font-size: {_tok.TYPE_BODY}px; font-weight: 600; background: transparent;"
                 )
             brand_icon = getattr(self._sidebar, "_brand_icon", None)
             if brand_icon is not None:
@@ -170,13 +171,13 @@ class SettingsWindow(QDialog):
             status_primary = getattr(self._sidebar, "_status_primary", None)
             if status_primary is not None:
                 status_primary.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 11px; font-weight: 500;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 500;"
                     f" background: transparent;"
                 )
             status_secondary = getattr(self._sidebar, "_status_secondary", None)
             if status_secondary is not None:
                 status_secondary.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 11px;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_CAPTION}px;"
                     f" background: transparent;"
                 )
         if hasattr(self, "_theme_combo") and hasattr(self._theme_combo, "reapply_styles"):
@@ -185,11 +186,11 @@ class SettingsWindow(QDialog):
             self._mic_test_btn.setStyleSheet(_settings_styles.BTN_PRIMARY)
         if hasattr(self, "_mic_test_status"):
             self._mic_test_status.setStyleSheet(
-                f"color: {tok.TEXT_SEC}; font-size: 12px; background: transparent;"
+                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; background: transparent;"
             )
         if hasattr(self, "_hotkey_hint"):
             self._hotkey_hint.setStyleSheet(
-                f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
                 f" background: transparent; padding: 0 16px 12px 16px;"
             )
         if hasattr(self, "_advanced_audio_btn"):
@@ -210,7 +211,7 @@ class SettingsWindow(QDialog):
             self._refresh_active_model_hero()
         if hasattr(self, "_storage_summary_label"):
             self._storage_summary_label.setStyleSheet(
-                f"color: {tok.TEXT_SEC}; font-size: 13px; background: transparent;"
+                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_BODY_SM}px; background: transparent;"
             )
 
         for frame in self.findChildren(QFrame):
@@ -219,6 +220,8 @@ class SettingsWindow(QDialog):
                 frame.setStyleSheet(GROUP_STYLE)
             elif name.endswith("Callout") or name == "infoCallout":
                 paint_info_callout(frame)
+            elif name == "usageTipBar":
+                paint_usage_tip_bar(frame)
 
         for wrap in self.findChildren(QWidget):
             if wrap.objectName() == "settingsGroupDivider":
@@ -234,69 +237,69 @@ class SettingsWindow(QDialog):
                 label.setStyleSheet(SECTION_LABEL)
             elif role == "rowTitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 500;"
+                    f"color: {tok.TEXT}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 500;"
                     f" background: transparent;"
                 )
             elif role == "rowSubtitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
                     f" background: transparent;"
                 )
             elif role == "fieldLabel":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_SEC}; font-size: 12px; font-weight: 500;"
+                    f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 500;"
                     f" background: transparent;"
                 )
             elif role == "hint":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
                     f" background: transparent;"
                 )
             elif role == "footnote":
                 label.setStyleSheet(FOOTNOTE)
             elif role == "polishPreviewHeading":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT}; font-size: 16px; font-weight: 600;"
+                    f"color: {tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 600;"
                     f" background: transparent;"
                 )
             elif role == "polishPreviewLabel":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 13px; font-weight: 600;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 600;"
                     f" background: transparent;"
                 )
             elif role == "polishPreviewText":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_SEC}; font-size: 13px; line-height: 1.5;"
+                    f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_BODY_SM}px; line-height: 1.5;"
                     f" background: transparent;"
                 )
             elif role == "kvKey":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 550;"
+                    f"color: {tok.TEXT}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 550;"
                     f" min-width: 80px;"
                     f" background: transparent;"
                 )
             elif role == "kvValue":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 13px; background: transparent;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_BODY_SM}px; background: transparent;"
                 )
             elif role == "kvValueMono":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 12px;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px;"
                     f" font-family: {tok.FONT_MONO}; background: transparent;"
                 )
             elif role == "pickTitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT}; font-size: 13px; font-weight: 600;"
+                    f"color: {tok.TEXT}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 600;"
                     f" background: transparent;"
                 )
             elif role == "pickSubtitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 11px; line-height: 1.35;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_CAPTION}px; line-height: 1.35;"
                     f" background: transparent;"
                 )
             elif label.objectName() == "settingsGroupTitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT_DIM}; font-size: 12px; font-weight: 600;"
+                    f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 600;"
                     f" padding: 0 2px 2px 2px; background: transparent;"
                     f" letter-spacing: 0;"
                 )
@@ -304,12 +307,12 @@ class SettingsWindow(QDialog):
         # Theme row titles baked at construct time (general page).
         if hasattr(self, "_theme_title_label"):
             self._theme_title_label.setStyleSheet(
-                f"color: {tok.TEXT}; font-size: 13px; font-weight: 500;"
+                f"color: {tok.TEXT}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 500;"
                 f" background: transparent;"
             )
         if hasattr(self, "_theme_desc_label"):
             self._theme_desc_label.setStyleSheet(
-                f"color: {tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+                f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
                 f" background: transparent;"
             )
 
@@ -329,7 +332,7 @@ class SettingsWindow(QDialog):
             self._paint_llm_prompt_edit()
         if hasattr(self, "_about_version_label"):
             self._about_version_label.setStyleSheet(
-                f"color: {tok.TEXT_SEC}; font-size: 11px; font-weight: 600;"
+                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
                 f" background: {tok.SURFACE_PEARL}; border: 1px solid {tok.HAIRLINE};"
                 f" border-radius: {tok.RADIUS_PILL}px; padding: 3px 10px;"
             )
@@ -431,7 +434,7 @@ class SettingsWindow(QDialog):
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
         self._hotkey_hint.setStyleSheet(
-            f"color: {_tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f"color: {_tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
             f" background: transparent; padding: 0 16px 12px 16px;"
         )
         record_lay.addWidget(stacked_field_row("录音快捷键", self._hotkey_edit))
@@ -481,7 +484,7 @@ class SettingsWindow(QDialog):
         self._mic_test_status = QLabel("")
         self._mic_test_status.setProperty("viRole", "hint")
         self._mic_test_status.setStyleSheet(
-            f"color: {_tok.TEXT_SEC}; font-size: 12px; background: transparent;"
+            f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; background: transparent;"
         )
         self._mic_test_status.setWordWrap(True)
         test_row_lay.addWidget(self._mic_test_status)
@@ -555,12 +558,12 @@ class SettingsWindow(QDialog):
         self._theme_title_label = QLabel("主题")
         self._theme_title_label.setProperty("viRole", "rowTitle")
         self._theme_title_label.setStyleSheet(
-            f"color: {_tok.TEXT}; font-size: 13px; font-weight: 500; background: transparent;"
+            f"color: {_tok.TEXT}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 500; background: transparent;"
         )
         self._theme_desc_label = QLabel("跟随系统时按 Windows 外观显示")
         self._theme_desc_label.setProperty("viRole", "rowSubtitle")
         self._theme_desc_label.setStyleSheet(
-            f"color: {_tok.TEXT_DIM}; font-size: 12px; line-height: 1.4;"
+            f"color: {_tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
             f" background: transparent;"
         )
         theme_text_lay.addWidget(self._theme_title_label)
@@ -666,7 +669,7 @@ class SettingsWindow(QDialog):
         storage_lay.setSpacing(10)
         self._storage_summary_label = QLabel()
         self._storage_summary_label.setStyleSheet(
-            f"color: {_tok.TEXT_SEC}; font-size: 13px; background: transparent;"
+            f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_BODY_SM}px; background: transparent;"
         )
         self._storage_summary_label.setWordWrap(True)
         storage_lay.addWidget(self._storage_summary_label, 1)
@@ -775,7 +778,7 @@ class SettingsWindow(QDialog):
         title = QLabel(info["name"])
         title.setProperty("viRole", "engineHeroTitle")
         title.setStyleSheet(
-            f"color: {_tok.TEXT}; font-family: {_tok.FONT_DISPLAY}; font-size: 18px;"
+            f"color: {_tok.TEXT}; font-family: {_tok.FONT_DISPLAY}; font-size: {_tok.TYPE_HERO}px;"
             f" font-weight: 600; background: transparent;"
         )
         head.addWidget(title)
@@ -784,14 +787,14 @@ class SettingsWindow(QDialog):
         badge.setStyleSheet(
             f"background: {_tok.ACCENT_SOFT}; color: {_tok.ACCENT_TEXT};"
             f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
-            f" font-size: 11px; font-weight: 600;"
+            f" font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
         )
         head.addWidget(badge)
         head.addStretch()
         size = QLabel(f"{info['size_mb']} MB")
         size.setProperty("viRole", "engineHeroSize")
         size.setStyleSheet(
-            f"color: {_tok.TEXT_DIM}; font-size: 12px; background: transparent;"
+            f"color: {_tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; background: transparent;"
         )
         head.addWidget(size)
         lay.addLayout(head)
@@ -800,7 +803,7 @@ class SettingsWindow(QDialog):
         desc.setProperty("viRole", "engineHeroDesc")
         desc.setWordWrap(True)
         desc.setStyleSheet(
-            f"color: {_tok.TEXT_SEC}; font-size: 13px; background: transparent;"
+            f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_BODY_SM}px; background: transparent;"
         )
         lay.addWidget(desc)
 
@@ -810,7 +813,7 @@ class SettingsWindow(QDialog):
         )
         meta.setProperty("viRole", "engineHeroMeta")
         meta.setStyleSheet(
-            f"color: {_tok.TEXT_DIM}; font-size: 12px; background: transparent;"
+            f"color: {_tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; background: transparent;"
         )
         meta.setToolTip(RATING_TOOLTIP)
         lay.addWidget(meta)
@@ -838,7 +841,7 @@ class SettingsWindow(QDialog):
             if title:
                 hdr = QLabel(title)
                 hdr.setStyleSheet(
-                    f"color: {_tok.TEXT_SEC}; font-size: 12px; font-weight: 600;"
+                    f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 600;"
                     f" padding: 0 4px; background: transparent;"
                     f" letter-spacing: 0.02em;"
                 )
@@ -1118,7 +1121,7 @@ class SettingsWindow(QDialog):
             QTextEdit {{
                 background: {_tok.INPUT_BG}; color: {_tok.TEXT};
                 border: 1px solid {_tok.HAIRLINE}; border-radius: {_tok.RADIUS_MD}px;
-                padding: 10px 12px; font-size: 13px; font-family: {_tok.FONT};
+                padding: 10px 12px; font-size: {_tok.TYPE_BODY_SM}px; font-family: {_tok.FONT};
             }}
             QTextEdit:focus {{
                 border: 2px solid {_tok.ACCENT_FOCUS};
@@ -1150,14 +1153,14 @@ class SettingsWindow(QDialog):
         brand_name = QLabel("VoiceInk")
         brand_name.setProperty("viRole", "kvKey")
         brand_name.setStyleSheet(
-            f"color: {_tok.TEXT}; font-size: 13px; font-weight: 550;"
+            f"color: {_tok.TEXT}; font-size: {_tok.TYPE_BODY_SM}px; font-weight: 550;"
             f" background: transparent;"
         )
         brand_lay.addWidget(brand_name)
         brand_lay.addStretch(1)
         self._about_version_label = QLabel(f"版本 {VERSION}")
         self._about_version_label.setStyleSheet(
-            f"color: {_tok.TEXT_SEC}; font-size: 11px; font-weight: 600;"
+            f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
             f" background: {_tok.SURFACE_PEARL}; border: 1px solid {_tok.HAIRLINE};"
             f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
         )

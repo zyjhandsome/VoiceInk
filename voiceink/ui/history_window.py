@@ -161,7 +161,7 @@ class HistoryWindow(QDialog):
             """)
         if hasattr(self, "_title_label"):
             self._title_label.setStyleSheet(
-                f"font-family: {tok.FONT_DISPLAY}; font-size: 22px; font-weight: 700;"
+                f"font-family: {tok.FONT_DISPLAY}; font-size: {tok.TYPE_DISPLAY}px; font-weight: 700;"
                 f" background: transparent; color: {tok.TEXT}; letter-spacing: -0.02em;"
             )
         if hasattr(self, "_right_pane"):
@@ -174,7 +174,7 @@ class HistoryWindow(QDialog):
                     border: 1px solid {tok.HAIRLINE};
                     border-radius: {tok.RADIUS_MD}px;
                     padding: 10px 14px;
-                    font-size: 13px;
+                    font-size: {tok.TYPE_BODY_SM}px;
                 }}
                 QLineEdit:focus {{
                     border: 2px solid {tok.ACCENT};
@@ -206,12 +206,12 @@ class HistoryWindow(QDialog):
             """)
         if hasattr(self, "_detail_title"):
             self._detail_title.setStyleSheet(
-                f"font-size: 16px; font-weight: 600; color: {tok.TEXT};"
+                f"font-size: {tok.TYPE_TITLE}px; font-weight: 600; color: {tok.TEXT};"
                 f" background: transparent;"
             )
         if hasattr(self, "_feedback_label"):
             self._feedback_label.setStyleSheet(
-                f"color: {tok.TEXT}; font-size: 12px; background: transparent;"
+                f"color: {tok.TEXT}; font-size: {tok.TYPE_FOOTNOTE}px; background: transparent;"
             )
         if hasattr(self, "_details"):
             self._details.setStyleSheet(f"""
@@ -220,7 +220,7 @@ class HistoryWindow(QDialog):
                     color: {tok.TEXT};
                     border: none;
                     padding: 12px 0;
-                    font-size: 14px;
+                    font-size: {tok.TYPE_BODY}px;
                 }}
             """)
         if hasattr(self, "_undo_bar"):

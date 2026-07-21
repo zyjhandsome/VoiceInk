@@ -2,21 +2,87 @@
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Optional, Sequence
+
+log = logging.getLogger("voiceink")
 
 # Shared non-color tokens. Qt stylesheets accept one family, not a CSS-style
-# fallback list. Microsoft YaHei UI gives Win11 native widgets reliable CJK
-# coverage while retaining the same system-UI character as the HTML reference.
+# fallback list. Prefer Segoe UI Variable when installed; otherwise YaHei for
+# reliable CJK on Windows (product decision 1B).
 FONT_STACK = (
     "Segoe UI Variable",
     "Microsoft YaHei UI",
     "Segoe UI",
 )
-FONT = '"Microsoft YaHei UI"'
+_DEFAULT_UI_FONT = "Microsoft YaHei UI"
+UI_FONT_FAMILY = _DEFAULT_UI_FONT
+FONT = f'"{_DEFAULT_UI_FONT}"'
 FONT_DISPLAY = FONT
 FONT_MONO = (
     '"Cascadia Mono", "Consolas", "JetBrains Mono", monospace'
 )
+
+# Typography size ladder (px in QSS; same ints passed to QFont where used today).
+TYPE_CAPTION = 11
+TYPE_FOOTNOTE = 12
+TYPE_BODY_SM = 13
+TYPE_BODY = 14
+TYPE_TITLE_SM = 15
+TYPE_TITLE = 16
+TYPE_ICON_LG = 17
+TYPE_HERO = 18
+TYPE_TITLE_LG = 20
+TYPE_DISPLAY = 22
+
+
+def _probe_system_font_families() -> tuple[str, ...]:
+    """Return installed family names, or () when no QApplication / probe fails."""
+    try:
+        from PyQt6.QtGui import QFontDatabase
+        from PyQt6.QtWidgets import QApplication
+
+        if QApplication.instance() is None:
+            return ()
+        return tuple(QFontDatabase.families())
+    except Exception as exc:  # noqa: BLE001 — probe must never crash startup
+        log.warning("读取系统字体列表失败，回落 YaHei: %s", exc)
+        return ()
+
+
+def resolve_ui_font_family(
+    *,
+    available_families: Optional[Sequence[str]] = None,
+    preferred: Optional[Sequence[str]] = None,
+) -> str:
+    """Pick the first preferred family present on the host."""
+    stack = tuple(preferred) if preferred is not None else FONT_STACK
+    if available_families is None:
+        available_families = _probe_system_font_families()
+    available = {name.casefold(): name for name in available_families}
+    for name in stack:
+        hit = available.get(name.casefold())
+        if hit is not None:
+            # Prefer QFontDatabase's canonical spelling when it differs from the stack label.
+            return hit
+    return _DEFAULT_UI_FONT
+
+
+def refresh_ui_font(
+    *,
+    available_families: Optional[Sequence[str]] = None,
+    preferred: Optional[Sequence[str]] = None,
+) -> str:
+    """Resolve and publish FONT / FONT_DISPLAY / UI_FONT_FAMILY for QSS and QFont."""
+    global UI_FONT_FAMILY, FONT, FONT_DISPLAY
+    family = resolve_ui_font_family(
+        available_families=available_families,
+        preferred=preferred,
+    )
+    UI_FONT_FAMILY = family
+    FONT = f'"{family}"'
+    FONT_DISPLAY = FONT
+    return family
 
 RADIUS_XS = 4
 RADIUS_SM = 6
@@ -42,7 +108,7 @@ CONTROL_DEVICE_COMBO_WIDTH = 320
 # buttons like「使用此模型」/「删除」paint at the same outer height.
 CONTROL_BTN_SM_HEIGHT = 32
 CONTROL_BTN_SM_PAD_H = 14
-CONTROL_BTN_SM_FONT_PX = 13
+CONTROL_BTN_SM_FONT_PX = TYPE_BODY_SM
 
 NAV_SELECTED_BAR_PX = 3
 TRAY_MENU_RADIUS = 4
@@ -114,6 +180,8 @@ _LIGHT: dict[str, Any] = {
     "FLOAT_BORDER": "rgba(17, 24, 39, 0.12)",
     "FLOAT_BORDER_INNER": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG": "rgba(17, 24, 39, 0.08)",
+    "CHIP_BG_HOVER": "rgba(17, 24, 39, 0.16)",
+    "CHIP_BG_PRESS": "rgba(17, 24, 39, 0.12)",
     "FLOAT_TEXT": "#111827",
     "FLOAT_TEXT_SEC": "#4B5563",
     "FLOAT_SHADOW": "rgba(0, 0, 0, 0.18)",
@@ -179,6 +247,8 @@ _DARK: dict[str, Any] = {
     "FLOAT_BORDER": "rgba(255, 255, 255, 0.10)",
     "FLOAT_BORDER_INNER": "rgba(210, 210, 215, 0.24)",
     "CHIP_BG": "rgba(210, 210, 215, 0.40)",
+    "CHIP_BG_HOVER": "rgba(210, 210, 215, 0.55)",
+    "CHIP_BG_PRESS": "rgba(210, 210, 215, 0.48)",
     "FLOAT_TEXT": "#FFFFFF",
     "FLOAT_TEXT_SEC": "rgba(235, 235, 245, 0.72)",
     "FLOAT_SHADOW": "rgba(0, 0, 0, 0.38)",

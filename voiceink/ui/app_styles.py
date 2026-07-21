@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voiceink.ui.design_tokens import FONT
+from voiceink.ui import design_tokens as dt
 
 
 def build_global_stylesheet(effective: str = "light") -> str:
@@ -10,13 +10,14 @@ def build_global_stylesheet(effective: str = "light") -> str:
 
     Theme colors belong to QApplication's palette and surface-local QSS. Keeping
     this stylesheet static avoids an expensive full widget-tree repolish on
-    every light/dark switch.
+    every light/dark switch. FONT is read at call time so apply_theme's
+    refresh_ui_font() is visible.
     """
     del effective
     return f"""
     QWidget {{
-        font-family: {FONT};
-        font-size: 14px;
+        font-family: {dt.FONT};
+        font-size: {dt.TYPE_BODY}px;
     }}
 """
 

@@ -112,6 +112,7 @@ def apply_theme(
     effective = resolve_effective_theme(mode, system_is_light=system_is_light)
     _current_effective = effective
     dt.activate(effective)
+    dt.refresh_ui_font()
     try:
         from voiceink.ui import settings_styles as ss
 
@@ -122,9 +123,16 @@ def apply_theme(
     qt_app = app or QApplication.instance()
     if qt_app is not None:
         qt_app.setPalette(_application_palette(effective))
-        if not qt_app.property("voiceinkStaticStyleApplied"):
+        # Rebuild when missing or when the resolved UI font family changed.
+        prev_font = qt_app.property("voiceinkUiFontFamily")
+        need_style = (
+            not qt_app.property("voiceinkStaticStyleApplied")
+            or prev_font != dt.UI_FONT_FAMILY
+        )
+        if need_style:
             qt_app.setStyleSheet(build_global_stylesheet(effective))
             qt_app.setProperty("voiceinkStaticStyleApplied", True)
+            qt_app.setProperty("voiceinkUiFontFamily", dt.UI_FONT_FAMILY)
 
     for surface in surfaces:
         reapply = getattr(surface, "reapply_theme", None)
