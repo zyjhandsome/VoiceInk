@@ -1,0 +1,89 @@
+{
+  "schema_version": "delivery-handoff/v1",
+  "family_version": "delivery-family/1.6",
+  "type": "delivery-handoff",
+  "handoff_id": "ui-settings-themeaware-split-execute-verify-20260918T161536",
+  "previous_handoff_id": "ui-settings-themeaware-split-plan-1",
+  "generated_at": "2026-09-18T16:15:36Z",
+  "stage": "delivery-execute-verify",
+  "source_revision": {
+    "repo_head": "4bc04312141fbd26227de2e496f2b22a30f16af8",
+    "artifact_revision": "sha256:f18fca21bc2a05542455b4842a58f3880c425a1f97164a50b656d766a887dbcb",
+    "state_observed_at": "2026-09-18T16:15:36Z"
+  },
+  "state_source": {
+    "kind": "openspec_change",
+    "label": "change #ui-settings-themeaware-split",
+    "anchor": "openspec/changes/ui-settings-themeaware-split"
+  },
+  "capability_snapshot": {
+    "memory": "ok",
+    "openspec": "initialized",
+    "superpowers": "loaded"
+  },
+  "capability_bindings": {
+    "openspec": {},
+    "memory": {},
+    "superpowers": {},
+    "subagents": {}
+  },
+  "presentation_capability": {
+    "mode": "markdown",
+    "source": "unknown"
+  },
+  "gate_status": {
+    "status": "pass",
+    "summary": "新鲜验证 + 独立审查（r-uisplit-20260919-a4f2）通过；归档移交 OpenSpec",
+    "evidence": [
+      "py -3.10 -m pytest tests/test_theme_resolve.py tests/test_ui_styles.py tests/test_ui_font.py tests/test_settings_general.py tests/test_floating_window.py tests/test_history_window.py tests/test_tray_icon.py -q: exit 0 / 145 passed @ 2026-09-18T16:15:17Z",
+      "openspec validate ui-settings-themeaware-split --strict: valid"
+    ],
+    "approved_by": "user",
+    "approved_at": "2026-09-18T16:15:36Z",
+    "binds_to_revision": "sha256:f18fca21bc2a05542455b4842a58f3880c425a1f97164a50b656d766a887dbcb",
+    "accepted_warning_ids": []
+  },
+  "evidence_mode": "full",
+  "next_skill": null,
+  "next_action": "archive_change",
+  "required_inputs": [],
+  "stop_condition": "",
+  "stage_payload": {
+    "overall_status": "verified",
+    "task_status": [],
+    "current_failures_or_blocks": [],
+    "artifact_backflow": "none",
+    "alignment_backflow": null,
+    "fresh_verification_evidence": [
+      "py -3.10 -m pytest tests/test_theme_resolve.py tests/test_ui_styles.py tests/test_ui_font.py tests/test_settings_general.py tests/test_floating_window.py tests/test_history_window.py tests/test_tray_icon.py -q: exit 0 / 145 passed @ 2026-09-18T16:15:17Z",
+      "openspec validate ui-settings-themeaware-split --strict: valid"
+    ],
+    "visual_evidence": {
+      "required": false,
+      "report": null,
+      "source_artifact_revision": null,
+      "g9": "not_required"
+    },
+    "spec_coherence": "pass",
+    "code_review": {
+      "status": "warn",
+      "mode": "independent",
+      "independent_review": "required_pass",
+      "reviewer": "r-uisplit-20260919-a4f2",
+      "findings": []
+    },
+    "archive": {
+      "status": "deferred_to_openspec",
+      "reason": "execute-verify must not sync/archive"
+    },
+    "asset_writeback": []
+  },
+  "presentation": {
+    "schema": "delivery-presentation/v1",
+    "from_task": "实施·验证",
+    "to_task": "OpenSpec 归档",
+    "summary": "verified；归档移交 OpenSpec（本技能不执行 archive）",
+    "evidence": [],
+    "continue_prompt": "archive_change"
+  }
+}

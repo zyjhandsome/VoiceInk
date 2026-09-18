@@ -485,6 +485,127 @@ def recolor_group_divider(wrap: QWidget) -> None:
             line.setStyleSheet(f"background: {tok.DIVIDER_SOFT};")
 
 
+def stylesheet_for_role(role: object) -> str | None:
+    """Map a viRole to a live token stylesheet. None means leave the widget alone."""
+    from voiceink.ui import design_tokens as live
+
+    if role == "pageTitle":
+        return PAGE_TITLE
+    if role == "pageSubtitle":
+        return PAGE_SUBTITLE
+    if role == "sectionLabel":
+        return SECTION_LABEL
+    if role == "rowTitle":
+        return (
+            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 500;"
+            f" background: transparent;"
+        )
+    if role == "rowSubtitle":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_FOOTNOTE}px; line-height: 1.4;"
+            f" background: transparent;"
+        )
+    if role == "fieldLabel":
+        return (
+            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 500;"
+            f" background: transparent;"
+        )
+    if role == "hint":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_FOOTNOTE}px; line-height: 1.4;"
+            f" background: transparent;"
+        )
+    if role == "footnote":
+        return FOOTNOTE
+    if role == "polishPreviewHeading":
+        return (
+            f"color: {live.TEXT}; font-size: {live.TYPE_TITLE}px; font-weight: 600;"
+            f" background: transparent;"
+        )
+    if role == "polishPreviewLabel":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_BODY_SM}px; font-weight: 600;"
+            f" background: transparent;"
+        )
+    if role == "polishPreviewText":
+        return (
+            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_BODY_SM}px; line-height: 1.5;"
+            f" background: transparent;"
+        )
+    if role == "kvKey":
+        return (
+            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 550;"
+            f" min-width: 80px; background: transparent;"
+        )
+    if role == "kvValue":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_BODY_SM}px; background: transparent;"
+        )
+    if role == "kvValueMono":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_FOOTNOTE}px;"
+            f" font-family: {live.FONT_MONO}; background: transparent;"
+        )
+    if role == "pickTitle":
+        return (
+            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 600;"
+            f" background: transparent;"
+        )
+    if role == "pickSubtitle":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_CAPTION}px; line-height: 1.35;"
+            f" background: transparent;"
+        )
+    return None
+
+
+def reapply_subtree(root: QWidget) -> None:
+    """Broadcast theme refresh to widgets that already know how to restyle."""
+    from voiceink.ui import design_tokens as live
+    from voiceink.ui import settings_styles as ss
+
+    for obj in root.findChildren(QWidget):
+        hook = getattr(obj, "reapply_styles", None)
+        if callable(hook):
+            hook()
+        if isinstance(obj, SwitchControl):
+            obj.update()
+
+    for frame in root.findChildren(QFrame):
+        name = frame.objectName() or ""
+        if name == "settingsGroup":
+            frame.setStyleSheet(GROUP_STYLE)
+        elif name.endswith("Callout") or name == "infoCallout":
+            paint_info_callout(frame)
+        elif name == "usageTipBar":
+            paint_usage_tip_bar(frame)
+
+    for wrap in root.findChildren(QWidget):
+        if wrap.objectName() == "settingsGroupDivider":
+            recolor_group_divider(wrap)
+
+    for label in root.findChildren(QLabel):
+        css = stylesheet_for_role(label.property("viRole"))
+        if css:
+            label.setStyleSheet(css)
+        elif label.objectName() == "settingsGroupTitle":
+            label.setStyleSheet(
+                f"color: {live.TEXT_DIM}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 600;"
+                f" padding: 0 2px 2px 2px; background: transparent;"
+                f" letter-spacing: 0;"
+            )
+
+    for btn in root.findChildren(QPushButton):
+        name = btn.objectName() or ""
+        if name in ("settingsNavBtn", "deviceSelectionLink", "themeModeSegBtn"):
+            continue
+        role = btn.property("viBtn")
+        if role == "primary":
+            btn.setStyleSheet(ss.BTN_PRIMARY)
+        elif role == "ghostSm":
+            btn.setStyleSheet(ss.BTN_GHOST_SM)
+
+
 def settings_group() -> QFrame:
     frame = QFrame()
     frame.setObjectName("settingsGroup")
@@ -1509,6 +1630,43 @@ class SettingsSidebar(QWidget):
 
     def set_footer_status(self, text: str) -> None:
         self.set_status_line((text or "就绪").strip(), self._status_secondary.text())
+
+    def reapply_styles(self) -> None:
+        from voiceink.ui import design_tokens as live
+        from voiceink.ui.tray_icon import create_microphone_icon
+
+        self.setStyleSheet(
+            f"background: {live.SETTINGS_SIDEBAR_BG};"
+            f" border-right: 1px solid {live.HAIRLINE};"
+        )
+        for btn in self._buttons:
+            btn.setStyleSheet(NAV_BTN_STYLE)
+        self._brand_label.setStyleSheet(
+            f"color: {live.TEXT}; font-family: {live.FONT_DISPLAY};"
+            f" font-size: {live.TYPE_BODY}px; font-weight: 600; background: transparent;"
+        )
+        self._brand_icon.setPixmap(
+            create_microphone_icon(recording=False, size=64).pixmap(32, 32)
+        )
+        self._status_wrap.setStyleSheet(f"""
+            QFrame#sidebarStatusCard {{
+                background: {live.SURFACE_PEARL};
+                border: 1px solid {live.BORDER};
+                border-radius: {live.RADIUS_MD}px;
+            }}
+        """)
+        self._status_primary.setStyleSheet(
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_CAPTION}px; font-weight: 500;"
+            f" background: transparent;"
+        )
+        self._status_secondary.setStyleSheet(
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_CAPTION}px;"
+            f" background: transparent;"
+        )
+        self._footer_status.setStyleSheet(
+            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 500;"
+            f" background: transparent;"
+        )
 
 
 def _option_text_column(title: str, subtitle: str) -> QWidget:

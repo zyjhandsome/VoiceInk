@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-18
+goal: Settings surfaces restyle via ThemeAware instead of a 225-line role walk;
+  pages can be split without changing IA or STT behavior.

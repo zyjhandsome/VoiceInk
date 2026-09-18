@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Literal, Optional, Protocol, cast
+from typing import Iterable, Literal, Optional, Protocol, runtime_checkable, cast
 
 from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QColor, QPalette
@@ -22,6 +22,7 @@ VALID_MODES = frozenset({"light", "dark", "system"})
 _current_effective: EffectiveTheme = "light"
 
 
+@runtime_checkable
 class ThemeAware(Protocol):
     def reapply_theme(self) -> None: ...
 

@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from voiceink.history_store import SegmentRecord, SessionSummary
-from voiceink.ui.settings_styles import WINDOW_CSS
+from voiceink.ui import settings_styles as _settings_styles
 
 
 def _format_dt(ms: int) -> str:
@@ -128,6 +128,7 @@ class HistoryWindow(QDialog):
         self._setup_window()
         self._setup_ui()
         self.refresh()
+        self.reapply_theme()
 
     def _setup_window(self) -> None:
         self.setWindowTitle("历史")
@@ -139,7 +140,7 @@ class HistoryWindow(QDialog):
             | Qt.WindowType.WindowMinimizeButtonHint
             | Qt.WindowType.WindowMaximizeButtonHint
         )
-        self.setStyleSheet(WINDOW_CSS)
+        self.setStyleSheet(_settings_styles.WINDOW_CSS)
 
     def reapply_theme(self) -> None:
         from voiceink.ui import settings_styles as ss

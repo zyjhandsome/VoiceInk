@@ -528,6 +528,37 @@ class TestSettingsControlAlignment:
         finally:
             win.close()
 
+    def test_history_switch_and_spin_right_edges_align_under_dark(
+        self, config, monkeypatch
+    ):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        qapp = QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        apply_theme(mode="dark")
+        win = SettingsWindow(config)
+        try:
+            win.resize(960, 620)
+            win.show()
+            qapp.processEvents()
+            switch = win._history_enabled_row._switch
+            spin = win._history_retention_days_spin
+            host = win._pages.widget(0)
+            switch_right = switch.mapTo(host, switch.rect().topRight()).x()
+            spin_right = spin.mapTo(host, spin.rect().topRight()).x()
+            assert abs(switch_right - spin_right) <= 1
+        finally:
+            win.close()
+            apply_theme(mode="light")
+
     def test_settings_page_scrollbar_as_needed(self):
         import sys
 

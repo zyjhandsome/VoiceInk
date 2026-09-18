@@ -397,3 +397,172 @@ class TestSurfaceThemeReapply:
         sheet = win._close_btn.styleSheet()
         assert "rgba(255, 255, 255" not in sheet
         assert "CHIP_BG" in sheet or "rgba(17, 24, 39" in sheet or "#" in sheet
+
+
+class TestSettingsThemeAwareBroadcast:
+    def test_settings_reapply_theme_has_no_virole_walk(self):
+        import inspect
+
+        from voiceink.ui.settings_window import SettingsWindow
+
+        src = inspect.getsource(SettingsWindow.reapply_theme)
+        assert "viRole" not in src
+        assert "reapply_subtree" in src
+
+    def test_settings_callout_follows_dark_broadcast(self, tmp_path: Path, monkeypatch):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        apply_theme(mode="light")
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        light_border = tok.tokens_for("light")["CALLOUT_BORDER"].upper()
+        apply_theme(mode="dark", surfaces=(win,))
+        try:
+            css = win._mixed_audio_callout.styleSheet().upper()
+            assert tok.tokens_for("dark")["CALLOUT_BORDER"].upper() in css
+            assert light_border not in css
+        finally:
+            win.close()
+            apply_theme(mode="light")
+
+
+class TestFourSurfaceThemeAwareProtocol:
+    def test_four_surfaces_are_theme_aware(self, tmp_path: Path, monkeypatch):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.history_store import HistoryStore
+        from voiceink.ui.floating_window import FloatingWindow
+        from voiceink.ui.history_window import HistoryWindow
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import ThemeAware
+        from voiceink.ui.tray_icon import TrayIcon
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        settings = SettingsWindow(Config(config_dir=tmp_path))
+        history = HistoryWindow(HistoryStore(tmp_path / "history.db"))
+        floating = FloatingWindow()
+        tray = TrayIcon()
+        try:
+            for surface in (settings, history, floating, tray):
+                assert isinstance(surface, ThemeAware)
+        finally:
+            settings.close()
+            history.close()
+            floating.close()
+            tray.hide()
+            history._store.close()
+
+    def test_apply_theme_dark_refreshes_all_four_surfaces(
+        self, tmp_path: Path, monkeypatch
+    ):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.history_store import HistoryStore
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.floating_window import FloatingWindow
+        from voiceink.ui.history_window import HistoryWindow
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+        from voiceink.ui.tray_icon import TrayIcon
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        apply_theme(mode="light")
+        settings = SettingsWindow(Config(config_dir=tmp_path))
+        history = HistoryWindow(HistoryStore(tmp_path / "history.db"))
+        floating = FloatingWindow()
+        tray = TrayIcon()
+        before_icon = tray._normal_icon
+        apply_theme(mode="dark", surfaces=(settings, history, floating, tray))
+        try:
+            dark_bg = tok.tokens_for("dark")["BG"].upper()
+            assert dark_bg in settings.styleSheet().upper()
+            assert dark_bg in history.styleSheet().upper()
+            float_sheet = floating._container.styleSheet().upper()
+            assert tok.tokens_for("dark")["FLOAT_BG"].upper() in float_sheet
+            assert tray._normal_icon is not before_icon
+            assert tok.TEXT.upper() in history._title_label.styleSheet().upper()
+        finally:
+            settings.close()
+            history.close()
+            floating.close()
+            tray.hide()
+            apply_theme(mode="light")
+            history._store.close()
+
+    def test_history_and_settings_cold_start_on_active_dark_axis(
+        self, tmp_path: Path, monkeypatch
+    ):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.history_store import HistoryStore
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.history_window import HistoryWindow
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        apply_theme(mode="dark")
+        settings = SettingsWindow(Config(config_dir=tmp_path))
+        history = HistoryWindow(HistoryStore(tmp_path / "history.db"))
+        try:
+            dark_bg = tok.BG.upper()
+            assert dark_bg in settings.styleSheet().upper()
+            assert dark_bg in history.styleSheet().upper()
+            assert tok.TEXT.upper() in history._title_label.styleSheet().upper()
+        finally:
+            settings.close()
+            history.close()
+            apply_theme(mode="light")
+            history._store.close()
+
+    def test_apply_theme_continues_after_one_surface_fails(self, caplog):
+        from voiceink.ui.theme import apply_theme
+
+        class Boom:
+            def reapply_theme(self) -> None:
+                raise RuntimeError("boom")
+
+        class Tracker:
+            def __init__(self) -> None:
+                self.called = False
+
+            def reapply_theme(self) -> None:
+                self.called = True
+
+        boom = Boom()
+        tracker = Tracker()
+        apply_theme(mode="light", surfaces=(boom, tracker))
+        assert tracker.called
+        assert any("表面换肤失败" in record.message for record in caplog.records)
