@@ -119,6 +119,17 @@ class SettingsWindow(QDialog):
                     f" border: none; border-radius: 14px; padding: 0 12px; }}"
                     f"QPushButton:checked {{ background: {tok.CHIP_BG}; color: {tok.TEXT}; }}"
                 )
+        if hasattr(self, "_island_title"):
+            self._island_title.setStyleSheet(
+                f"color: {tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 600;"
+                f" background: transparent;"
+            )
+        if hasattr(self, "_close_btn"):
+            self._close_btn.setStyleSheet(
+                f"QPushButton {{ background: {tok.CHIP_BG}; color: {tok.TEXT};"
+                f" border: none; border-radius: 14px; font-size: {tok.TYPE_BODY_SM}px; }}"
+                f"QPushButton:hover {{ background: {tok.CHIP_BG_HOVER}; }}"
+            )
         if hasattr(self, "_content_wrap"):
             self._content_wrap.setStyleSheet(f"background: {tok.BG};")
         if hasattr(self, "_pages_host"):
@@ -191,13 +202,13 @@ class SettingsWindow(QDialog):
 
         header = QHBoxLayout()
         header.setContentsMargins(16, 12, 12, 8)
-        title = QLabel("设置")
-        title.setObjectName("islandSheetTitle")
-        title.setStyleSheet(
+        self._island_title = QLabel("设置")
+        self._island_title.setObjectName("islandSheetTitle")
+        self._island_title.setStyleSheet(
             f"color: {_tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 600;"
             f" background: transparent;"
         )
-        header.addWidget(title)
+        header.addWidget(self._island_title)
         header.addSpacing(12)
         self._island_nav = []
         for index, label in enumerate(("通用", "引擎", "润色", "关于")):
@@ -210,11 +221,11 @@ class SettingsWindow(QDialog):
             header.addWidget(btn)
         self._island_nav[0].setChecked(True)
         header.addStretch()
-        close_btn = QPushButton("\u2715")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setObjectName("islandClose")
-        close_btn.clicked.connect(self.close)
-        header.addWidget(close_btn)
+        self._close_btn = QPushButton("\u2715")
+        self._close_btn.setFixedSize(28, 28)
+        self._close_btn.setObjectName("islandClose")
+        self._close_btn.clicked.connect(self.close)
+        header.addWidget(self._close_btn)
         sheet_lay.addLayout(header)
 
         body = QHBoxLayout()

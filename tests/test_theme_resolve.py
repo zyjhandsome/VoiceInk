@@ -95,6 +95,39 @@ class TestSettingsAppearanceEntry:
         apply_theme(mode="dark", surfaces=(win,))
         assert "#111827" in win.styleSheet()
 
+    def test_settings_island_header_restyles_on_dark_theme(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """Island title and close chip must repaint when theme axis changes."""
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        try:
+            apply_theme(mode="dark", surfaces=(win,))
+            assert tok.TEXT.upper() == "#F9FAFB"
+            title_css = win._island_title.styleSheet().upper()
+            assert "#F9FAFB" in title_css
+            assert tok.TEXT.upper() in title_css
+
+            close_css = win._close_btn.styleSheet().upper()
+            assert "#F9FAFB" in close_css
+            assert tok.CHIP_BG.upper() in close_css
+        finally:
+            win.close()
+            apply_theme(mode="light")
+
     def test_general_labels_follow_dark_text_tokens(self, tmp_path: Path, monkeypatch):
         """Regression: inline styles must not stay locked to light TEXT on dark BG."""
         import sys
@@ -267,8 +300,14 @@ class TestSurfaceThemeReapply:
         win = FloatingWindow()
         apply_theme(mode="light", surfaces=(win,))
         sheet = win._container.styleSheet()
-        assert "243, 244, 246" in sheet or "#F3F4F6" in sheet.upper() or "#FFFFFF" in sheet.upper()
+        assert (
+            "255, 255, 255" in sheet
+            or "243, 244, 246" in sheet
+            or "#F3F4F6" in sheet.upper()
+            or "#FFFFFF" in sheet.upper()
+        )
         assert "39, 39, 41" not in sheet
+        assert "islandContainer" in sheet
 
     def test_tray_menu_stylesheet_follows_dark(self):
         from voiceink.ui.theme import apply_theme
