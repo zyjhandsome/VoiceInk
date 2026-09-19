@@ -74,7 +74,7 @@ def build_spinbox_css() -> str:
 def build_window_css() -> str:
     return f"""
     QDialog {{
-        background: {t.BG};
+        background: transparent;
         color: {t.TEXT};
         font-family: {t.FONT};
         font-size: {t.TYPE_BODY}px;

@@ -30,6 +30,35 @@ class TestAppErrorHints:
         assert keyword in App.ERROR_HINTS
 
 
+class TestIslandUserCopy:
+    def test_error_hints_point_to_engine_not_model_nav(self):
+        for hint in App.ERROR_HINTS.values():
+            assert "设置 → 模型" not in hint
+        assert "设置 → 引擎" in App.ERROR_HINTS["模型未就绪"]
+        assert "设置 → 引擎" in App.ERROR_HINTS["模型未下载"]
+
+    def test_loading_status_uses_zai_ru_vocab(self):
+        with app_harness() as h:
+            h["recognizer"].is_loading = True
+            h["recognizer"].is_ready = False
+            assert h["app"]._runtime_status_label() == "模型载入中…"
+            assert h["app"]._model_not_ready_message() == "模型载入中，请稍候"
+            audio = np.zeros(MIN_AUDIO_SAMPLES + 8, dtype=np.float32)
+            h["app"]._on_segment_ready(audio)
+            detail = h["floating"].show_model_loading.call_args[0][0]
+            assert "模型载入中" in detail
+            assert "模型加载中" not in detail
+
+    def test_not_ready_tray_points_to_engine(self):
+        with app_harness() as h:
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            h["app"]._show_model_not_ready()
+            msg = h["tray"].showMessage.call_args[0][1]
+            assert "设置 → 引擎" in msg
+            assert "设置 → 模型" not in msg
+
+
 class TestAppFriendlyError:
     def test_friendly_error_with_keyword(self):
         app = App.__new__(App)

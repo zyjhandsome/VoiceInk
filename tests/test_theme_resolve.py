@@ -93,7 +93,12 @@ class TestSettingsAppearanceEntry:
         assert cfg.get("appearance.theme_mode") == "dark"
 
         apply_theme(mode="dark", surfaces=(win,))
-        assert "#111827" in win.styleSheet()
+        from voiceink.ui import design_tokens as tok
+
+        css = win.styleSheet()
+        assert tok.tokens_for("dark")["TEXT"] in css
+        assert "background: transparent" in css
+        assert f"background: {tok.tokens_for('dark')['BG']}" not in css
 
     def test_settings_island_header_restyles_on_dark_theme(
         self, tmp_path: Path, monkeypatch
@@ -509,6 +514,37 @@ class TestSettingsThemeAwareBroadcast:
             win.close()
             apply_theme(mode="light")
 
+    def test_llm_status_and_about_toggle_follow_dark(self, tmp_path: Path, monkeypatch):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        apply_theme(mode="light")
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        light_sec = tok.tokens_for("light")["TEXT_SEC"].upper()
+        dark_sec = tok.tokens_for("dark")["TEXT_SEC"].upper()
+        try:
+            apply_theme(mode="dark", surfaces=(win,))
+            status_css = win._llm_test_status.styleSheet().upper()
+            toggle_css = win._about_paths_toggle.styleSheet().upper()
+            assert dark_sec in status_css
+            assert light_sec not in status_css
+            assert dark_sec in toggle_css
+            assert light_sec not in toggle_css
+        finally:
+            win.close()
+            apply_theme(mode="light")
+
 
 class TestFourSurfaceThemeAwareProtocol:
     def test_four_surfaces_are_theme_aware(self, tmp_path: Path, monkeypatch):
@@ -572,9 +608,16 @@ class TestFourSurfaceThemeAwareProtocol:
         before_icon = tray._normal_icon
         apply_theme(mode="dark", surfaces=(settings, history, floating, tray))
         try:
-            dark_bg = tok.tokens_for("dark")["BG"].upper()
-            assert dark_bg in settings.styleSheet().upper()
-            assert dark_bg in history.styleSheet().upper()
+            dark_text = tok.tokens_for("dark")["TEXT"].upper()
+            dark_bg = tok.tokens_for("dark")["BG"]
+            settings_css = settings.styleSheet()
+            history_css = history.styleSheet()
+            assert dark_text in settings_css.upper()
+            assert dark_text in history_css.upper()
+            assert "background: transparent" in settings_css
+            assert "background: transparent" in history_css
+            assert f"background: {dark_bg}" not in settings_css
+            assert f"background: {dark_bg}" not in history_css
             float_sheet = floating._container.styleSheet().upper()
             assert tok.tokens_for("dark")["FLOAT_BG"].upper() in float_sheet
             assert tray._normal_icon is not before_icon
@@ -610,9 +653,15 @@ class TestFourSurfaceThemeAwareProtocol:
         settings = SettingsWindow(Config(config_dir=tmp_path))
         history = HistoryWindow(HistoryStore(tmp_path / "history.db"))
         try:
-            dark_bg = tok.BG.upper()
-            assert dark_bg in settings.styleSheet().upper()
-            assert dark_bg in history.styleSheet().upper()
+            dark_text = tok.TEXT.upper()
+            settings_css = settings.styleSheet()
+            history_css = history.styleSheet()
+            assert dark_text in settings_css.upper()
+            assert dark_text in history_css.upper()
+            assert "background: transparent" in settings_css
+            assert "background: transparent" in history_css
+            assert f"background: {tok.BG}" not in settings_css
+            assert f"background: {tok.BG}" not in history_css
             assert tok.TEXT.upper() in history._title_label.styleSheet().upper()
         finally:
             settings.close()

@@ -159,6 +159,20 @@ class SettingsWindow(QDialog):
                 f" background: {tok.SURFACE_PEARL}; border: 1px solid {tok.HAIRLINE};"
                 f" border-radius: {tok.RADIUS_PILL}px; padding: 3px 10px;"
             )
+        if hasattr(self, "_llm_test_status"):
+            self._llm_test_status.setStyleSheet(
+                f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px;"
+                f" background: transparent; padding: 0 16px 12px 16px;"
+            )
+        if hasattr(self, "_about_paths_toggle"):
+            self._about_paths_toggle.setStyleSheet(
+                f"QPushButton#aboutPathsToggle {{"
+                f" color: {tok.TEXT_SEC}; background: transparent; border: none;"
+                f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 500;"
+                f" text-align: left; padding: 10px 16px;"
+                f"}}"
+                f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
+            )
 
     def _on_nav_changed(self, row: int):
         self._pages.setCurrentIndex(row)

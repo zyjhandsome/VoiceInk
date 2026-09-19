@@ -69,7 +69,7 @@ def _require_bundle_model(downloaded: list[tuple[str, Path]]) -> None:
     if any(d == dirname for d, _ in downloaded):
         return
     print("\n[ERROR] 打包 EXE 需要已在本地就绪的 FireRedASR2 模型。")
-    print("  请先在应用「设置 → 模型」中下载该模型，或将完整目录放到:")
+    print("  请先在应用「设置 → 引擎」中下载该模型，或将完整目录放到:")
     print(f"    {SCRIPT_DIR / 'models' / dirname}")
     print(f"    或 {Path.home() / '.voiceink' / 'models' / dirname}")
     sys.exit(1)

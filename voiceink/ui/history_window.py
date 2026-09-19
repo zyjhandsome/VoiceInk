@@ -227,7 +227,7 @@ class HistoryWindow(QDialog):
                 f" background: transparent; color: {tok.TEXT};"
             )
         if hasattr(self, "_right_pane"):
-            self._right_pane.setStyleSheet(f"background: {tok.BG};")
+            self._right_pane.setStyleSheet("background: transparent;")
         if hasattr(self, "_search_edit"):
             self._search_edit.setStyleSheet(f"""
                 QLineEdit {{

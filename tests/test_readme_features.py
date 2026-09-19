@@ -256,6 +256,21 @@ class TestReadmeAudioSources:
             assert kwargs["input_source"] == "microphone"
 
 
+class TestReadmeIslandCopy:
+    def test_readme_and_build_point_to_engine_nav(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        build = (root / "build.py").read_text(encoding="utf-8")
+        assert "设置 → 模型" not in readme
+        assert "设置 → 引擎" in readme
+        assert "模型加载中" not in readme
+        assert "模型载入中" in readme
+        assert "设置 → 模型" not in build
+        assert "设置 → 引擎" in build
+
+
 class TestReadmeSettingsLifecycle:
     """README: 修改触发方式/音频来源后保存生效；关闭设置恢复快捷键。"""
 

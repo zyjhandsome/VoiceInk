@@ -68,8 +68,8 @@ class App(QObject):
     # 友好化错误信息映射
     ERROR_HINTS = {
         "麦克风": "无法访问麦克风\n请检查：1) 麦克风是否已连接\n2) 是否被其他应用占用\n3) 系统隐私设置",
-        "模型未就绪": "语音模型未就绪\n请右键托盘图标 → 设置 → 模型 → 下载模型",
-        "模型未下载": "语音模型未下载\n请右键托盘图标 → 设置 → 模型 → 下载模型",
+        "模型未就绪": "语音模型未就绪\n请右键托盘图标 → 设置 → 引擎 → 下载模型",
+        "模型未下载": "语音模型未下载\n请右键托盘图标 → 设置 → 引擎 → 下载模型",
         "录音过短": "录音过短\n请按住快捷键说话，时长至少 0.1 秒",
         "未识别": "未识别到语音内容\n请确保音频来源与设备正确，并靠近麦克风或播放电脑声音",
         "音频设备": "无法打开音频设备\n请在设置 → 通用 → 声音收录 中刷新并选择设备",
@@ -261,7 +261,7 @@ class App(QObject):
             log.warning("语音模型 %s 未下载，请在设置中下载模型", name)
             hint = (
                 f"请下载语音模型「{name}」。"
-                "Windows 可双击托盘打开设置 → 模型；或右键托盘 → 设置 → 模型。"
+                "Windows 可双击托盘打开设置 → 引擎；或右键托盘 → 设置 → 引擎。"
             )
             self._floating.show_error(hint)
             self._tray.showMessage(
@@ -275,7 +275,7 @@ class App(QObject):
 
     def _model_not_ready_message(self) -> str:
         if self._recognizer.is_loading:
-            return "模型加载中，请稍候"
+            return "模型载入中，请稍候"
         return self._friendly_error("模型未就绪")
 
     def _show_model_not_ready(self) -> None:
@@ -287,7 +287,7 @@ class App(QObject):
         self._floating.show_error(hint)
         self._tray.showMessage(
             "VoiceInk",
-            f"{hint} Windows 可双击托盘打开设置 → 模型。",
+            f"{hint} Windows 可双击托盘打开设置 → 引擎。",
             QSystemTrayIcon.MessageIcon.Warning,
             6000,
         )
@@ -402,7 +402,7 @@ class App(QObject):
             if not self._recognizer.is_loading:
                 self._tray.showMessage(
                     "VoiceInk",
-                    "语音模型未就绪。请在设置 → 模型 中下载 FireRedASR2 并等待加载完成。",
+                    "语音模型未就绪。请在设置 → 引擎 中下载 FireRedASR2 并等待加载完成。",
                     QSystemTrayIcon.MessageIcon.Warning,
                     6000,
                 )
@@ -532,7 +532,7 @@ class App(QObject):
                 self._segment_queue.append(audio)
                 log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
                 self._floating.show_model_loading(
-                    "模型加载中，已录制的语音将排队等待识别…"
+                    "模型载入中，已录制的语音将排队等待识别…"
                 )
             return
         if self._is_transcribing:
@@ -555,7 +555,7 @@ class App(QObject):
         if not self._recognizer.is_ready:
             if self._recognizer.is_loading:
                 self._segment_queue.insert(0, audio)
-                self._floating.show_model_loading("模型加载中，识别已暂停…")
+                self._floating.show_model_loading("模型载入中，识别已暂停…")
             return
         self._pending_record = self._build_pending_history_record(audio)
         self._is_transcribing = True
@@ -602,7 +602,7 @@ class App(QObject):
             log.warning("未识别到语音内容")
             self._is_transcribing = False
             if self._recognizer.is_loading:
-                self._floating.show_model_loading("模型加载中，请稍候…")
+                self._floating.show_model_loading("模型载入中，请稍候…")
                 self._tray.set_activity_tooltip("loading")
                 self._pump_segment_queue()
                 return
@@ -838,7 +838,7 @@ class App(QObject):
 
     def _runtime_status_label(self) -> str:
         if self._recognizer.is_loading:
-            return "模型加载中…"
+            return "模型载入中…"
         if self._recognizer.is_ready:
             return "就绪"
         return "模型未就绪"
@@ -1078,7 +1078,7 @@ class App(QObject):
             "· 仅麦克风：你的说话\n"
             "· 仅电脑播放：视频/会议远端声音\n"
             "· 混合：开会时远端 + 自己都要\n\n"
-            "请先在设置 → 模型 中下载至少一个语音模型"
+            "请先在设置 → 引擎 中下载至少一个语音模型"
             "（若安装包已附带模型，启动后会自动载入）。\n\n"
             "默认快捷键为 Ctrl+Space；若与输入法冲突，可在设置中改为 Alt+Space。\n"
             "Windows：双击托盘图标可打开设置。"

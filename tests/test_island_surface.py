@@ -168,3 +168,45 @@ class TestIslandSheetConstants:
         assert ISLAND_SHEET_WIDTH <= 560
         assert ISLAND_SETTINGS_WIDTH >= ISLAND_SHEET_WIDTH
         assert ISLAND_SETTINGS_WIDTH <= 760
+
+
+def _qdialog_block(css: str) -> str:
+    import re
+
+    match = re.search(r"QDialog\s*\{([^}]*)\}", css)
+    assert match, "island sheet must style the QDialog root"
+    return match.group(1)
+
+
+class TestIslandSheetGlass:
+    def test_settings_dialog_root_is_transparent(self, qapp, tmp_path, monkeypatch):
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_window import SettingsWindow
+
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        try:
+            body = _qdialog_block(win.styleSheet())
+            assert "transparent" in body
+            assert tok.BG not in body
+        finally:
+            win.close()
+
+    def test_history_dialog_and_right_pane_are_transparent(self, qapp):
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.history_window import HistoryWindow
+        from tests.test_history_window import FakeHistoryStore
+
+        win = HistoryWindow(FakeHistoryStore())
+        try:
+            body = _qdialog_block(win.styleSheet())
+            assert "transparent" in body
+            assert tok.BG not in body
+            right = win._right_pane.styleSheet()
+            assert "transparent" in right
+            assert tok.BG not in right
+        finally:
+            win.close()
