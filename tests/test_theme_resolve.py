@@ -379,6 +379,39 @@ class TestSurfaceThemeReapply:
 
         store.close()
 
+    def test_history_stream_row_labels_follow_theme_reapply(self):
+        """Time-stream row labels must restyle when the theme axis flips."""
+        import sys
+
+        from PyQt6.QtWidgets import QApplication, QLabel
+
+        from tests.test_history_window import FakeHistoryStore
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.history_window import HistoryWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        apply_theme(mode="light")
+        light_text = tok.tokens_for("light")["TEXT"].upper()
+        dark_text = tok.tokens_for("dark")["TEXT"].upper()
+
+        win = HistoryWindow(FakeHistoryStore())
+        try:
+            row = win._session_list.itemWidget(win._session_list.item(0))
+            assert row is not None
+            preview = row.findChild(QLabel, "streamPreview")
+            assert preview is not None
+            light_css = preview.styleSheet().upper()
+            assert light_text in light_css
+
+            apply_theme(mode="dark", surfaces=(win,))
+            dark_css = preview.styleSheet().upper()
+            assert dark_text in dark_css
+            assert light_text not in dark_css
+        finally:
+            win.close()
+            apply_theme(mode="light")
+
     def test_info_callout_uses_token_border_not_emoji(self):
         import sys
 

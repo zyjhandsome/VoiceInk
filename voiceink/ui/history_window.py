@@ -267,6 +267,31 @@ class HistoryWindow(QDialog):
                     background: {tok.SURFACE_PEARL};
                 }}
             """)
+            chip_css = _chip_qss()
+            preview_css = (
+                f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; background: transparent;"
+            )
+            time_css = (
+                f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; background: transparent;"
+            )
+            day_css = (
+                f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px;"
+                f" letter-spacing: 0.08em; background: transparent;"
+            )
+            for i in range(self._session_list.count()):
+                row = self._session_list.itemWidget(self._session_list.item(i))
+                if row is None:
+                    continue
+                for lab in row.findChildren(QLabel):
+                    name = lab.objectName()
+                    if name == "streamPreview":
+                        lab.setStyleSheet(preview_css)
+                    elif name == "streamDay":
+                        lab.setStyleSheet(day_css)
+                    elif name == "streamChip":
+                        lab.setStyleSheet(chip_css)
+                    else:
+                        lab.setStyleSheet(time_css)
         if hasattr(self, "_detail_title"):
             self._detail_title.setStyleSheet(
                 f"font-size: {tok.TYPE_TITLE}px; font-weight: 600; color: {tok.TEXT};"
@@ -471,6 +496,7 @@ class HistoryWindow(QDialog):
         lay.setSpacing(4)
         if day:
             day_lab = QLabel(day)
+            day_lab.setObjectName("streamDay")
             day_lab.setStyleSheet(
                 f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px;"
                 f" letter-spacing: 0.08em; background: transparent;"
@@ -478,6 +504,7 @@ class HistoryWindow(QDialog):
             lay.addWidget(day_lab)
         line = QHBoxLayout()
         time_lab = QLabel(datetime.fromtimestamp(session.created_at / 1000).strftime("%H:%M"))
+        time_lab.setObjectName("streamTime")
         time_lab.setFixedWidth(44)
         time_lab.setStyleSheet(
             f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; background: transparent;"
@@ -495,13 +522,16 @@ class HistoryWindow(QDialog):
         chips.addSpacing(44)
         chip_css = _chip_qss()
         source_chip = QLabel(_source_chip_text(session.source))
+        source_chip.setObjectName("streamChip")
         source_chip.setStyleSheet(chip_css)
         chips.addWidget(source_chip)
         if session.target_app:
             app_chip = QLabel(session.target_app)
+            app_chip.setObjectName("streamChip")
             app_chip.setStyleSheet(chip_css)
             chips.addWidget(app_chip)
         count = QLabel(f"{session.segment_count} 段")
+        count.setObjectName("streamChip")
         count.setStyleSheet(chip_css)
         chips.addWidget(count)
         chips.addStretch()
