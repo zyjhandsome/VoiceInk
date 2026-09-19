@@ -104,7 +104,9 @@ def test_double_click_expands_session_segments(qapp):
     detail = window._details.toPlainText()
     assert "polished first" in detail
     assert "raw second" in detail
-    assert "来源：" in detail or "触发：" in detail or "模型：" in detail
+    chips = [c.text() for c in window._detail_chip_labels]
+    assert any("混合" in t for t in chips)
+    assert "来源：" not in detail
 
 
 def test_legacy_file_import_history_labels_are_preserved(qapp):
@@ -138,9 +140,40 @@ def test_legacy_file_import_history_labels_are_preserved(qapp):
     window = HistoryWindow(store)
     window._expand_session(window._session_list.item(0))
     detail = window._details.toPlainText()
-    assert "来源：文件转写" in detail
-    assert "触发：导入文件" in detail
+    chips = [c.text() for c in window._detail_chip_labels]
+    assert any("文件转写" in t for t in chips)
+    assert any("导入文件" in t for t in chips)
+    assert "来源：" not in detail
     assert "file raw text" in detail
+
+
+def test_history_chrome_copy(qapp):
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        assert window._title_label.text() == "历史"
+        assert window._search_edit.placeholderText() == "搜索转写内容"
+        from voiceink.ui import settings_styles as ss
+        from voiceink.ui import design_tokens as tok
+        assert tok.ACCENT.lower() not in window._export_btn.styleSheet().lower() or (
+            ss.BTN_PRIMARY not in (window._export_btn.styleSheet(),)
+        )
+    finally:
+        window.close()
+
+
+def test_detail_uses_chips_not_runon_meta(qapp):
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        window._session_list.setCurrentRow(0)
+        window._expand_session(window._session_list.item(0))
+        body = window._details.toPlainText()
+        assert "来源：" not in body
+        assert "polished first" in body
+        chips = [c.text() for c in window._detail_chip_labels]
+        assert any("混合" in t for t in chips)
+        assert any("持续" in t or "持续转写" in t for t in chips)
+    finally:
+        window.close()
 
 
 def test_search_debounces_into_like_search(qapp):
@@ -207,6 +240,19 @@ def test_undo_pending_delete_restores_sessions_without_store_delete(qapp, monkey
     assert window._session_list.count() == 2
 
 
+def test_copy_polished_disabled_when_session_has_no_polish(qapp):
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        window._session_list.setCurrentRow(1)
+        window._on_selection_changed()
+        assert not window._copy_polished_btn.isEnabled()
+        window._session_list.setCurrentRow(0)
+        window._on_selection_changed()
+        assert window._copy_polished_btn.isEnabled()
+    finally:
+        window.close()
+
+
 def test_selection_summary_disables_copy_for_multiple_items(qapp):
     store = FakeHistoryStore()
     window = HistoryWindow(store)
@@ -227,7 +273,7 @@ def test_empty_history_shows_helpful_placeholder_and_disables_actions(qapp):
     store.sessions = []
     window = HistoryWindow(store)
 
-    assert "暂无历史" in window._details.toPlainText()
+    assert "还没有会话。完成一次转写后会出现在这里。" in window._details.toPlainText()
     assert not window._copy_raw_btn.isEnabled()
     assert not window._copy_polished_btn.isEnabled()
     assert not window._export_btn.isEnabled()
