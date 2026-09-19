@@ -214,8 +214,9 @@ class TestSettingsAppearanceEntry:
             apply_theme(mode="light", surfaces=(win,))
             card.reapply_styles()
             assert tok.BG.upper() == "#F3F4F6"
-            assert "#F3F4F6" in win._pages_host.styleSheet().upper()
+            assert "TRANSPARENT" in win._pages_host.styleSheet().upper()
             assert "#111827" not in win._pages_host.styleSheet().upper()
+            assert tok.FLOAT_BG.upper() in win._sheet.styleSheet().upper()
 
             ghost = win._llm_key_toggle.styleSheet().upper()
             assert tok.SURFACE_PEARL.upper() in ghost

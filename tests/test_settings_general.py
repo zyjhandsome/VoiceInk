@@ -180,6 +180,66 @@ class TestGeneralPageLayout:
             assert f"border: 1px solid {BORDER}" in sheet
             assert f"border-radius: {RADIUS_LG}px" in sheet
 
+    def test_settings_content_column_is_transparent_on_sheet(self, settings_window):
+        from voiceink.ui import design_tokens as tok
+
+        for widget in (
+            settings_window._content_wrap,
+            settings_window._pages_host,
+            settings_window._pages,
+        ):
+            sheet = widget.styleSheet()
+            assert "transparent" in sheet.lower()
+            assert f"background: {tok.BG}" not in sheet
+        assert "border-radius: 28px" in settings_window._sheet.styleSheet()
+
+    def test_about_paths_start_hidden_and_reveal_on_toggle(
+        self, config, qapp, monkeypatch
+    ):
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(
+            SettingsWindow, "_refresh_audio_device_lists", lambda self: None
+        )
+        win = SettingsWindow(config)
+        try:
+            win._on_island_nav(3)
+            win.show()
+            qapp.processEvents()
+            assert win._about_paths_wrap.objectName() == "aboutPaths"
+            assert not win._about_paths_wrap.isVisible()
+            win._about_paths_toggle.click()
+            qapp.processEvents()
+            assert win._about_paths_wrap.isVisible()
+            labels = [lb.text() for lb in win._about_paths_wrap.findChildren(QLabel)]
+            assert "模型目录" in labels
+            assert "配置文件" in labels
+        finally:
+            win.close()
+
+    def test_incomplete_llm_fields_write_status_not_messagebox(
+        self, settings_window, monkeypatch
+    ):
+        settings_window._llm_url_edit.clear()
+        settings_window._llm_key_edit.clear()
+        settings_window._llm_model_edit.clear()
+        boxes = []
+        monkeypatch.setattr(
+            QMessageBox, "warning", staticmethod(lambda *a, **k: boxes.append("warning"))
+        )
+        monkeypatch.setattr(
+            QMessageBox,
+            "information",
+            staticmethod(lambda *a, **k: boxes.append("information")),
+        )
+        monkeypatch.setattr(
+            QMessageBox,
+            "critical",
+            staticmethod(lambda *a, **k: boxes.append("critical")),
+        )
+        settings_window._test_llm()
+        assert settings_window._llm_test_status.text() == "请填写完整的接口信息。"
+        assert boxes == []
+
     def test_polish_preview_stays_visible_when_enabled(self, settings_window):
         settings_window._on_llm_enable_toggled(True)
 

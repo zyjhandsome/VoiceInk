@@ -131,11 +131,11 @@ class SettingsWindow(QDialog):
                 f"QPushButton:hover {{ background: {tok.CHIP_BG_HOVER}; }}"
             )
         if hasattr(self, "_content_wrap"):
-            self._content_wrap.setStyleSheet(f"background: {tok.BG};")
+            self._content_wrap.setStyleSheet("background: transparent;")
         if hasattr(self, "_pages_host"):
-            self._pages_host.setStyleSheet(f"background: {tok.BG};")
+            self._pages_host.setStyleSheet("background: transparent;")
         if hasattr(self, "_pages"):
-            self._pages.setStyleSheet(f"background: {tok.BG};")
+            self._pages.setStyleSheet("background: transparent;")
         if hasattr(self, "_hotkey_hint"):
             self._hotkey_hint.setStyleSheet(
                 f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
@@ -236,14 +236,14 @@ class SettingsWindow(QDialog):
         # auto-saved, so persistent action chrome would only consume space.
         content_wrap = QWidget()
         self._content_wrap = content_wrap
-        content_wrap.setStyleSheet(f"background: {_tok.BG};")
+        content_wrap.setStyleSheet("background: transparent;")
         content_lay = QVBoxLayout(content_wrap)
         content_lay.setContentsMargins(0, 0, 0, 0)
         content_lay.setSpacing(0)
 
         pages_host = QWidget()
         self._pages_host = pages_host
-        pages_host.setStyleSheet(f"background: {_tok.BG};")
+        pages_host.setStyleSheet("background: transparent;")
         pages_lay = QHBoxLayout(pages_host)
         # Top/bottom inset so section titles (e.g. 偏好) are not flush-clipped
         # against the content column edge when scrolled.
@@ -254,7 +254,7 @@ class SettingsWindow(QDialog):
         self._pages.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
         )
-        self._pages.setStyleSheet(f"background: {_tok.BG};")
+        self._pages.setStyleSheet("background: transparent;")
         self._pages.addWidget(build_general_page(self))
         self._pages.addWidget(build_model_page(self))
         self._pages.addWidget(build_polish_page(self))
