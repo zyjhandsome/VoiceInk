@@ -272,7 +272,7 @@ def activate(effective: str) -> None:
     g = globals()
     for key in _COLOR_KEYS:
         g[key] = vals[key]
-    # Float state aliases that follow float text
+    # Float state aliases: listen uses island mint; others follow float text
     g["STATE_LISTEN"] = vals["ISLAND_MINT"]
     g["STATE_RECOGNIZE"] = vals["FLOAT_TEXT"]
     g["STATE_POLISH"] = vals["FLOAT_TEXT"]
