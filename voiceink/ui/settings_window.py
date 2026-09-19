@@ -33,7 +33,6 @@ from voiceink.audio_devices import (
 
 from voiceink.ui.settings_components import (
     SettingsPage,
-    SettingsSidebar,
     elide_middle,
     empty_state,
     group_divider,
@@ -48,7 +47,6 @@ from voiceink.ui.settings_pages import (
     build_polish_page,
 )
 from voiceink.ui.model_card import ModelCard, RATING_TOOLTIP, format_model_ratings
-from voiceink.ui.nav_icons import nav_icon
 from voiceink.ui import design_tokens as _tok
 from voiceink.ui import settings_styles as _settings_styles
 from voiceink.ui.theme import normalize_theme_mode
@@ -89,15 +87,16 @@ class SettingsWindow(QDialog):
         self.reapply_theme()
 
     def _setup_window(self):
-        self.setWindowTitle("设置")
-        self.setMinimumSize(900, 560)
-        self.resize(960, 620)
-        self.setWindowFlags(
-            Qt.WindowType.Window
-            | Qt.WindowType.WindowCloseButtonHint
-            | Qt.WindowType.WindowMinimizeButtonHint
-            | Qt.WindowType.WindowMaximizeButtonHint
+        from voiceink.ui.island_chrome import (
+            ISLAND_SETTINGS_WIDTH,
+            ISLAND_SHEET_HEIGHT,
+            apply_island_sheet_flags,
         )
+
+        self.setWindowTitle("设置")
+        apply_island_sheet_flags(self)
+        self.setMinimumSize(ISLAND_SETTINGS_WIDTH, 520)
+        self.resize(ISLAND_SETTINGS_WIDTH, ISLAND_SHEET_HEIGHT)
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
 
     def reapply_theme(self) -> None:
@@ -108,7 +107,18 @@ class SettingsWindow(QDialog):
             reapply_subtree,
         )
 
+        from voiceink.ui.island_chrome import island_container_css
+
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
+        if hasattr(self, "_sheet"):
+            self._sheet.setStyleSheet(island_container_css())
+        if hasattr(self, "_island_nav"):
+            for btn in self._island_nav:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {tok.TEXT_SEC};"
+                    f" border: none; border-radius: 14px; padding: 0 12px; }}"
+                    f"QPushButton:checked {{ background: {tok.CHIP_BG}; color: {tok.TEXT}; }}"
+                )
         if hasattr(self, "_content_wrap"):
             self._content_wrap.setStyleSheet(f"background: {tok.BG};")
         if hasattr(self, "_pages_host"):
@@ -141,25 +151,75 @@ class SettingsWindow(QDialog):
 
     def _on_nav_changed(self, row: int):
         self._pages.setCurrentIndex(row)
+        self._sync_island_nav(row)
+
+    def _on_island_nav(self, row: int) -> None:
+        self._on_nav_changed(row)
+
+    def _sync_island_nav(self, row: int) -> None:
+        if not hasattr(self, "_island_nav"):
+            return
+        for index, btn in enumerate(self._island_nav):
+            btn.blockSignals(True)
+            btn.setChecked(index == row)
+            btn.blockSignals(False)
 
     def _open_about_from_general(self) -> None:
-        self._sidebar.set_active(3)
-        self._pages.setCurrentIndex(3)
+        self._on_island_nav(3)
 
     # ── Layout ─────────────────────────────────────────
 
+    def showEvent(self, event):
+        from voiceink.ui.island_chrome import position_island
+
+        super().showEvent(event)
+        position_island(self, width=self.width())
+
     def _setup_ui(self):
+        from voiceink.ui.island_chrome import island_container_css
+
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(0)
+
+        self._sheet = QWidget()
+        self._sheet.setObjectName("islandSheet")
+        self._sheet.setStyleSheet(island_container_css())
+        sheet_lay = QVBoxLayout(self._sheet)
+        sheet_lay.setContentsMargins(0, 0, 0, 0)
+        sheet_lay.setSpacing(0)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(16, 12, 12, 8)
+        title = QLabel("设置")
+        title.setObjectName("islandSheetTitle")
+        title.setStyleSheet(
+            f"color: {_tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 600;"
+            f" background: transparent;"
+        )
+        header.addWidget(title)
+        header.addSpacing(12)
+        self._island_nav = []
+        for index, label in enumerate(("通用", "引擎", "润色", "关于")):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(28)
+            btn.clicked.connect(lambda _=False, row=index: self._on_island_nav(row))
+            self._island_nav.append(btn)
+            header.addWidget(btn)
+        self._island_nav[0].setChecked(True)
+        header.addStretch()
+        close_btn = QPushButton("\u2715")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setObjectName("islandClose")
+        close_btn.clicked.connect(self.close)
+        header.addWidget(close_btn)
+        sheet_lay.addLayout(header)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
-
-        self._sidebar = SettingsSidebar(nav_icon)
-        self._sidebar.page_changed.connect(self._on_nav_changed)
-        body.addWidget(self._sidebar)
 
         # The content column starts directly with the active page. Settings are
         # auto-saved, so persistent action chrome would only consume space.
@@ -176,7 +236,7 @@ class SettingsWindow(QDialog):
         pages_lay = QHBoxLayout(pages_host)
         # Top/bottom inset so section titles (e.g. 偏好) are not flush-clipped
         # against the content column edge when scrolled.
-        pages_lay.setContentsMargins(20, 12, 20, 12)
+        pages_lay.setContentsMargins(12, 4, 12, 12)
         pages_lay.setSpacing(0)
 
         self._pages = QStackedWidget()
@@ -188,17 +248,22 @@ class SettingsWindow(QDialog):
         self._pages.addWidget(build_model_page(self))
         self._pages.addWidget(build_polish_page(self))
         self._pages.addWidget(build_about_page(self))
+        for i in range(self._pages.count()):
+            page = self._pages.widget(i)
+            if isinstance(page, SettingsPage):
+                page.set_compact(True)
+                page.set_spacing(16)
         pages_lay.addWidget(self._pages, 1)
         content_lay.addWidget(pages_host, 1)
         body.addWidget(content_wrap, 1)
 
-        root.addLayout(body, 1)
+        sheet_lay.addLayout(body, 1)
+        root.addWidget(self._sheet, 1)
 
     # ── Page: General ──────────────────────────────────
 
     def set_runtime_status(self, hint: str) -> None:
         self._runtime_status_hint = hint.strip() or "就绪"
-        self._refresh_sidebar_status()
 
     def _configure_numeric_spin(self, spin: QSpinBox) -> None:
         """Shared metrics for flat themed QSpinBox steppers."""
@@ -398,7 +463,6 @@ class SettingsWindow(QDialog):
         if downloaded_models:
             _add_section("其他已下载", downloaded_models, True)
         _add_section("可下载", available_models, False)
-        self._refresh_model_hero_status()
 
     def _on_card_action(self, model_id: str, action: str):
         if action == "select":
@@ -478,7 +542,6 @@ class SettingsWindow(QDialog):
         self._llm_preview_card.setVisible(True)
         if hasattr(self, "_llm_preview_divider"):
             self._llm_preview_divider.setVisible(True)
-        self._refresh_polish_hero_status()
 
         if page is not None and page.widget() is not None:
             def _restore() -> None:
@@ -595,86 +658,20 @@ class SettingsWindow(QDialog):
         m = mode or self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
         return "持续转写" if m == TRIGGER_MODE_CONTINUOUS else "按住录音"
 
-    def _active_model_name(self) -> str:
-        from voiceink.speech_recognizer import get_model_info
-        active_id = self._config.get("stt.model_id", "")
-        info = get_model_info(active_id) if active_id else None
-        return info["name"] if info else "未选择"
-
-    def _refresh_general_hero_status(self) -> None:
-        if not hasattr(self, "_general_header"):
-            return
-        # General page uses a static reference header; status lives in sidebar.
-
-    def _refresh_model_hero_status(self) -> None:
-        if not hasattr(self, "_model_hero"):
-            return
-        from voiceink.speech_recognizer import get_model_info, is_model_downloaded
-
-        active_id = self._config.get("stt.model_id", "")
-        info = get_model_info(active_id) if active_id else None
-        if info and is_model_downloaded(active_id):
-            self._model_hero.set_subtitle(
-                f"{info['name']} · {info['size_mb']} MB · {info['languages']}"
-            )
-            self._model_hero.set_tags([])
-        else:
-            self._model_hero.set_subtitle("尚未下载或未启用模型")
-            self._model_hero.set_tags([])
-
-    def _refresh_polish_hero_status(self) -> None:
-        if not hasattr(self, "_polish_hero"):
-            return
-        enabled = self._config.get("llm.enabled", False)
-        if hasattr(self, "_llm_enable_row"):
-            enabled = self._llm_enable_row.isChecked()
-        if enabled:
-            model = self._config.get("llm.model_name", "") or "未配置"
-            self._polish_hero.set_inline_status(f"已开启 · {model}")
-            self._polish_hero.set_subtitle("")
-        else:
-            self._polish_hero.set_inline_status("已关闭")
-            self._polish_hero.set_subtitle("")
-
     def _refresh_about_hero_status(self) -> None:
-        if not hasattr(self, "_about_hero"):
+        if not hasattr(self, "_about_usage_tip"):
             return
-        self._about_hero.set_tags([])
-        self._about_hero.set_subtitle("")
-        if hasattr(self, "_about_usage_tip"):
-            hotkey = format_hotkey(self._config.get("hotkey", "ctrl+space"))
-            if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
-                tip = (
-                    f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；"
-                    f"Esc 或浮窗 × 结束"
-                )
-            else:
-                tip = f"按住 {hotkey} 说话，松开后识别并粘贴"
-            labels = self._about_usage_tip.findChildren(QLabel)
-            if labels:
-                labels[0].setText(tip)
-
-    def _refresh_sidebar_status(self) -> None:
-        if not hasattr(self, "_sidebar"):
-            return
-        llm_on = self._config.get("llm.enabled", False)
-        if hasattr(self, "_llm_enable_row"):
-            llm_on = self._llm_enable_row.isChecked()
-        llm = "润色已开启" if llm_on else "润色已关闭"
-        model = elide_middle(self._active_model_name(), 20)
-        self._sidebar.set_status_line(
-            f"{self._runtime_status_hint} · {model}",
-            llm,
-        )
-        if hasattr(self._sidebar, "set_footer_status"):
-            self._sidebar.set_footer_status(self._runtime_status_hint)
-
-    def _refresh_all_heroes(self) -> None:
-        self._refresh_general_hero_status()
-        self._refresh_model_hero_status()
-        self._refresh_polish_hero_status()
-        self._refresh_about_hero_status()
-        self._refresh_sidebar_status()
+        hotkey = format_hotkey(self._config.get("hotkey", "ctrl+space"))
+        if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
+            tip = (
+                f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；"
+                f"Esc 或浮窗 × 结束"
+            )
+        else:
+            tip = f"按住 {hotkey} 说话，松开后识别并粘贴"
+        labels = self._about_usage_tip.findChildren(QLabel)
+        if labels:
+            labels[0].setText(tip)
 
     # ── Shared ─────────────────────────────────────────
 
@@ -781,7 +778,6 @@ class SettingsWindow(QDialog):
         self._llm_prompt_edit.setEnabled(True)
 
         self._refresh_about_info()
-        self._refresh_all_heroes()
         self._loading = False
 
     def _set_combo_by_data(self, combo: QComboBox, value: int) -> bool:
@@ -976,7 +972,6 @@ class SettingsWindow(QDialog):
         self.settings_changed.emit()
         self._refresh_hotkey_hint()
         self._refresh_about_info()
-        self._refresh_all_heroes()
 
     def _refresh_hotkey_hint(self) -> None:
         if not hasattr(self, "_hotkey_hint"):
@@ -1045,7 +1040,6 @@ class SettingsWindow(QDialog):
         if hotkey != old:
             self.hotkey_updated.emit(hotkey)
         self._refresh_about_info()
-        self._refresh_all_heroes()
 
     def _on_input_source_radio_toggled(self, checked: bool):
         if not checked or self._loading:

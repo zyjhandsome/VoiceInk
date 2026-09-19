@@ -117,7 +117,7 @@ class TestSettingsAppearanceEntry:
             apply_theme(mode="dark", surfaces=(win,))
             assert tok.TEXT.upper() == "#F9FAFB"
 
-            title = win._general_hero._title.styleSheet().upper()
+            title = win._theme_title_label.styleSheet().upper()
             assert "#F9FAFB" in title
 
             row = win._auto_start_row

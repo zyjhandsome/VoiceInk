@@ -19,7 +19,6 @@ from voiceink.ui import settings_styles
 from voiceink.ui.hotkey_edit import HotkeyEdit
 from voiceink.ui.settings_components import (
     AudioSourcePicker,
-    PageHero,
     SettingsPage,
     ThemeModeSegment,
     ToggleOptionRow,
@@ -38,11 +37,6 @@ from voiceink.ui.settings_components import (
 def build_general_page(win) -> QWidget:
     """Prototype v3 layout: stacked 录音 → 音频 → 偏好 cards (top to bottom)."""
     page = SettingsPage()
-    win._general_hero = PageHero(
-        "通用设置",
-        subtitle="录音、音频与偏好",
-    )
-    page.add(win._general_hero)
 
     # ── 录音 ──
     record_card = settings_group()

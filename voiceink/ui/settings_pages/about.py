@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from voiceink.config import VERSION
 from voiceink.ui import design_tokens as tok
 from voiceink.ui.settings_components import (
-    PageHero,
     SettingsPage,
     info_callout,
     settings_group,
@@ -15,9 +14,6 @@ from voiceink.ui.settings_components import (
 
 def build_about_page(win) -> QWidget:
     page = SettingsPage()
-    win._about_hero = PageHero("关于")
-    page.add(win._about_hero)
-
     win._about_info_group = settings_group()
     win._about_info_lay = QVBoxLayout(win._about_info_group)
     win._about_info_lay.setContentsMargins(0, 0, 0, 0)

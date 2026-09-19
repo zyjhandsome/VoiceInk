@@ -249,52 +249,22 @@ class TestSidebarVisualContracts:
 
         assert not hasattr(components, "GeneralPageHeader")
 
-    def test_sidebar_brand_and_nav_metrics(self):
+    def test_settings_island_nav_has_no_sidebar(self, tmp_path, monkeypatch):
         import sys
-
-        from PyQt6.QtWidgets import QApplication, QFrame, QPushButton
-
-        from voiceink.ui.design_tokens import BORDER, SURFACE_PEARL, TEXT
-        from voiceink.ui.nav_icons import nav_icon
-        from voiceink.ui.settings_components import SettingsSidebar
+        from PyQt6.QtWidgets import QApplication
+        from voiceink.config import Config
+        from voiceink.ui.settings_window import SettingsWindow
 
         QApplication.instance() or QApplication(sys.argv)
-        sidebar = SettingsSidebar(nav_icon)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+        win = SettingsWindow(Config(config_dir=tmp_path))
         try:
-            brand = next(
-                lbl for lbl in sidebar.findChildren(QLabel) if lbl.text() == "VoiceInk"
-            )
-            assert TEXT.lower() in brand.styleSheet().lower()
-            assert "letter-spacing: -" not in brand.styleSheet()
-
-            status = next(
-                w for w in sidebar.findChildren(QFrame)
-                if w.objectName() == "sidebarStatusCard"
-            )
-            sheet = status.styleSheet().lower()
-            assert SURFACE_PEARL.lower() in sheet
-            assert f"1px solid {BORDER}".lower() in sheet
-
-            from voiceink.ui.design_tokens import SETTINGS_SIDEBAR_BG
-            from voiceink.ui.settings_components import NAV_BTN_STYLE
-
-            from voiceink.ui.design_tokens import ACCENT
-
-            checked = NAV_BTN_STYLE.split(":checked")[1].split("QPushButton")[0]
-            assert ACCENT.lower() in checked.lower() or "2563eb" in checked.lower()
-            assert "border-left: 3px solid" in checked
-
-            nav_btns = [
-                b for b in sidebar.findChildren(QPushButton)
-                if b.objectName() == "settingsNavBtn"
-            ]
-            assert len(nav_btns) == 4
-            assert all(b.height() >= 34 for b in nav_btns)
-            assert all(not b.text().startswith("  ") for b in nav_btns)
-            assert "border-right" in sidebar.styleSheet()
-            assert SETTINGS_SIDEBAR_BG.lower() in sidebar.styleSheet().lower()
+            assert not hasattr(win, "_sidebar")
+            assert [b.text() for b in win._island_nav] == ["通用", "引擎", "润色", "关于"]
         finally:
-            sidebar.close()
+            win.close()
 
 
 class TestClassicDesktopTokens:
@@ -308,7 +278,7 @@ class TestClassicDesktopTokens:
         assert "Inter" not in t.FONT
         assert t.RADIUS_MD == 8
         assert t.STATE_RECORD.upper() in {"#DC2626", "#E5484D", "#EF4444", "#F87171"}
-        assert t.STATE_LISTEN == t.FLOAT_TEXT or t.STATE_LISTEN == t.FLOAT_TEXT_SEC
+        assert t.STATE_LISTEN == t.ISLAND_MINT
         assert t.STATE_RECOGNIZE in (t.FLOAT_TEXT, t.FLOAT_TEXT_SEC)
         assert t.STATE_POLISH in (t.FLOAT_TEXT, t.FLOAT_TEXT_SEC)
         assert t.SETTINGS_SIDEBAR_BG.upper() == t.SURFACE.upper()

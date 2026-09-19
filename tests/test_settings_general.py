@@ -55,8 +55,12 @@ def settings_window(config, qapp, monkeypatch):
 
 
 class TestGeneralPageLayout:
-    def test_header_title_matches_reference(self, settings_window):
-        assert settings_window._general_hero._title.text() == "通用设置"
+    def test_island_nav_labels(self, settings_window):
+        assert [b.text() for b in settings_window._island_nav] == [
+            "通用", "引擎", "润色", "关于",
+        ]
+        assert not hasattr(settings_window, "_sidebar")
+        assert not hasattr(settings_window, "_general_hero")
 
     def test_general_footer_note_combines_save_and_hotkey_guidance(self, settings_window):
         assert settings_window._general_footer_note.text() == (
@@ -76,8 +80,6 @@ class TestGeneralPageLayout:
         """Prototype v3 titles; chrome keeps product action bar."""
         from PyQt6.QtWidgets import QLabel
 
-        assert settings_window._general_hero._title.text() == "通用设置"
-        assert settings_window._general_hero._subtitle.text() == "录音、音频与偏好"
         assert settings_window._mic_test_btn.text() == "测试声音（约 2 秒）"
         assert settings_window._advanced_audio_btn.text() == "手动选择音频设备"
 

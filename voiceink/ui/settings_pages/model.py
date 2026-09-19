@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidg
 from voiceink.ui import design_tokens as tok
 from voiceink.ui import settings_styles
 from voiceink.ui.settings_components import (
-    PageHero,
     SettingsPage,
     settings_group,
     settings_section,
@@ -14,9 +13,6 @@ from voiceink.ui.settings_components import (
 
 def build_model_page(win) -> QWidget:
     page = SettingsPage()
-    win._model_hero = PageHero("语音识别")
-    page.add(win._model_hero)
-
     win._model_hero_host = settings_group()
     win._model_hero_layout = QVBoxLayout(win._model_hero_host)
     win._model_hero_layout.setContentsMargins(0, 0, 0, 0)

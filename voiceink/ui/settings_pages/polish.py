@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
 )
 
 from voiceink.ui.settings_components import (
-    PageHero,
     SettingsPage,
     ToggleOptionRow,
     footnote,
@@ -25,9 +24,6 @@ from voiceink.ui.settings_components import (
 
 def build_polish_page(win) -> QWidget:
     page = SettingsPage()
-    win._polish_hero = PageHero("文字润色")
-    page.add(win._polish_hero)
-
     polish_card = settings_group()
     polish_card_lay = QVBoxLayout(polish_card)
     polish_card_lay.setContentsMargins(0, 0, 0, 0)
