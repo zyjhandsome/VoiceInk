@@ -145,6 +145,7 @@ def create_microphone_icon(color: str | None = None, recording: bool = False, si
 
 class TrayIcon(QSystemTrayIcon):
     open_settings = pyqtSignal()
+    wake_island = pyqtSignal()
     history_requested = pyqtSignal()
     quit_app = pyqtSignal()
     auto_start_toggled = pyqtSignal(bool)
@@ -265,10 +266,10 @@ class TrayIcon(QSystemTrayIcon):
         # Handling both opens settings twice; on Windows only respond to double-click.
         if sys.platform == "win32":
             if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-                self.open_settings.emit()
+                self.wake_island.emit()
             return
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.open_settings.emit()
+            self.wake_island.emit()
 
     def set_recording(self, is_recording: bool):
         self._apply_icon_kind("recording" if is_recording else "normal")
@@ -307,10 +308,10 @@ class TrayIcon(QSystemTrayIcon):
             return
         lines = {
             "recording": "录音中",
-            "recognizing": "识别中",
+            "recognizing": "正在识别",
             "polishing": "润色中",
-            "listening": "监听中",
-            "loading": "模型加载中",
+            "listening": "正在听",
+            "loading": "模型载入中",
         }
         label = lines.get(state, "")
         if label:

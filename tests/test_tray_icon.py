@@ -26,7 +26,7 @@ class TestTrayActivation:
     def test_windows_ignores_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         emitted: list[object] = []
-        tray.open_settings.connect(lambda: emitted.append(True))
+        tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
         tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
@@ -36,7 +36,7 @@ class TestTrayActivation:
     def test_non_windows_uses_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "darwin")
         emitted: list[object] = []
-        tray.open_settings.connect(lambda: emitted.append(True))
+        tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
 
@@ -49,6 +49,17 @@ class TestTrayActivation:
         assert action.text() == "就绪 · FireRedASR2"
         assert not action.isEnabled()
         assert "FireRedASR2" in tray.toolTip()
+
+    def test_activity_tooltip_uses_capsule_words(self, tray):
+        tray.set_status_summary("就绪")
+        tray.set_activity_tooltip("listening")
+        assert tray.toolTip() == "VoiceInk - 正在听"
+        tray.set_activity_tooltip("recognizing")
+        assert tray.toolTip() == "VoiceInk - 正在识别"
+        tray.set_activity_tooltip("loading")
+        assert tray.toolTip() == "VoiceInk - 模型载入中"
+        tray.set_activity_tooltip(None)
+        assert tray.toolTip() == "VoiceInk - 就绪"
 
 
 class TestTrayMenuStyleAndGrouping:
