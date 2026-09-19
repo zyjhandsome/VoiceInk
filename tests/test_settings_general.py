@@ -214,7 +214,33 @@ class TestGeneralPageLayout:
         assert len(picker.findChildren(CompactPickCard)) == 2
 
         assert settings_window._mixed_audio_callout.parent() is not None
-        assert not settings_window._mixed_audio_callout.isHidden()
+
+    def test_history_limit_rows_follow_toggle(self, settings_window):
+        settings_window.show()
+        settings_window._history_enabled_row.setChecked(False)
+        settings_window._set_history_limit_rows_visible(
+            settings_window._history_enabled_row.isChecked()
+        )
+        assert not settings_window._history_retention_row.isVisible()
+        assert not settings_window._history_max_entries_row.isVisible()
+        settings_window._history_enabled_row.setChecked(True)
+        settings_window._set_history_limit_rows_visible(True)
+        assert settings_window._history_retention_row.isVisible()
+
+    def test_mixed_callout_only_when_mixed(self, settings_window):
+        settings_window.show()
+        settings_window._src_mic_rb.setChecked(True)
+        settings_window._sync_source_device_widgets()
+        assert not settings_window._mixed_audio_callout.isVisible()
+        settings_window._src_mixed_rb.setChecked(True)
+        settings_window._sync_source_device_widgets()
+        assert settings_window._mixed_audio_callout.isVisible()
+
+    def test_hotkey_hint_is_one_sentence(self, settings_window):
+        text = settings_window._hotkey_hint.text()
+        assert "0.30" in text
+        assert text.count("。") <= 2
+        assert "浮窗" not in text
 
 
 class TestTriggerMode:
@@ -252,7 +278,7 @@ class TestInputSource:
         qapp.processEvents()
         settings_window._src_mic_rb.setChecked(True)
         settings_window._sync_source_device_widgets()
-        assert not settings_window._mixed_audio_callout.isHidden()
+        assert settings_window._mixed_audio_callout.isHidden()
         settings_window._src_mixed_rb.setChecked(True)
         settings_window._sync_source_device_widgets()
         assert not settings_window._mixed_audio_callout.isHidden()

@@ -1,6 +1,7 @@
 """About settings page."""
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from voiceink.config import VERSION
 from voiceink.ui import design_tokens as tok
@@ -39,6 +40,36 @@ def build_about_page(win) -> QWidget:
     )
     brand_lay.addWidget(win._about_version_label)
     win._about_info_lay.addWidget(brand_row)
+
+    win._about_runtime_wrap = QWidget()
+    win._about_runtime_lay = QVBoxLayout(win._about_runtime_wrap)
+    win._about_runtime_lay.setContentsMargins(0, 0, 0, 0)
+    win._about_runtime_lay.setSpacing(0)
+    win._about_info_lay.addWidget(win._about_runtime_wrap)
+
+    win._about_paths_toggle = QPushButton("文件位置")
+    win._about_paths_toggle.setObjectName("aboutPathsToggle")
+    win._about_paths_toggle.setCheckable(True)
+    win._about_paths_toggle.setChecked(False)
+    win._about_paths_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+    win._about_paths_toggle.setStyleSheet(
+        f"QPushButton#aboutPathsToggle {{"
+        f" color: {tok.TEXT_SEC}; background: transparent; border: none;"
+        f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 500;"
+        f" text-align: left; padding: 10px 16px;"
+        f"}}"
+        f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
+    )
+    win._about_paths_wrap = QWidget()
+    win._about_paths_wrap.setObjectName("aboutPaths")
+    win._about_paths_lay = QVBoxLayout(win._about_paths_wrap)
+    win._about_paths_lay.setContentsMargins(0, 0, 0, 0)
+    win._about_paths_lay.setSpacing(0)
+    win._about_paths_wrap.setVisible(False)
+    win._about_paths_toggle.toggled.connect(win._about_paths_wrap.setVisible)
+    win._about_info_lay.addWidget(win._about_paths_toggle)
+    win._about_info_lay.addWidget(win._about_paths_wrap)
+
     page.add(settings_section("", win._about_info_group))
 
     win._about_usage_tip = info_callout("", "aboutUsageCallout")

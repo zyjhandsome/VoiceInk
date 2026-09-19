@@ -618,12 +618,8 @@ class SettingsWindow(QDialog):
     # ── Page: About ────────────────────────────────────
 
     def _refresh_about_info(self):
-        # Keep the fixed VoiceInk/version row at index 0. Dynamic rows are
-        # appended below it and are the only rows replaced on refresh.
-        while self._about_info_lay.count() > 1:
-            item = self._about_info_lay.takeAt(1)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+        if not hasattr(self, "_about_runtime_lay"):
+            return
 
         from voiceink.speech_recognizer import MODEL_REGISTRY, is_model_downloaded, get_model_info
 
@@ -634,11 +630,13 @@ class SettingsWindow(QDialog):
         downloaded = [m for m in MODEL_REGISTRY if is_model_downloaded(m["id"])]
         total_mb = sum(m["size_mb"] for m in downloaded)
 
-        items = [
+        while self._about_runtime_lay.count():
+            item = self._about_runtime_lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+
+        runtime_items = [
             ("当前模型", active_name),
-            ("已下载", f"{len(downloaded)} 个 · 约 {total_mb} MB"),
-            ("模型目录", str(self._config.models_dir)),
-            ("配置文件", str(self._config.config_dir / "config.json")),
             ("快捷键", format_hotkey(self._config.get("hotkey", "ctrl+space"))),
             (
                 "润色",
@@ -647,13 +645,26 @@ class SettingsWindow(QDialog):
                 else "已关闭",
             ),
         ]
+        for key, val in runtime_items:
+            self._about_runtime_lay.addWidget(group_divider())
+            self._about_runtime_lay.addWidget(kv_row(key, val))
 
-        for key, val in items:
-            self._about_info_lay.addWidget(group_divider())
+        while self._about_paths_lay.count():
+            item = self._about_paths_lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+
+        path_items = [
+            ("已下载", f"{len(downloaded)} 个 · 约 {total_mb} MB"),
+            ("模型目录", str(self._config.models_dir)),
+            ("配置文件", str(self._config.config_dir / "config.json")),
+        ]
+        for key, val in path_items:
+            self._about_paths_lay.addWidget(group_divider())
             if key in ("模型目录", "配置文件"):
-                self._about_info_lay.addWidget(kv_row_elided(key, val, max_len=42))
+                self._about_paths_lay.addWidget(kv_row_elided(key, val, max_len=42))
             else:
-                self._about_info_lay.addWidget(kv_row(key, val))
+                self._about_paths_lay.addWidget(kv_row(key, val))
 
         self._refresh_about_hero_status()
 
@@ -713,6 +724,14 @@ class SettingsWindow(QDialog):
         sys_on = src in (INPUT_SOURCE_SYSTEM, INPUT_SOURCE_MIXED)
         self._mic_device_combo.setEnabled(mic_on)
         self._system_device_combo.setEnabled(sys_on)
+        mixed = self._src_mixed_rb.isChecked()
+        self._mixed_audio_callout.setVisible(mixed)
+        if hasattr(self, "_mixed_audio_callout_wrap"):
+            self._mixed_audio_callout_wrap.setVisible(mixed)
+
+    def _set_history_limit_rows_visible(self, visible: bool) -> None:
+        self._history_retention_row.setVisible(visible)
+        self._history_max_entries_row.setVisible(visible)
 
     def _apply_input_source_radios(self, source: str):
         if source == INPUT_SOURCE_SYSTEM:
@@ -745,6 +764,7 @@ class SettingsWindow(QDialog):
         self._history_max_entries_spin.setValue(
             int(self._config.get("history.max_entries", 5000))
         )
+        self._set_history_limit_rows_visible(self._history_enabled_row.isChecked())
 
         theme_mode = normalize_theme_mode(
             self._config.get("appearance.theme_mode", "system")
@@ -987,15 +1007,9 @@ class SettingsWindow(QDialog):
     def _refresh_hotkey_hint(self) -> None:
         if not hasattr(self, "_hotkey_hint"):
             return
-        if self._selected_trigger_mode() == TRIGGER_MODE_CONTINUOUS:
-            self._hotkey_hint.setText(
-                "点击输入框后按下组合键绑定；持续转写需按住约 0.30 秒开始监听，"
-                "松开不会结束；Esc 或浮窗 × 结束整场。"
-            )
-        else:
-            self._hotkey_hint.setText(
-                "点击输入框后按下组合键绑定；按住约 0.18 秒开始录音，松开后识别。"
-            )
+        self._hotkey_hint.setText(
+            "持续模式按住约 0.30 秒开始，松开不结束；Esc 或结束可结束整场。"
+        )
 
     def _on_theme_mode_changed(self, _index: int = 0):
         if self._loading:
@@ -1023,6 +1037,7 @@ class SettingsWindow(QDialog):
         self._config.set("output.restore_clipboard", checked)
 
     def _on_history_enabled_toggled(self, checked: bool):
+        self._set_history_limit_rows_visible(checked)
         if self._loading:
             return
         self._config.set("history.enabled", checked)
@@ -1121,7 +1136,7 @@ class SettingsWindow(QDialog):
         key = self._llm_key_edit.text().strip()
         model = self._llm_model_edit.text().strip()
         if not all([url, key, model]):
-            QMessageBox.warning(self, "提示", "请填写完整的接口信息。")
+            self._llm_test_status.setText("请填写完整的接口信息。")
             return
 
         class _W(QThread):
@@ -1146,9 +1161,9 @@ class SettingsWindow(QDialog):
         btn.setEnabled(True)
         btn.setText("测试连接")
         if w.ok:
-            QMessageBox.information(self, "成功", "连接正常，可以使用。")
+            self._llm_test_status.setText("连接正常，可以使用。")
         else:
-            QMessageBox.warning(self, "失败", w.msg)
+            self._llm_test_status.setText(w.msg)
 
     # ── Cleanup ────────────────────────────────────────
 

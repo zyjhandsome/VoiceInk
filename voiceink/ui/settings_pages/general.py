@@ -88,11 +88,11 @@ def build_general_page(win) -> QWidget:
     win._mixed_audio_callout = info_callout(
         "混合模式可能混入背景音导致识别杂乱。日常口述建议「仅麦克风」。"
     )
-    callout_wrap = QWidget()
-    callout_lay = QHBoxLayout(callout_wrap)
+    win._mixed_audio_callout_wrap = QWidget()
+    callout_lay = QHBoxLayout(win._mixed_audio_callout_wrap)
     callout_lay.setContentsMargins(12, 0, 12, 12)
     callout_lay.addWidget(win._mixed_audio_callout)
-    audio_lay.addWidget(callout_wrap)
+    audio_lay.addWidget(win._mixed_audio_callout_wrap)
     win._src_mic_rb.toggled.connect(win._sync_source_device_widgets)
     win._src_sys_rb.toggled.connect(win._sync_source_device_widgets)
     win._src_mixed_rb.toggled.connect(win._sync_source_device_widgets)

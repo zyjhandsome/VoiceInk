@@ -3,12 +3,15 @@
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+
+from voiceink.ui import design_tokens as tok
 
 from voiceink.ui.settings_components import (
     SettingsPage,
@@ -86,6 +89,13 @@ def build_polish_page(win) -> QWidget:
     model_row.addWidget(win._llm_test_btn, 0, Qt.AlignmentFlag.AlignVCenter)
     conn_lay.addWidget(group_divider())
     conn_lay.addWidget(stacked_field_row("模型名称", model_wrap))
+    win._llm_test_status = QLabel("")
+    win._llm_test_status.setWordWrap(True)
+    win._llm_test_status.setStyleSheet(
+        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px;"
+        f" background: transparent; padding: 0 16px 12px 16px;"
+    )
+    conn_lay.addWidget(win._llm_test_status)
     c_lay.addWidget(settings_section("接口配置", conn_group))
 
     prompt_group = settings_group()
