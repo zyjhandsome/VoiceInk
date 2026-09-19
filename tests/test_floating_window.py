@@ -128,6 +128,17 @@ class TestModelLoadingGuard:
         assert win.height() <= COMPACT_HEIGHT + 40
         assert win.toolTip()
 
+    def test_error_splits_newline_then_colon(self, win):
+        msg = "录音过短\n请按住快捷键说话，时长至少 0.1 秒"
+        win.show_error(msg)
+
+        from voiceink.ui.floating_window import COMPACT_HEIGHT
+
+        assert win._status_label.text() == "录音过短"
+        assert win._text_label.text()
+        assert win.height() <= COMPACT_HEIGHT + 40
+        assert msg in win.toolTip()
+
     def test_success_clears_loading_flag(self, win):
         win.show_model_loading()
         win.show_success("已就绪")

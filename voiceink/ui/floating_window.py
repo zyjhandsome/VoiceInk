@@ -523,12 +523,14 @@ class FloatingWindow(QWidget):
         self._set_mode("compact")
         self._waveform.stop()
         self._waveform.hide()
-        if "：" in message:
-            status, remainder = message.split("：", 1)
-            status = status.split("\n", 1)[0]
+        first_line, _, body_after_newline = message.partition("\n")
+        if "：" in first_line:
+            status, colon_remainder = first_line.split("：", 1)
         else:
-            status = message[:12]
-            remainder = message[12:]
+            status = first_line[:12]
+            colon_remainder = first_line[12:]
+        parts = [p for p in (colon_remainder, body_after_newline) if p]
+        remainder = "\n".join(parts)
         self._set_state(status, STATE_ERROR)
         self.setToolTip(message)
         remainder = remainder.strip()
