@@ -188,7 +188,6 @@ class App(QObject):
         self._floating.history_requested.connect(self._show_history_window)
 
         self._tray.open_settings.connect(self._show_settings)
-        self._tray.wake_island.connect(self._wake_island)
         self._tray.history_requested.connect(self._show_history_window)
         self._tray.quit_app.connect(self._quit)
         self._tray.auto_start_toggled.connect(self._on_auto_start_toggled)
@@ -867,22 +866,6 @@ class App(QObject):
         if self._settings_win is None:
             return
         self._settings_win.set_runtime_status(status)
-
-    def _wake_island(self):
-        """Tray click: revive the Spatial Island without leaving the current app."""
-        if self._recognizer.is_loading:
-            self._floating.show_model_loading()
-            return
-        if self._continuous_session_active():
-            self._floating.show_listening()
-            return
-        if self._is_continuous_mode():
-            self._floating.show_continuous_idle(self._continuous_hotkey_label())
-            return
-        self._floating.show_success(
-            "已就绪",
-            f"按 {self._continuous_hotkey_label()} 开始语音输入",
-        )
 
     def _show_settings(self):
         if self._settings_win is not None and self._settings_win.isVisible():

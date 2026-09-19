@@ -26,7 +26,7 @@ class TestTrayActivation:
     def test_windows_ignores_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         emitted: list[object] = []
-        tray.wake_island.connect(lambda: emitted.append(True))
+        tray.open_settings.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
         tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
@@ -36,7 +36,7 @@ class TestTrayActivation:
     def test_non_windows_uses_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "darwin")
         emitted: list[object] = []
-        tray.wake_island.connect(lambda: emitted.append(True))
+        tray.open_settings.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
 
