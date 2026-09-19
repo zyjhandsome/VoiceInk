@@ -111,7 +111,7 @@ CONTROL_BTN_SM_PAD_H = 14
 CONTROL_BTN_SM_FONT_PX = TYPE_BODY_SM
 
 NAV_SELECTED_BAR_PX = 3
-TRAY_MENU_RADIUS = 4
+TRAY_MENU_RADIUS = 8
 TRAY_MENU_PAD_V = 8
 TRAY_MENU_PAD_H = 18
 
@@ -175,9 +175,10 @@ _LIGHT: dict[str, Any] = {
     "TRAY_MENU_DISABLED": "#9CA3AF",
     "TRAY_MENU_CHECK": "#333333",
     "TRAY_MENU_ARROW": "#9CA3AF",
-    "FLOAT_BG": "rgba(243, 244, 246, 245)",
+    "ISLAND_MINT": "#0F7A4A",
+    "FLOAT_BG": "rgba(255, 255, 255, 236)",
     "FLOAT_TILE": "#FFFFFF",
-    "FLOAT_BORDER": "rgba(17, 24, 39, 0.12)",
+    "FLOAT_BORDER": "rgba(17, 24, 39, 0.10)",
     "FLOAT_BORDER_INNER": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG_HOVER": "rgba(17, 24, 39, 0.16)",
@@ -242,9 +243,10 @@ _DARK: dict[str, Any] = {
     "TRAY_MENU_DISABLED": "#6B7280",
     "TRAY_MENU_CHECK": "#F9FAFB",
     "TRAY_MENU_ARROW": "#9CA3AF",
-    "FLOAT_BG": "rgba(39, 39, 41, 245)",
-    "FLOAT_TILE": "#272729",
-    "FLOAT_BORDER": "rgba(255, 255, 255, 0.10)",
+    "ISLAND_MINT": "#B8F0D2",
+    "FLOAT_BG": "rgba(10, 10, 12, 236)",
+    "FLOAT_TILE": "#0A0A0C",
+    "FLOAT_BORDER": "rgba(255, 255, 255, 0.12)",
     "FLOAT_BORDER_INNER": "rgba(210, 210, 215, 0.24)",
     "CHIP_BG": "rgba(210, 210, 215, 0.40)",
     "CHIP_BG_HOVER": "rgba(210, 210, 215, 0.55)",
@@ -271,7 +273,7 @@ def activate(effective: str) -> None:
     for key in _COLOR_KEYS:
         g[key] = vals[key]
     # Float state aliases that follow float text
-    g["STATE_LISTEN"] = vals["FLOAT_TEXT"]
+    g["STATE_LISTEN"] = vals["ISLAND_MINT"]
     g["STATE_RECOGNIZE"] = vals["FLOAT_TEXT"]
     g["STATE_POLISH"] = vals["FLOAT_TEXT"]
     g["STATE_SUCCESS"] = vals["FLOAT_TEXT"]

@@ -26,7 +26,7 @@ class TestTrayActivation:
     def test_windows_ignores_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         emitted: list[object] = []
-        tray.open_settings.connect(lambda: emitted.append(True))
+        tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
         tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
@@ -36,7 +36,7 @@ class TestTrayActivation:
     def test_non_windows_uses_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "darwin")
         emitted: list[object] = []
-        tray.open_settings.connect(lambda: emitted.append(True))
+        tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
 
@@ -56,16 +56,16 @@ class TestTrayMenuStyleAndGrouping:
         from voiceink.ui import design_tokens as t
 
         css = tray.contextMenu().styleSheet()
-        assert t.TRAY_MENU_RADIUS == 4
+        assert t.TRAY_MENU_RADIUS == 8
         assert f"border-radius: {t.TRAY_MENU_RADIUS}px" in css
+        assert "border-radius: 4px" not in css
+        assert "border-radius: 12px" not in css
         assert t.TRAY_MENU_HOVER in css
         assert t.TRAY_MENU_SEPARATOR in css
         assert t.TRAY_MENU_BORDER in css
         assert "font-size: 13px" in css
         # No Stitch tray look leftovers
         assert "rgba(0, 80, 203" not in css
-        assert "border-radius: 12px" not in css
-        assert "border-radius: 8px" not in css
 
     def test_menu_groups_match_spec_order(self, tray):
         actions = tray.contextMenu().actions()

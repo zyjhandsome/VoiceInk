@@ -76,9 +76,9 @@ Effective theme is always `light` or `dark`.
 
 | Role | Light | Dark |
 |------|-------|------|
-| Float BG | `rgba(243, 244, 246, 245)` | `rgba(39, 39, 41, 245)` |
-| Float Surface | `#FFFFFF` | `#272729` |
-| Float Border | `rgba(17, 24, 39, 0.12)` | `rgba(255, 255, 255, 0.10)` |
+| Float BG | `rgba(255, 255, 255, 236)` | `rgba(10, 10, 12, 236)` |
+| Float Surface | `#FFFFFF` | `#0A0A0C` |
+| Float Border | `rgba(17, 24, 39, 0.10)` | `rgba(255, 255, 255, 0.12)` |
 | Float Text | `#111827` | `#FFFFFF` |
 | Float Text Sec | `#4B5563` | `rgba(235, 235, 245, 0.72)` |
 | Chip BG | `rgba(17, 24, 39, 0.08)` | `rgba(210, 210, 215, 0.40)` |
