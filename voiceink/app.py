@@ -133,6 +133,9 @@ class App(QObject):
 
         self._tray.set_auto_start(self._config.get("auto_start", False))
         self._tray.show()
+        self._floating.set_input_source(
+            self._config.get("audio.input_source", "microphone")
+        )
         # Re-apply after surfaces exist so cold-start dark/system is not stuck
         # on import-time light snapshots for inline-styled widgets.
         self.apply_appearance_theme()
@@ -181,8 +184,11 @@ class App(QObject):
         self._polisher.polish_error.connect(self._on_polish_error)
 
         self._floating.continuous_stop_requested.connect(self._stop_continuous_user_session)
+        self._floating.settings_requested.connect(self._show_settings)
+        self._floating.history_requested.connect(self._show_history_window)
 
         self._tray.open_settings.connect(self._show_settings)
+        self._tray.wake_island.connect(self._wake_island)
         self._tray.history_requested.connect(self._show_history_window)
         self._tray.quit_app.connect(self._quit)
         self._tray.auto_start_toggled.connect(self._on_auto_start_toggled)
@@ -210,6 +216,11 @@ class App(QObject):
             mic_device_index=int(self._config.get("audio.mic_device_index", -1)),
             system_device_index=sys_idx,
         )
+        floating = getattr(self, "_floating", None)
+        if floating is not None:
+            setter = getattr(floating, "set_input_source", None)
+            if callable(setter):
+                setter(source)
         try:
             plan = build_recording_plan(
                 source,
@@ -856,6 +867,22 @@ class App(QObject):
         if self._settings_win is None:
             return
         self._settings_win.set_runtime_status(status)
+
+    def _wake_island(self):
+        """Tray click: revive the Spatial Island without leaving the current app."""
+        if self._recognizer.is_loading:
+            self._floating.show_model_loading()
+            return
+        if self._continuous_session_active():
+            self._floating.show_listening()
+            return
+        if self._is_continuous_mode():
+            self._floating.show_continuous_idle(self._continuous_hotkey_label())
+            return
+        self._floating.show_success(
+            "已就绪",
+            f"按 {self._continuous_hotkey_label()} 开始语音输入",
+        )
 
     def _show_settings(self):
         if self._settings_win is not None and self._settings_win.isVisible():

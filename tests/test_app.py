@@ -75,6 +75,17 @@ class TestAppSignals:
         with app_harness() as h:
             assert hasattr(h["app"], "_connect_signals")
 
+    def test_island_signals_connected(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["tray"].wake_island.connect.assert_called_with(app._wake_island)
+            h["floating"].settings_requested.connect.assert_called_with(
+                app._show_settings
+            )
+            h["floating"].history_requested.connect.assert_called_with(
+                app._show_history_window
+            )
+
 
 class TestAppState:
     def test_initial_transcription_empty(self):
