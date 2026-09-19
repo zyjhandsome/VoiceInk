@@ -91,6 +91,17 @@ class TestIslandMorph:
         assert not isinstance(win._mic_chip, QPushButton)
         assert win._mic_chip.property("islandOn") is True
 
+    def test_on_chip_text_contrasts_with_mint(self, win):
+        from voiceink.ui import design_tokens as tok
+
+        win.set_input_source("mixed")
+        win.expand_live("hello")
+        mic_css = win._mic_chip.styleSheet().lower()
+        assert tok.ISLAND_MINT.lower() in mic_css
+        if tok.ISLAND_MINT.lower() == "#0f7a4a":
+            assert "#0a0a0c" not in mic_css
+            assert tok.ACCENT_ON_DARK.lower() in mic_css
+
     def test_header_click_collapses_expanded_listen(self, win):
         win.show_listening()
         win.expand_live("hello")

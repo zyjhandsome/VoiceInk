@@ -174,10 +174,15 @@ class FloatingWindow(QWidget):
     def _paint_source_chips(self) -> None:
         from voiceink.ui import design_tokens as tok
 
+        mint_hex = tok.ISLAND_MINT.lstrip("#")
+        r, g, b = (int(mint_hex[i : i + 2], 16) for i in (0, 2, 4))
+        mint_lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        on_text = tok.ACCENT_ON_DARK if mint_lum < 128 else tok.FLOAT_TILE
+
         def css(on: bool) -> str:
             if on:
                 return (
-                    f"QLabel {{ background: {tok.ISLAND_MINT}; color: #0A0A0C;"
+                    f"QLabel {{ background: {tok.ISLAND_MINT}; color: {on_text};"
                     f" border: none; border-radius: 11px; padding: 0 8px;"
                     f" font-size: {tok.TYPE_CAPTION}px; }}"
                 )
