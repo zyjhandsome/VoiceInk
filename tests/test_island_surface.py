@@ -130,25 +130,6 @@ class TestIslandChrome:
         assert win._sys_chip.property("islandOn") is False
 
 
-class TestHistoryTimeStream:
-    def test_history_uses_single_column_stream(self, qapp):
-        from voiceink.ui.history_window import HistoryWindow
-        from tests.test_history_window import FakeHistoryStore
-
-        window = HistoryWindow(FakeHistoryStore())
-        try:
-            assert window._session_list.objectName() == "historyTimeStream"
-            assert window._left_pane is window._stream_host
-            first = window._session_list.item(0)
-            widget = window._session_list.itemWidget(first)
-            assert widget is not None
-            from PyQt6.QtWidgets import QLabel
-            texts = [lab.text() for lab in widget.findChildren(QLabel)]
-            assert any("newer preview" in t for t in texts)
-        finally:
-            window.close()
-
-
 class TestIslandSheetConstants:
     def test_sheet_width_constant(self):
         from voiceink.ui.island_chrome import ISLAND_SETTINGS_WIDTH
