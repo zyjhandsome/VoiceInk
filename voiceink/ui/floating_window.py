@@ -2,18 +2,13 @@ from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFontMetrics, QPainter, QColor, QFont, QPen, QCursor
+from PyQt6.QtGui import QFontMetrics, QPainter, QColor, QFont, QCursor
 import math
 
 from voiceink.ui.design_tokens import (
-    CHIP_BG,
-    FLOAT_BG,
-    FLOAT_BORDER,
     FLOAT_TEXT,
-    FLOAT_TEXT_SEC,
     FONT,
     FONT_DISPLAY,
-    RADIUS_LG,
     STATE_ERROR,
     STATE_LISTEN,
     STATE_MUTED,
@@ -23,10 +18,14 @@ from voiceink.ui.design_tokens import (
     STATE_SUCCESS,
     STATE_WARN,
 )
+from voiceink.ui.island_chrome import island_container_css, island_window_flags, position_island
+
+COMPACT_HEIGHT = 64
+EXPANDED_MIN_HEIGHT = 168
 
 
 class _DotIndicator(QWidget):
-    """Small animated dot that pulses to indicate active state."""
+    """Listening ring that pulses while a session is active."""
 
     def __init__(self, color: str = STATE_RECORD, parent=None):
         super().__init__(parent)
@@ -34,7 +33,7 @@ class _DotIndicator(QWidget):
         self._pulse = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self.setFixedSize(10, 10)
+        self.setFixedSize(16, 16)
 
     def set_color(self, color: str):
         self._color = QColor(color)
@@ -59,14 +58,23 @@ class _DotIndicator(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
 
         if self._timer.isActive():
-            alpha = int(60 + 50 * abs(math.sin(self._pulse)))
+            alpha = int(40 + 40 * abs(math.sin(self._pulse)))
             outer = QColor(self._color)
             outer.setAlpha(alpha)
             p.setBrush(outer)
-            p.drawEllipse(0, 0, 10, 10)
+            p.drawEllipse(0, 0, 16, 16)
 
+        pen = self._color
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        from PyQt6.QtGui import QPen
+        ring = QPen(self._color)
+        ring.setWidth(2)
+        p.setPen(ring)
+        p.drawEllipse(2, 2, 12, 12)
+        p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self._color)
-        p.drawEllipse(2, 2, 6, 6)
+        p.drawEllipse(6, 6, 4, 4)
         p.end()
 
 
@@ -80,8 +88,8 @@ class WaveformWidget(QWidget):
         self._bar_heights = [0.0] * self.NUM_BARS
         self._phase = 0.0
         self._accent = QColor(FLOAT_TEXT)
-        self.setFixedHeight(30)
-        self.setMinimumWidth(240)
+        self.setFixedHeight(18)
+        self.setFixedWidth(72)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._animate)
@@ -115,13 +123,13 @@ class WaveformWidget(QWidget):
 
         w = self.width()
         h = self.height()
-        gap = 3
-        bar_width = max(3, (w - (self.NUM_BARS - 1) * gap) // self.NUM_BARS)
+        gap = 2
+        bar_width = max(2, (w - (self.NUM_BARS - 1) * gap) // self.NUM_BARS)
         total_width = self.NUM_BARS * bar_width + (self.NUM_BARS - 1) * gap
         x_offset = (w - total_width) // 2
 
         for i in range(self.NUM_BARS):
-            bar_h = max(3, int(self._bar_heights[i] * (h - 4)))
+            bar_h = max(3, int(self._bar_heights[i] * (h - 2)))
             x = x_offset + i * (bar_width + gap)
             y = (h - bar_h) // 2
 
@@ -129,7 +137,7 @@ class WaveformWidget(QWidget):
             fill.setAlpha(int(100 + self._bar_heights[i] * 155))
             painter.setBrush(fill)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(x, y, bar_width, bar_h, 2, 2)
+            painter.drawRoundedRect(x, y, bar_width, bar_h, 1, 1)
 
         painter.end()
 
@@ -137,29 +145,55 @@ class WaveformWidget(QWidget):
 class FloatingWindow(QWidget):
 
     continuous_stop_requested = pyqtSignal()
+    settings_requested = pyqtSignal()
+    history_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._listening_active = False
         self._model_loading_active = False
         self._current_accent = FLOAT_TEXT
+        self._mode = "compact"
         self._setup_window()
         self._setup_ui()
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.hide)
 
-    def reapply_theme(self) -> None:
-        """Rebuild float chrome from the active theme token axis."""
+    def island_mode(self) -> str:
+        return self._mode
+
+    def set_input_source(self, source: str) -> None:
+        self._source = source or "microphone"
+        mic = self._source in ("microphone", "mixed", "mic")
+        system = self._source in ("system", "mixed")
+        self._mic_chip.setProperty("islandOn", mic)
+        self._sys_chip.setProperty("islandOn", system)
+        self._paint_source_chips()
+
+    def _paint_source_chips(self) -> None:
         from voiceink.ui import design_tokens as tok
 
-        self._container.setStyleSheet(f"""
-            QWidget#floatingContainer {{
-                background-color: {tok.FLOAT_BG};
-                border-radius: {tok.RADIUS_LG}px;
-                border: 1px solid {tok.FLOAT_BORDER};
-            }}
-        """)
+        def css(on: bool) -> str:
+            if on:
+                return (
+                    f"QLabel {{ background: {tok.ISLAND_MINT}; color: #0A0A0C;"
+                    f" border: none; border-radius: 11px; padding: 0 8px;"
+                    f" font-size: {tok.TYPE_CAPTION}px; }}"
+                )
+            return (
+                f"QLabel {{ background: transparent; color: {tok.FLOAT_TEXT_SEC};"
+                f" border: 1px solid {tok.FLOAT_BORDER}; border-radius: 11px; padding: 0 8px;"
+                f" font-size: {tok.TYPE_CAPTION}px; }}"
+            )
+
+        self._mic_chip.setStyleSheet(css(bool(self._mic_chip.property("islandOn"))))
+        self._sys_chip.setStyleSheet(css(bool(self._sys_chip.property("islandOn"))))
+
+    def reapply_theme(self) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        self._container.setStyleSheet(island_container_css())
         self._status_label.setFont(
             QFont(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.DemiBold)
         )
@@ -167,15 +201,15 @@ class FloatingWindow(QWidget):
             f"color: {tok.FLOAT_TEXT}; background: transparent;"
             f" font-family: {tok.FONT_DISPLAY}; letter-spacing: -0.2px;"
         )
-        self._close_btn.setStyleSheet(f"""
+        ghost = f"""
             QPushButton {{
                 background: {tok.CHIP_BG};
                 color: {tok.FLOAT_TEXT};
                 border: none;
-                font-size: {tok.TYPE_ICON_LG}px;
-                font-weight: 400;
+                font-size: {tok.TYPE_CAPTION}px;
+                font-weight: 500;
                 border-radius: 14px;
-                padding: 0px;
+                padding: 0px 10px;
             }}
             QPushButton:hover {{
                 background: {tok.CHIP_BG_HOVER};
@@ -184,43 +218,60 @@ class FloatingWindow(QWidget):
             QPushButton:pressed {{
                 background: {tok.CHIP_BG_PRESS};
             }}
+        """
+        self._close_btn.setStyleSheet(ghost)
+        self._end_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {tok.ACCENT};
+                color: {tok.ACCENT_ON_DARK};
+                border: none;
+                font-size: {tok.TYPE_CAPTION}px;
+                font-weight: 500;
+                border-radius: 14px;
+                padding: 0px 10px;
+            }}
+            QPushButton:hover {{
+                background: {tok.ACCENT_HV};
+                color: {tok.ACCENT_ON_DARK};
+            }}
         """)
-        self._text_label.setFont(QFont(tok.UI_FONT_FAMILY, tok.TYPE_CAPTION))
+        for btn in (self._history_btn, self._settings_btn):
+            btn.setStyleSheet(ghost)
+        self._paint_source_chips()
+        self._text_label.setFont(QFont(tok.UI_FONT_FAMILY, tok.TYPE_BODY))
         self._text_label.setStyleSheet(
-            f"color: {tok.FLOAT_TEXT_SEC}; background: transparent;"
-            f" font-family: {tok.FONT}; letter-spacing: -0.1px;"
+            f"color: {tok.FLOAT_TEXT}; background: transparent;"
+            f" font-family: {tok.FONT}; letter-spacing: -0.2px;"
         )
         self._current_accent = tok.FLOAT_TEXT
 
     def _setup_window(self):
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-            | Qt.WindowType.WindowDoesNotAcceptFocus
-        )
+        self.setWindowFlags(island_window_flags() | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setMinimumSize(400, 124)
-        self.resize(400, 124)
+        self.setMinimumSize(300, COMPACT_HEIGHT)
+        self.resize(320, COMPACT_HEIGHT)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 10)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self._container = QWidget()
-        self._container.setObjectName("floatingContainer")
+        self._container.setObjectName("islandContainer")
 
         container_layout = QVBoxLayout(self._container)
-        container_layout.setContentsMargins(20, 16, 16, 16)
-        container_layout.setSpacing(10)
+        container_layout.setContentsMargins(14, 10, 10, 10)
+        container_layout.setSpacing(6)
 
         header_row = QHBoxLayout()
-        header_row.setSpacing(12)
+        header_row.setSpacing(8)
         header_row.setContentsMargins(0, 0, 0, 0)
 
         self._dot = _DotIndicator()
         header_row.addWidget(self._dot)
+
+        self._waveform = WaveformWidget()
+        header_row.addWidget(self._waveform)
 
         from voiceink.ui import design_tokens as tok
 
@@ -229,6 +280,14 @@ class FloatingWindow(QWidget):
             QFont(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.DemiBold)
         )
         header_row.addWidget(self._status_label)
+        self._mic_chip = QLabel("麦克风")
+        self._sys_chip = QLabel("电脑播放")
+        for chip in (self._mic_chip, self._sys_chip):
+            chip.setFixedHeight(22)
+            chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chip.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            header_row.addWidget(chip)
+        self._source = "microphone"
         header_row.addStretch()
 
         self._close_btn = QPushButton("\u2715")
@@ -240,18 +299,65 @@ class FloatingWindow(QWidget):
         header_row.addWidget(self._close_btn)
         container_layout.addLayout(header_row)
 
-        self._waveform = WaveformWidget()
-        container_layout.addWidget(self._waveform)
-
         self._text_label = QLabel("")
-        self._text_label.setFont(QFont(tok.UI_FONT_FAMILY, tok.TYPE_CAPTION))
-        self._text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._text_label.setFont(QFont(tok.UI_FONT_FAMILY, tok.TYPE_BODY))
+        self._text_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._text_label.setWordWrap(True)
         self._text_label.setMaximumHeight(36)
         container_layout.addWidget(self._text_label)
 
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self._end_btn = QPushButton("结束")
+        self._history_btn = QPushButton("历史")
+        self._settings_btn = QPushButton("设置")
+        for btn in (self._end_btn, self._history_btn, self._settings_btn):
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn.setFixedHeight(28)
+            actions.addWidget(btn)
+        self._end_btn.clicked.connect(self._on_end_clicked)
+        self._history_btn.clicked.connect(self.history_requested.emit)
+        self._settings_btn.clicked.connect(self.settings_requested.emit)
+        self._actions_host = QWidget()
+        self._actions_host.setLayout(actions)
+        container_layout.addWidget(self._actions_host)
+
         layout.addWidget(self._container)
         self.reapply_theme()
+        self.set_input_source("microphone")
+        self._set_mode("compact")
+
+    def _set_mode(self, mode: str) -> None:
+        self._mode = mode
+        expanded = mode == "expanded"
+        self._actions_host.setVisible(expanded)
+        self._mic_chip.setVisible(expanded)
+        self._sys_chip.setVisible(expanded)
+        if expanded:
+            self._text_label.setMaximumHeight(96)
+            self.setMinimumWidth(400)
+            self.setFixedHeight(max(EXPANDED_MIN_HEIGHT, self.sizeHint().height()))
+            self.resize(420, self.height())
+        else:
+            self._text_label.setMaximumHeight(36)
+            self.setMinimumWidth(300)
+            self.setFixedHeight(COMPACT_HEIGHT)
+            self.resize(320, COMPACT_HEIGHT)
+
+    def expand_live(self, text: str = "") -> None:
+        self._hide_timer.stop()
+        if text:
+            self._text_label.setText(text)
+        self._text_label.show()
+        self._set_mode("expanded")
+        self._present()
+
+    def collapse_live(self) -> None:
+        if not self._listening_active:
+            return
+        self._text_label.hide()
+        self._set_mode("compact")
+        self._present()
 
     def _update_close_button(self) -> None:
         self._close_btn.setVisible(True)
@@ -265,17 +371,13 @@ class FloatingWindow(QWidget):
         else:
             self.dismiss_if_idle()
 
+    def _on_end_clicked(self) -> None:
+        self.continuous_stop_requested.emit()
+
     def _position_on_screen(self):
-        from PyQt6.QtWidgets import QApplication
-        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
-        if screen:
-            geo = screen.availableGeometry()
-            x = geo.x() + (geo.width() - self.width()) // 2
-            y = geo.y() + geo.height() - self.height() - 80
-            self.move(x, y)
+        position_island(self, width=self.width())
 
     def _present(self) -> None:
-        """Show floating window with close button visible in all states."""
         self._hide_timer.stop()
         self._update_close_button()
         self._position_on_screen()
@@ -298,21 +400,22 @@ class FloatingWindow(QWidget):
     def _restore_compact_height(self) -> None:
         self._text_label.setMaximumHeight(36)
         self._text_label.setToolTip("")
-        self.setFixedHeight(124)
+        self._text_label.show()
+        self._set_mode("compact")
 
     def show_listening(self):
         self._restore_compact_height()
         self._model_loading_active = False
         self._listening_active = True
-        self._set_state("自动监听中", STATE_LISTEN, pulse=False)
-        self._text_label.setText("说完停顿后自动出字，点 × 结束整场监听")
+        self._set_state("正在听", STATE_LISTEN, pulse=False)
+        self._text_label.setText("")
+        self._text_label.hide()
         self.unsetCursor()
         self._waveform.show()
         self._waveform.start()
         self._present()
 
     def show_continuous_idle(self, hotkey: str):
-        """Continuous mode: model ready but user has not started listening yet."""
         self._model_loading_active = False
         self._restore_compact_height()
         self._listening_active = False
@@ -343,9 +446,9 @@ class FloatingWindow(QWidget):
         self._present()
 
     def dismiss_if_idle(self):
-        """Hide floating window when recording never started or UI was left visible."""
         self._model_loading_active = False
         self._listening_active = False
+        self._set_mode("compact")
         self.unsetCursor()
         self._waveform.stop()
         self._waveform.hide()
@@ -355,7 +458,7 @@ class FloatingWindow(QWidget):
 
     def show_recognizing(self, partial_text: str = ""):
         self._restore_compact_height()
-        self._set_state("识别中", STATE_RECOGNIZE, pulse=False)
+        self._set_state("正在识别", STATE_RECOGNIZE, pulse=False)
         self._waveform.stop()
         self._waveform.hide()
         if partial_text:
@@ -385,7 +488,6 @@ class FloatingWindow(QWidget):
         self._hide_timer.start(dur)
 
     def show_info(self, message: str, subtitle: str = ""):
-        """Non-error informational state (e.g. polish fallback, soft warnings)."""
         self._restore_compact_height()
         self._waveform.stop()
         self._waveform.hide()
@@ -418,16 +520,32 @@ class FloatingWindow(QWidget):
     def show_error(self, message: str, *, auto_dismiss_ms: int = 5000):
         if self._model_loading_active:
             return
+        self._set_mode("compact")
         self._waveform.stop()
         self._waveform.hide()
-        self._set_state(message, STATE_ERROR)
-        metrics = QFontMetrics(self._text_label.font())
-        display = metrics.elidedText(message, Qt.TextElideMode.ElideRight, 900)
-        self._text_label.setMaximumHeight(16777215)
-        self._text_label.setText(display)
-        self._text_label.setToolTip(message)
+        if "：" in message:
+            status, remainder = message.split("：", 1)
+            status = status.split("\n", 1)[0]
+        else:
+            status = message[:12]
+            remainder = message[12:]
+        self._set_state(status, STATE_ERROR)
         self.setToolTip(message)
-        self.setFixedHeight(max(124, min(260, 124 + (len(display) // 34) * 18)))
+        remainder = remainder.strip()
+        if remainder:
+            metrics = QFontMetrics(self._text_label.font())
+            avail = max(80, self.width() - 48)
+            self._text_label.setText(
+                metrics.elidedText(remainder, Qt.TextElideMode.ElideRight, avail)
+            )
+            self._text_label.setToolTip(message)
+            self._text_label.show()
+            self.setFixedHeight(COMPACT_HEIGHT + 24)
+        else:
+            self._text_label.setText("")
+            self._text_label.setToolTip("")
+            self._text_label.hide()
+            self.setFixedHeight(COMPACT_HEIGHT)
         self._present()
         if auto_dismiss_ms and auto_dismiss_ms > 0:
             self._hide_timer.start(auto_dismiss_ms)
@@ -438,7 +556,6 @@ class FloatingWindow(QWidget):
         self._waveform.set_volume(volume)
 
     def show_busy_transcribing(self):
-        """User tried to record while inference is running."""
         self._restore_compact_height()
         self._set_state("请稍候", STATE_RECOGNIZE, pulse=False)
         self._text_label.setText("正在识别上一轮语音，稍后重试")
@@ -451,12 +568,14 @@ class FloatingWindow(QWidget):
         if text:
             display = text if len(text) <= 50 else "..." + text[-47:]
             self._text_label.setText(display)
+            if self._listening_active:
+                self.expand_live(display)
 
     def show_model_loading(self, detail: str = ""):
         self._listening_active = False
         self._restore_compact_height()
         self._model_loading_active = True
-        self._set_state("模型加载中", STATE_RECOGNIZE, pulse=False)
+        self._set_state("模型载入中", STATE_RECOGNIZE, pulse=False)
         self._waveform.hide()
         self._text_label.setText(
             detail or "模型文件已下载，正在载入内存（FireRedASR2 约需 10-40 秒）…"
@@ -465,3 +584,16 @@ class FloatingWindow(QWidget):
 
     def clear_model_loading_lock(self) -> None:
         self._model_loading_active = False
+
+    def mousePressEvent(self, event):
+        if self._listening_active and self._mode == "expanded":
+            widget = self.childAt(event.pos())
+            while widget is not None and widget is not self:
+                if widget in (self._status_label, self._dot, self._waveform):
+                    self.collapse_live()
+                    super().mousePressEvent(event)
+                    return
+                widget = widget.parentWidget()
+        elif self._listening_active and self._mode == "compact":
+            self.expand_live(self._text_label.text())
+        super().mousePressEvent(event)

@@ -35,7 +35,7 @@ class TestFloatingWindowStates:
         win.show_listening()
         assert win._listening_active is True
         assert win._model_loading_active is False
-        assert "自动监听" in win._status_label.text()
+        assert "正在听" in win._status_label.text()
 
     def test_show_continuous_idle_sets_hint(self, win):
         win.show_continuous_idle("Alt+Space")
@@ -56,7 +56,7 @@ class TestFloatingWindowStates:
     def test_show_recognizing_truncates_long_text(self, win):
         long_text = "字" * 80
         win.show_recognizing(long_text)
-        assert win._status_label.text() == "识别中"
+        assert win._status_label.text() == "正在识别"
         assert win._text_label.text().startswith("...")
 
     def test_show_polishing(self, win):
@@ -97,12 +97,12 @@ class TestModelLoadingGuard:
         assert win._model_loading_active is True
         win.show_error("识别失败")
         # Still showing model-loading state, error was ignored.
-        assert win._status_label.text() == "模型加载中"
+        assert win._status_label.text() == "模型载入中"
 
     def test_warning_suppressed_during_model_loading(self, win):
         win.show_model_loading()
         win.show_warning("音频受限")
-        assert win._status_label.text() == "模型加载中"
+        assert win._status_label.text() == "模型载入中"
 
     def test_clear_lock_allows_errors_again(self, win):
         win.show_model_loading()
@@ -120,11 +120,13 @@ class TestModelLoadingGuard:
         assert not win.isVisible()
         assert win._model_loading_active is False
 
-    def test_error_message_can_expand_window_height(self, win):
+    def test_error_stays_capsule_height(self, win):
         win.show_error("识别失败：" + "请检查网络或模型配置。" * 12)
 
-        assert win.height() > 124
-        assert win._text_label.wordWrap()
+        from voiceink.ui.floating_window import COMPACT_HEIGHT
+
+        assert win.height() <= COMPACT_HEIGHT + 40
+        assert win.toolTip()
 
     def test_success_clears_loading_flag(self, win):
         win.show_model_loading()
@@ -134,12 +136,12 @@ class TestModelLoadingGuard:
 
 class TestFloatingWindowClassicColors:
     def test_recording_uses_record_accent_others_neutral(self, win):
-        from voiceink.ui.design_tokens import FLOAT_TEXT, STATE_RECORD
+        from voiceink.ui.design_tokens import ISLAND_MINT, STATE_RECORD
 
         win.show_listening()
         listen_ss = win._status_label.styleSheet().lower()
         assert STATE_RECORD.lower() not in listen_ss
-        assert FLOAT_TEXT.lower() in listen_ss or "ffffff" in listen_ss or "235, 235, 245" in listen_ss
+        assert ISLAND_MINT.lower() in listen_ss
 
         win.show_recording()
         rec_ss = win._status_label.styleSheet().lower()
