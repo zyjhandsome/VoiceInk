@@ -510,6 +510,7 @@ class FloatingWindow(QWidget):
 
     def update_partial_text(self, text: str):
         self._apply_excerpt(text)
+        self._present()
 
     def show_model_loading(self, detail: str = ""):
         self._listening_active = False
