@@ -211,7 +211,7 @@ class TestSidebarVisualContracts:
     def test_vertical_choice_selected_uses_single_emphasis(self):
         from PyQt6.QtWidgets import QRadioButton
 
-        from voiceink.ui.design_tokens import ACCENT, ACCENT_SOFT, HAIRLINE, NAV_SELECTED_BAR_PX, TEXT
+        from voiceink.ui.design_tokens import ACCENT, HAIRLINE, NAV_SELECTED_BG, TEXT
         from voiceink.ui.settings_components import ChoiceCard, VerticalChoiceCard
 
         radio = QRadioButton()
@@ -219,9 +219,10 @@ class TestSidebarVisualContracts:
         card = VerticalChoiceCard("仅麦克风", "收录你的说话声", "mic", radio)
         try:
             sheet = card.styleSheet()
-            assert f"background: {ACCENT_SOFT}" in sheet
+            assert NAV_SELECTED_BG in sheet
             assert f"border: 1px solid {HAIRLINE}" in sheet
-            assert f"border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT}" in sheet
+            assert f"border: 2px solid" not in sheet
+            assert "border-left:" not in sheet or "border-left: 0" in sheet
             title = next(label for label in card.findChildren(QLabel) if label.text() == "仅麦克风")
             assert f"color: {TEXT}" in title.styleSheet()
             assert f"color: {ACCENT}" not in title.styleSheet()
@@ -234,9 +235,9 @@ class TestSidebarVisualContracts:
         grid = ChoiceCard("仅麦克风", "收录你的说话声", "mic", radio2)
         try:
             sheet = grid.styleSheet()
-            assert f"background: {ACCENT_SOFT}" in sheet
-            assert f"border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT}" in sheet
-            assert f"border: 2px solid {ACCENT}" not in sheet
+            assert NAV_SELECTED_BG in sheet
+            assert f"border: 2px solid" not in sheet
+            assert "border-left:" not in sheet or "border-left: 0" in sheet
             title = next(label for label in grid.findChildren(QLabel) if label.text() == "仅麦克风")
             assert f"color: {TEXT}" in title.styleSheet()
             assert f"color: {ACCENT}" not in title.styleSheet()

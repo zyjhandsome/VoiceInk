@@ -309,12 +309,26 @@ class HistoryWindow(QWidget):
             self._delete_btn.setStyleSheet(ss.BTN_DANGER_SM)
         if hasattr(self, "_clear_all_btn"):
             self._clear_all_btn.setStyleSheet(ss.BTN_DANGER_SM)
-        if hasattr(self, "_copy_raw_btn"):
-            self._copy_raw_btn.setStyleSheet(ss.BTN_GHOST_SM)
-        if hasattr(self, "_copy_polished_btn"):
-            self._copy_polished_btn.setStyleSheet(ss.BTN_GHOST_SM)
+        if hasattr(self, "_copy_raw_btn") and hasattr(self, "_copy_polished_btn"):
+            self._apply_copy_action_styles(self._current_selection_has_polished())
         if hasattr(self, "_undo_btn"):
             self._undo_btn.setStyleSheet(ss.BTN_GHOST_SM)
+
+    def _current_selection_has_polished(self) -> bool:
+        selected = self._selected_session_ids()
+        if len(selected) != 1:
+            return False
+        return _session_has_polished(self._store.get_session_segments(selected[0]))
+
+    def _apply_copy_action_styles(self, has_polished: bool) -> None:
+        from voiceink.ui import settings_styles as ss
+
+        if has_polished:
+            self._copy_polished_btn.setStyleSheet(ss.BTN_PRIMARY)
+            self._copy_raw_btn.setStyleSheet(ss.BTN_GHOST_SM)
+        else:
+            self._copy_raw_btn.setStyleSheet(ss.BTN_PRIMARY)
+            self._copy_polished_btn.setStyleSheet(ss.BTN_GHOST_SM)
 
     def _setup_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -575,6 +589,7 @@ class HistoryWindow(QWidget):
                 self._store.get_session_segments(selected[0])
             )
         self._copy_polished_btn.setEnabled(has_polished)
+        self._apply_copy_action_styles(has_polished)
         self._export_btn.setEnabled(count > 0)
         self._delete_btn.setEnabled(count > 0)
         if count == 1:

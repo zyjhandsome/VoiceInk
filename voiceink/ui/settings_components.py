@@ -20,6 +20,7 @@ from voiceink.ui.design_tokens import (
     DIVIDER_SOFT,
     FONT_DISPLAY,
     HAIRLINE,
+    NAV_SELECTED_BG,
     NAV_SELECTED_BAR_PX,
     PAGE_MARGIN_H,
     PAGE_MARGIN_V,
@@ -970,9 +971,8 @@ class ChoiceCard(QFrame):
         if checked:
             self.setStyleSheet(f"""
                 ChoiceCard {{
-                    background: {ACCENT_SOFT};
+                    background: {NAV_SELECTED_BG};
                     border: 1px solid {HAIRLINE};
-                    border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT};
                     border-radius: {RADIUS_MD}px;
                 }}
             """)
@@ -1061,9 +1061,8 @@ class VerticalChoiceCard(QFrame):
         if checked:
             self.setStyleSheet(f"""
                 VerticalChoiceCard {{
-                    background: {ACCENT_SOFT};
+                    background: {NAV_SELECTED_BG};
                     border: 1px solid {HAIRLINE};
-                    border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT};
                     border-radius: {RADIUS_MD}px;
                 }}
             """)
@@ -1152,12 +1151,12 @@ class CompactPickCard(QFrame):
             f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; line-height: 1.35;"
             f" background: transparent;"
         )
-        # Prototype v3: muted tile idle; accent fill + double ring when selected.
+        # Ink wash selected row — no accent ring or left bar.
         if checked:
             self.setStyleSheet(f"""
                 CompactPickCard {{
-                    background: {tok.ACCENT_SOFT};
-                    border: 2px solid {tok.ACCENT};
+                    background: {tok.NAV_SELECTED_BG};
+                    border: 1px solid {tok.HAIRLINE};
                     border-radius: {tok.RADIUS_MD}px;
                 }}
             """)

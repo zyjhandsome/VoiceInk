@@ -240,6 +240,20 @@ def test_undo_pending_delete_restores_sessions_without_store_delete(qapp, monkey
     assert window._session_list.count() == 2
 
 
+def test_export_is_ghost_and_copy_primary_follows_polish(qapp):
+    from voiceink.ui import settings_styles as ss
+
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        assert ss.BTN_PRIMARY not in (window._export_btn.styleSheet(),)
+        window._session_list.setCurrentRow(0)
+        assert ss.BTN_PRIMARY in window._copy_polished_btn.styleSheet() or "PRIMARY_CONTAINER" in window._copy_polished_btn.styleSheet()
+        window._session_list.setCurrentRow(1)
+        assert ss.BTN_PRIMARY in window._copy_raw_btn.styleSheet() or "PRIMARY_CONTAINER" in window._copy_raw_btn.styleSheet()
+    finally:
+        window.close()
+
+
 def test_copy_polished_disabled_when_session_has_no_polish(qapp):
     window = HistoryWindow(FakeHistoryStore())
     try:
