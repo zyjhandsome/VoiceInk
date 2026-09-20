@@ -121,7 +121,7 @@ class TestReadmeHotkeyManagerToApp:
 
 
 class TestReadmeContinuousMode:
-    """README FAQ: 自动持续转写 — 按住快捷键开始，浮窗 × 结束。"""
+    """README FAQ: 自动持续转写 — 按住快捷键开始，Esc 或听写条「结束」结束。"""
 
     def test_stt_ready_does_not_auto_start_continuous(self):
         with app_harness({"audio.trigger_mode": "continuous", "hotkey": "ctrl+space"}) as h:
@@ -134,6 +134,9 @@ class TestReadmeContinuousMode:
                 h["tray"].showMessage.assert_called()
                 msg = h["tray"].showMessage.call_args[0][1]
                 assert "持续转写" in msg or "监听" in msg
+                assert "Esc 或听写条「结束」" in msg
+                assert "浮窗" not in msg
+                assert "×" not in msg
 
     def test_continuous_short_tap_does_not_show_idle_float(self):
         with app_harness({"audio.trigger_mode": "continuous", "hotkey": "ctrl+space"}) as h:

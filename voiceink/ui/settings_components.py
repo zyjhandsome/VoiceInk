@@ -947,7 +947,7 @@ class ChoiceCard(QFrame):
         t = QLabel(title)
         t.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         t.setStyleSheet(
-            f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600; background: transparent;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600; background: transparent;"
         )
         lay.addWidget(t)
 
@@ -955,7 +955,7 @@ class ChoiceCard(QFrame):
         s.setWordWrap(True)
         s.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         s.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: {tok.TYPE_CAPTION}px; line-height: 1.35; background: transparent;"
+            f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_CAPTION}px; line-height: 1.35; background: transparent;"
         )
         lay.addWidget(s)
 
@@ -971,20 +971,20 @@ class ChoiceCard(QFrame):
         if checked:
             self.setStyleSheet(f"""
                 ChoiceCard {{
-                    background: {NAV_SELECTED_BG};
-                    border: 1px solid {HAIRLINE};
-                    border-radius: {RADIUS_MD}px;
+                    background: {tok.NAV_SELECTED_BG};
+                    border: 1px solid {tok.HAIRLINE};
+                    border-radius: {tok.RADIUS_MD}px;
                 }}
             """)
         else:
             self.setStyleSheet(f"""
                 ChoiceCard {{
-                    background: {SURFACE};
-                    border: 1px solid {HAIRLINE};
-                    border-radius: {RADIUS_MD}px;
+                    background: {tok.SURFACE};
+                    border: 1px solid {tok.HAIRLINE};
+                    border-radius: {tok.RADIUS_MD}px;
                 }}
                 ChoiceCard:hover {{
-                    border-color: {ACCENT_FOCUS};
+                    border-color: {tok.ACCENT_FOCUS};
                 }}
             """)
 
@@ -1037,13 +1037,13 @@ class VerticalChoiceCard(QFrame):
         text_col.setSpacing(2)
         t = QLabel(title)
         t.setStyleSheet(
-            f"color: {TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 600; background: transparent;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 600; background: transparent;"
         )
         text_col.addWidget(t)
         s = QLabel(subtitle)
         s.setWordWrap(True)
         s.setStyleSheet(
-            f"color: {TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.35; background: transparent;"
+            f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.35; background: transparent;"
         )
         text_col.addWidget(s)
         lay.addLayout(text_col, 1)
@@ -1061,20 +1061,20 @@ class VerticalChoiceCard(QFrame):
         if checked:
             self.setStyleSheet(f"""
                 VerticalChoiceCard {{
-                    background: {NAV_SELECTED_BG};
-                    border: 1px solid {HAIRLINE};
-                    border-radius: {RADIUS_MD}px;
+                    background: {tok.NAV_SELECTED_BG};
+                    border: 1px solid {tok.HAIRLINE};
+                    border-radius: {tok.RADIUS_MD}px;
                 }}
             """)
         else:
             self.setStyleSheet(f"""
                 VerticalChoiceCard {{
-                    background: {SURFACE};
-                    border: 1px solid {HAIRLINE};
-                    border-radius: {RADIUS_MD}px;
+                    background: {tok.SURFACE};
+                    border: 1px solid {tok.HAIRLINE};
+                    border-radius: {tok.RADIUS_MD}px;
                 }}
                 VerticalChoiceCard:hover {{
-                    border-color: {ACCENT_FOCUS};
+                    border-color: {tok.ACCENT_FOCUS};
                 }}
             """)
 

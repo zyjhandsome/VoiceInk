@@ -465,15 +465,23 @@ class TestSurfaceThemeReapply:
 
         from PyQt6.QtWidgets import QApplication
 
+        from voiceink.ui import design_tokens as tok
         from voiceink.ui.floating_window import FloatingWindow
         from voiceink.ui.theme import apply_theme
 
         QApplication.instance() or QApplication(sys.argv)
         win = FloatingWindow()
+        assert not hasattr(win, "_close_btn")
+        assert win._end_btn.text() == "结束"
         apply_theme(mode="light", surfaces=(win,))
-        sheet = win._close_btn.styleSheet()
-        assert "rgba(255, 255, 255" not in sheet
-        assert "CHIP_BG" in sheet or "rgba(17, 24, 39" in sheet or "#" in sheet
+        sheet = win._end_btn.styleSheet()
+        assert tok.PRIMARY_CONTAINER in sheet
+        assert tok.PRIMARY_CONTAINER_HOVER in sheet
+        apply_theme(mode="dark", surfaces=(win,))
+        dark_sheet = win._end_btn.styleSheet()
+        assert tok.PRIMARY_CONTAINER in dark_sheet
+        assert tok.PRIMARY_CONTAINER_HOVER in dark_sheet
+        apply_theme(mode="light")
 
 
 class TestSettingsThemeAwareBroadcast:

@@ -639,7 +639,7 @@ class SettingsWindow(QWidget):
         if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
             tip = (
                 f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；"
-                f"Esc 或浮窗 × 结束"
+                f"Esc 或听写条「结束」结束"
             )
         else:
             tip = f"按住 {hotkey} 说话，松开后识别并粘贴"

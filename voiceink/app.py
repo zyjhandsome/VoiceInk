@@ -677,7 +677,7 @@ class App(QObject):
             self._floating.dismiss_if_idle()
             tray_msg = (
                 f"持续转写已就绪。按住 {hotkey} 开始监听，说完停顿后自动出字；"
-                "按 Esc 或点击浮窗右上角 × 停止。"
+                "按 Esc 或听写条「结束」停止。"
             )
         else:
             log.info("✓ 语音识别模型已就绪，按 %s 开始语音输入", hotkey)

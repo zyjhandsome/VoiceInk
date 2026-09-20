@@ -211,21 +211,22 @@ class TestSidebarVisualContracts:
     def test_vertical_choice_selected_uses_single_emphasis(self):
         from PyQt6.QtWidgets import QRadioButton
 
-        from voiceink.ui.design_tokens import ACCENT, HAIRLINE, NAV_SELECTED_BG, TEXT
+        from voiceink.ui import design_tokens as tok
         from voiceink.ui.settings_components import ChoiceCard, VerticalChoiceCard
 
+        tok.activate("light")
         radio = QRadioButton()
         radio.setChecked(True)
         card = VerticalChoiceCard("仅麦克风", "收录你的说话声", "mic", radio)
         try:
             sheet = card.styleSheet()
-            assert NAV_SELECTED_BG in sheet
-            assert f"border: 1px solid {HAIRLINE}" in sheet
+            assert tok.NAV_SELECTED_BG in sheet
+            assert f"border: 1px solid {tok.HAIRLINE}" in sheet
             assert f"border: 2px solid" not in sheet
             assert "border-left:" not in sheet or "border-left: 0" in sheet
             title = next(label for label in card.findChildren(QLabel) if label.text() == "仅麦克风")
-            assert f"color: {TEXT}" in title.styleSheet()
-            assert f"color: {ACCENT}" not in title.styleSheet()
+            assert f"color: {tok.TEXT}" in title.styleSheet()
+            assert f"color: {tok.ACCENT}" not in title.styleSheet()
         finally:
             card.close()
             radio.close()
@@ -235,12 +236,13 @@ class TestSidebarVisualContracts:
         grid = ChoiceCard("仅麦克风", "收录你的说话声", "mic", radio2)
         try:
             sheet = grid.styleSheet()
-            assert NAV_SELECTED_BG in sheet
+            assert tok.NAV_SELECTED_BG in sheet
+            assert f"border: 1px solid {tok.HAIRLINE}" in sheet
             assert f"border: 2px solid" not in sheet
             assert "border-left:" not in sheet or "border-left: 0" in sheet
             title = next(label for label in grid.findChildren(QLabel) if label.text() == "仅麦克风")
-            assert f"color: {TEXT}" in title.styleSheet()
-            assert f"color: {ACCENT}" not in title.styleSheet()
+            assert f"color: {tok.TEXT}" in title.styleSheet()
+            assert f"color: {tok.ACCENT}" not in title.styleSheet()
         finally:
             grid.close()
             radio2.close()
