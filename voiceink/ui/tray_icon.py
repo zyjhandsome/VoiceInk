@@ -74,8 +74,8 @@ def create_microphone_icon(color: str | None = None, recording: bool = False, si
         bg_grad.setColorAt(0, record)
         bg_grad.setColorAt(1, darker)
     else:
-        top = QColor(color or tok.ACCENT_FOCUS)
-        bottom = QColor(color or tok.ACCENT)
+        top = QColor(color or tok.TEXT)
+        bottom = QColor(color or tok.TEXT)
         bg_grad = QRadialGradient(QPointF(cx, cx), s * 0.45)
         bg_grad.setColorAt(0, top)
         bg_grad.setColorAt(1, bottom)
@@ -145,6 +145,7 @@ def create_microphone_icon(color: str | None = None, recording: bool = False, si
 
 class TrayIcon(QSystemTrayIcon):
     open_settings = pyqtSignal()
+    wake_island = pyqtSignal()
     history_requested = pyqtSignal()
     quit_app = pyqtSignal()
     auto_start_toggled = pyqtSignal(bool)
@@ -204,7 +205,7 @@ class TrayIcon(QSystemTrayIcon):
         self._status_action.setEnabled(False)
         menu.addSeparator()
 
-        settings_action = menu.addAction("打开设置")
+        settings_action = menu.addAction("打开 VoiceInk")
         settings_action.triggered.connect(self.open_settings.emit)
 
         history_action = menu.addAction("历史")
@@ -262,13 +263,13 @@ class TrayIcon(QSystemTrayIcon):
     @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def _on_activated(self, reason):
         # Windows emits Trigger on the first click of a double-click, then DoubleClick.
-        # Handling both opens settings twice; on Windows only respond to double-click.
+        # Handling both would fire twice; on Windows only respond to double-click.
         if sys.platform == "win32":
             if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-                self.open_settings.emit()
+                self.wake_island.emit()
             return
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.open_settings.emit()
+            self.wake_island.emit()
 
     def set_recording(self, is_recording: bool):
         self._apply_icon_kind("recording" if is_recording else "normal")

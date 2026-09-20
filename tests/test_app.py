@@ -107,6 +107,7 @@ class TestAppSignals:
     def test_island_signals_connected(self):
         with app_harness() as h:
             app = h["app"]
+            h["tray"].wake_island.connect.assert_called_with(app._show_main_window)
             h["floating"].settings_requested.connect.assert_called_with(
                 app._show_settings
             )

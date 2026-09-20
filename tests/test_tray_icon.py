@@ -26,7 +26,7 @@ class TestTrayActivation:
     def test_windows_ignores_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         emitted: list[object] = []
-        tray.open_settings.connect(lambda: emitted.append(True))
+        tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
         tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
@@ -36,7 +36,7 @@ class TestTrayActivation:
     def test_non_windows_uses_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "darwin")
         emitted: list[object] = []
-        tray.open_settings.connect(lambda: emitted.append(True))
+        tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
 
@@ -90,7 +90,7 @@ class TestTrayMenuStyleAndGrouping:
         assert labels[0]  # status (dynamic)
         assert not actions[0].isEnabled()
         assert labels[1] == "---"
-        assert labels[2] == "打开设置"
+        assert labels[2] == "打开 VoiceInk"
         assert labels[3] == "历史"
         assert labels[4] == "---"
         assert labels[5] == "切换模型"
@@ -99,3 +99,11 @@ class TestTrayMenuStyleAndGrouping:
         assert actions[7].isCheckable()
         assert labels[8] == "---"
         assert labels[9] == "退出"
+
+
+def test_idle_mic_uses_text_token():
+    from voiceink.ui import design_tokens as tok
+    from voiceink.ui.tray_icon import create_microphone_icon
+    import inspect
+    assert "TEXT" in inspect.getsource(create_microphone_icon)
+    assert tok.ACCENT not in inspect.getsource(create_microphone_icon).split("recording")[0]

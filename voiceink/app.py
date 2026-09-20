@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import numpy as np
-from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtCore import QEvent, QObject, QTimer
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 
 from voiceink.config import (
@@ -42,8 +42,7 @@ from voiceink.text_paster import TextPaster, get_foreground_process_name
 from voiceink.sound_manager import SoundManager
 from voiceink.ui.floating_window import FloatingWindow
 from voiceink.ui.tray_icon import TrayIcon
-from voiceink.ui.settings_window import SettingsWindow
-from voiceink.ui.history_window import HistoryWindow
+from voiceink.ui.main_window import MainWindow
 
 log = logging.getLogger("VoiceInk")
 
@@ -128,6 +127,7 @@ class App(QObject):
     def _init_ui(self):
         self._floating = FloatingWindow()
         self._tray = TrayIcon()
+        self._main: MainWindow | None = None
         self._settings_win = None
         self._history_win = None
 
@@ -188,6 +188,7 @@ class App(QObject):
         self._floating.history_requested.connect(self._show_history_window)
 
         self._tray.open_settings.connect(self._show_settings)
+        self._tray.wake_island.connect(self._show_main_window)
         self._tray.history_requested.connect(self._show_history_window)
         self._tray.quit_app.connect(self._quit)
         self._tray.auto_start_toggled.connect(self._on_auto_start_toggled)
@@ -863,52 +864,58 @@ class App(QObject):
     def _sync_settings_runtime_status(self) -> None:
         status = self._runtime_status_label()
         self._sync_tray_status_summary()
-        if self._settings_win is None:
+        settings = None
+        if self._main is not None:
+            settings = getattr(self._main, "_settings", None)
+        if settings is None:
+            settings = self._settings_win
+        if settings is None:
             return
-        self._settings_win.set_runtime_status(status)
+        settings.set_runtime_status(status)
+
+    def _show_main_window(self, page: str | None = None):
+        if self._main is None:
+            self._main = MainWindow(self._config, self._history)
+            settings = self._main._settings
+            settings._pending_segment_count = self._pending_segment_count
+            settings.hotkey_updated.connect(self._on_hotkey_updated)
+            settings.settings_changed.connect(self._on_settings_changed)
+            settings.auto_start_changed.connect(self._on_auto_start_toggled)
+            settings.sound_enabled_changed.connect(self._on_sound_enabled_changed)
+            settings.models_changed.connect(self._on_models_changed)
+            settings.theme_changed.connect(self._on_theme_changed)
+            settings.finished.connect(self._on_settings_closed)
+            settings.hotkey_capture_started.connect(self._hotkey_mgr.pause)
+            settings.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
+            self._main.installEventFilter(self)
+        if page:
+            self._main.show_page(page)
+        self.apply_appearance_theme()
+        self._main._settings.reload_settings()
+        self._sync_settings_runtime_status()
+        self._main.show()
+        self._main.raise_()
+        self._main.activateWindow()
 
     def _show_settings(self):
-        if self._settings_win is not None and self._settings_win.isVisible():
-            self._settings_win.raise_()
-            self._settings_win.activateWindow()
-            return
-
-        if self._settings_win is None:
-            self._settings_win = SettingsWindow(
-                self._config,
-                pending_segment_count=self._pending_segment_count,
-            )
-            self._settings_win.hotkey_updated.connect(self._on_hotkey_updated)
-            self._settings_win.settings_changed.connect(self._on_settings_changed)
-            self._settings_win.auto_start_changed.connect(self._on_auto_start_toggled)
-            self._settings_win.sound_enabled_changed.connect(self._on_sound_enabled_changed)
-            self._settings_win.models_changed.connect(self._on_models_changed)
-            self._settings_win.theme_changed.connect(self._on_theme_changed)
-            self._settings_win.finished.connect(self._on_settings_closed)
-            self._settings_win.hotkey_capture_started.connect(self._hotkey_mgr.pause)
-            self._settings_win.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
-
-        self.apply_appearance_theme()
-        self._settings_win.reload_settings()
-        self._sync_settings_runtime_status()
-        self._settings_win.show()
-        self._settings_win.raise_()
-        self._settings_win.activateWindow()
+        self._show_main_window(None)
 
     def _show_history_window(self):
-        if self._history_win is None:
-            self._history_win = HistoryWindow(self._history)
-        else:
-            self._history_win.refresh()
-        self.apply_appearance_theme()
-        if not self._history_win.isVisible():
-            self._history_win.show()
-        self._history_win.raise_()
-        self._history_win.activateWindow()
+        self._show_main_window("history")
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "_main", None) and event.type() == QEvent.Type.Hide:
+            self._on_settings_closed()
+        return super().eventFilter(obj, event)
 
     def _on_settings_closed(self):
-        if self._settings_win is not None:
-            self._settings_win.cancel_hotkey_capture()
+        settings = None
+        if self._main is not None:
+            settings = getattr(self._main, "_settings", None)
+        if settings is None:
+            settings = self._settings_win
+        if settings is not None:
+            settings.cancel_hotkey_capture()
         self._hotkey_mgr.resume()
         self._update_tray_models()
 
@@ -947,9 +954,15 @@ class App(QObject):
 
         surfaces = [
             surface
-            for attr in ("_settings_win", "_history_win", "_floating", "_tray")
+            for attr in ("_main", "_settings_win", "_history_win", "_floating", "_tray")
             if (surface := _attr(attr)) is not None
         ]
+        main = _attr("_main")
+        if main is not None:
+            for child_attr in ("_settings", "_history"):
+                child = getattr(main, child_attr, None)
+                if child is not None:
+                    surfaces.append(child)
         apply_theme(QApplication.instance(), mode=theme_mode, surfaces=surfaces)
 
     def _on_settings_changed(self):
@@ -1030,8 +1043,16 @@ class App(QObject):
         if self._recorder.is_recording:
             self._recorder.cancel()
 
-        if self._settings_win is not None:
-            self._settings_win.cancel_all_downloads()
+        settings = None
+        if self._main is not None:
+            settings = getattr(self._main, "_settings", None)
+        if settings is None:
+            settings = self._settings_win
+        if settings is not None:
+            settings.cancel_all_downloads()
+        if self._main is not None:
+            self._main.hide()
+        elif self._settings_win is not None:
             self._settings_win.close()
 
         self._recognizer.shutdown()
