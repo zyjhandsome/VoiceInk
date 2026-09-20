@@ -9,7 +9,6 @@ from pathlib import Path
 from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
-    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -168,7 +167,7 @@ def build_batch_export_markdown(
     return "\n".join(lines).rstrip() + "\n"
 
 
-class HistoryWindow(QDialog):
+class HistoryWindow(QWidget):
     def __init__(self, store, parent=None):
         super().__init__(parent)
         self._store = store
@@ -181,32 +180,13 @@ class HistoryWindow(QDialog):
         self.reapply_theme()
 
     def _setup_window(self) -> None:
-        from voiceink.ui.island_chrome import (
-            ISLAND_SHEET_HEIGHT,
-            ISLAND_SHEET_WIDTH,
-            apply_island_sheet_flags,
-        )
-
         self.setWindowTitle("历史")
-        apply_island_sheet_flags(self)
-        self.setMinimumSize(ISLAND_SHEET_WIDTH, 520)
-        self.resize(ISLAND_SHEET_WIDTH, ISLAND_SHEET_HEIGHT)
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
-
-    def showEvent(self, event):
-        from voiceink.ui.island_chrome import position_island
-
-        super().showEvent(event)
-        position_island(self, width=self.width())
 
     def reapply_theme(self) -> None:
         from voiceink.ui import settings_styles as ss
 
-        from voiceink.ui.island_chrome import island_container_css
-
         self.setStyleSheet(ss.WINDOW_CSS)
-        if hasattr(self, "_sheet"):
-            self._sheet.setStyleSheet(island_container_css())
         self._paint_history_styles()
 
     def _paint_history_styles(self) -> None:
@@ -325,12 +305,6 @@ class HistoryWindow(QDialog):
             chip_css = _chip_qss()
             for lab in self._detail_chip_labels:
                 lab.setStyleSheet(chip_css)
-        if hasattr(self, "_close_btn"):
-            self._close_btn.setStyleSheet(
-                f"QPushButton {{ background: {tok.CHIP_BG}; color: {tok.TEXT};"
-                f" border: none; border-radius: 14px; font-size: {tok.TYPE_BODY_SM}px; }}"
-                f"QPushButton:hover {{ background: {tok.CHIP_BG_HOVER}; }}"
-            )
         if hasattr(self, "_delete_btn"):
             self._delete_btn.setStyleSheet(ss.BTN_DANGER_SM)
         if hasattr(self, "_clear_all_btn"):
@@ -343,17 +317,9 @@ class HistoryWindow(QDialog):
             self._undo_btn.setStyleSheet(ss.BTN_GHOST_SM)
 
     def _setup_ui(self) -> None:
-        from voiceink.ui.island_chrome import island_container_css
-
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(0)
-        self._sheet = QWidget()
-        self._sheet.setObjectName("islandSheet")
-        self._sheet.setStyleSheet(island_container_css())
-        sheet_lay = QVBoxLayout(self._sheet)
-        sheet_lay.setContentsMargins(16, 14, 16, 14)
-        sheet_lay.setSpacing(10)
+        outer.setContentsMargins(16, 14, 16, 14)
+        outer.setSpacing(10)
 
         top = QHBoxLayout()
         self._title_label = QLabel("历史")
@@ -361,12 +327,7 @@ class HistoryWindow(QDialog):
         self._export_btn = QPushButton("导出 Markdown")
         self._export_btn.clicked.connect(self._export_selected)
         top.addWidget(self._export_btn)
-        close_x = QPushButton("\u2715")
-        close_x.setFixedSize(28, 28)
-        close_x.clicked.connect(self.close)
-        self._close_btn = close_x
-        top.addWidget(close_x)
-        sheet_lay.addLayout(top)
+        outer.addLayout(top)
 
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("搜索转写内容")
@@ -375,7 +336,11 @@ class HistoryWindow(QDialog):
         self._search_timer.setInterval(200)
         self._search_edit.textChanged.connect(lambda: self._search_timer.start())
         self._search_timer.timeout.connect(self._perform_search)
-        sheet_lay.addWidget(self._search_edit)
+        outer.addWidget(self._search_edit)
+
+        split = QHBoxLayout()
+        split.setContentsMargins(0, 0, 0, 0)
+        split.setSpacing(12)
 
         stream = QWidget()
         self._stream_host = stream
@@ -390,7 +355,7 @@ class HistoryWindow(QDialog):
         self._session_list.itemDoubleClicked.connect(self._expand_session)
         self._session_list.itemSelectionChanged.connect(self._on_selection_changed)
         stream_lay.addWidget(self._session_list, 1)
-        sheet_lay.addWidget(stream, 1)
+        split.addWidget(stream, 1)
 
         self._right_pane = QWidget()
         right_lay = QVBoxLayout(self._right_pane)
@@ -449,8 +414,8 @@ class HistoryWindow(QDialog):
         self._clear_all_btn = QPushButton("清空全部历史")
         self._clear_all_btn.clicked.connect(self._clear_all_history)
         right_lay.addWidget(self._clear_all_btn)
-        sheet_lay.addWidget(self._right_pane, 1)
-        outer.addWidget(self._sheet, 1)
+        split.addWidget(self._right_pane, 1)
+        outer.addLayout(split, 1)
         self._paint_history_styles()
 
     def refresh(self) -> None:

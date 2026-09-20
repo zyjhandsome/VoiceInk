@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton, QWidget
 
 from voiceink.audio_devices import (
     INPUT_SOURCE_MICROPHONE,
@@ -56,9 +56,8 @@ def settings_window(config, qapp, monkeypatch):
 
 class TestGeneralPageLayout:
     def test_island_nav_labels(self, settings_window):
-        assert [b.text() for b in settings_window._island_nav] == [
-            "通用", "引擎", "润色", "关于",
-        ]
+        assert isinstance(settings_window, QWidget)
+        assert settings_window._pages.count() == 4
         assert not hasattr(settings_window, "_sidebar")
         assert not hasattr(settings_window, "_general_hero")
 
@@ -191,7 +190,7 @@ class TestGeneralPageLayout:
             sheet = widget.styleSheet()
             assert "transparent" in sheet.lower()
             assert f"background: {tok.BG}" not in sheet
-        assert "border-radius: 28px" in settings_window._sheet.styleSheet()
+        assert not hasattr(settings_window, "_sheet")
 
     def test_about_paths_start_hidden_and_reveal_on_toggle(
         self, config, qapp, monkeypatch
@@ -202,7 +201,7 @@ class TestGeneralPageLayout:
         )
         win = SettingsWindow(config)
         try:
-            win._on_island_nav(3)
+            win.show_page(3)
             win.show()
             qapp.processEvents()
             assert win._about_paths_wrap.objectName() == "aboutPaths"

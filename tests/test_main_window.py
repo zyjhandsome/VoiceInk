@@ -8,10 +8,23 @@ from PyQt6.QtCore import Qt
 def qapp():
     return QApplication.instance() or QApplication(sys.argv)
 
-def test_chrome_size_and_nav(qapp):
-    from voiceink.ui.main_window import NAV_LABELS, MainWindow
+
+def _make_main_window(tmp_path, monkeypatch):
+    from voiceink.config import Config
+    from voiceink.history_store import HistoryStore
+    from voiceink.ui.main_window import MainWindow
+    from voiceink.ui.settings_window import SettingsWindow
+    monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+    monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+    monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+    store = HistoryStore(tmp_path / "h.db")
+    win = MainWindow(Config(config_dir=tmp_path), store)
+    return win, store
+
+def test_chrome_size_and_nav(qapp, tmp_path, monkeypatch):
+    from voiceink.ui.main_window import NAV_LABELS
     from voiceink.ui import design_tokens as tok
-    win = MainWindow()
+    win, store = _make_main_window(tmp_path, monkeypatch)
     try:
         assert win.width() == 960
         assert win.height() == 640
@@ -23,11 +36,37 @@ def test_chrome_size_and_nav(qapp):
         assert win.current_page() == "history"
     finally:
         win.close()
+        store.close()
 
-def test_close_hides_does_not_quit(qapp):
+def test_close_hides_does_not_quit(qapp, tmp_path, monkeypatch):
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        win.show()
+        win.close()
+        assert win.isHidden()
+        win.deleteLater()
+    finally:
+        store.close()
+
+
+def test_show_page_embeds_hosts(qapp, tmp_path, monkeypatch):
+    from voiceink.config import Config
+    from voiceink.history_store import HistoryStore
     from voiceink.ui.main_window import MainWindow
-    win = MainWindow()
-    win.show()
-    win.close()
-    assert win.isHidden()
-    win.deleteLater()
+    from voiceink.ui.settings_window import SettingsWindow
+    monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+    monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+    monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+    store = HistoryStore(tmp_path / "h.db")
+    win = MainWindow(Config(config_dir=tmp_path), store)
+    try:
+        assert not hasattr(win._settings, "_island_nav")
+        win.show_page("engine")
+        assert win._settings._pages.currentIndex() == 1
+        win.show_page("history")
+        assert win._stack.currentWidget() is win._history
+        assert win._history._title_label.text() == "历史"
+        assert not hasattr(win._history, "_close_btn")
+    finally:
+        win.close()
+        store.close()

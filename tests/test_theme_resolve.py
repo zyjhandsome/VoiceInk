@@ -105,7 +105,7 @@ class TestSettingsAppearanceEntry:
     def test_settings_island_header_restyles_on_dark_theme(
         self, tmp_path: Path, monkeypatch
     ):
-        """Island title and close chip must repaint when theme axis changes."""
+        """Embedded settings host has no island title/close; pages stay theme-aware."""
         import sys
 
         from PyQt6.QtWidgets import QApplication
@@ -124,13 +124,10 @@ class TestSettingsAppearanceEntry:
         try:
             apply_theme(mode="dark", surfaces=(win,))
             assert tok.TEXT.upper() == "#F9FAFB"
-            title_css = win._island_title.styleSheet().upper()
-            assert "#F9FAFB" in title_css
-            assert tok.TEXT.upper() in title_css
-
-            close_css = win._close_btn.styleSheet().upper()
-            assert "#F9FAFB" in close_css
-            assert tok.CHIP_BG.upper() in close_css
+            assert not hasattr(win, "_island_title")
+            assert not hasattr(win, "_close_btn")
+            assert not hasattr(win, "_sheet")
+            assert "TRANSPARENT" in win._pages_host.styleSheet().upper()
         finally:
             win.close()
             apply_theme(mode="light")
@@ -223,7 +220,7 @@ class TestSettingsAppearanceEntry:
             assert tok.BG.upper() == "#FFFFFF"
             assert "TRANSPARENT" in win._pages_host.styleSheet().upper()
             assert "#111827" not in win._pages_host.styleSheet().upper()
-            assert tok.FLOAT_BG.upper() in win._sheet.styleSheet().upper()
+            assert not hasattr(win, "_sheet")
 
             ghost = win._llm_key_toggle.styleSheet().upper()
             assert tok.SURFACE_PEARL.upper() in ghost

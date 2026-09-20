@@ -34,8 +34,10 @@ _WINDOW_H = 640
 
 
 class MainWindow(QWidget):
-    def __init__(self, parent=None) -> None:
+    def __init__(self, config, history_store, parent=None) -> None:
         super().__init__(parent)
+        self._config = config
+        self._history_store = history_store
         self._page = "general"
         self._setup_window()
         self._setup_ui()
@@ -113,11 +115,16 @@ class MainWindow(QWidget):
         side.addStretch(1)
         body.addWidget(self._sidebar)
 
+        from voiceink.ui.history_window import HistoryWindow
+        from voiceink.ui.settings_window import SettingsWindow
+
         self._stack = QStackedWidget()
-        for name in PAGE_OBJECT_NAMES:
-            page = QWidget()
-            page.setObjectName(name)
-            self._stack.addWidget(page)
+        self._history = HistoryWindow(self._history_store, self)
+        self._history.setObjectName(PAGE_OBJECT_NAMES[0])
+        self._settings = SettingsWindow(self._config, self)
+        self._settings.setObjectName(PAGE_OBJECT_NAMES[1])
+        self._stack.addWidget(self._history)
+        self._stack.addWidget(self._settings)
         body.addWidget(self._stack, 1)
         root.addLayout(body, 1)
 
@@ -134,9 +141,19 @@ class MainWindow(QWidget):
         if key not in PAGE_KEYS:
             return
         self._page = key
-        index = PAGE_KEYS.index(key)
-        self._stack.setCurrentIndex(index)
-        btn = self._nav_buttons[index]
+        settings_index = {
+            "general": 0,
+            "engine": 1,
+            "polish": 2,
+            "about": 3,
+        }
+        if key == "history":
+            self._stack.setCurrentIndex(0)
+        else:
+            self._stack.setCurrentIndex(1)
+            self._settings.show_page(settings_index[key])
+        nav_index = PAGE_KEYS.index(key)
+        btn = self._nav_buttons[nav_index]
         btn.blockSignals(True)
         btn.setChecked(True)
         btn.blockSignals(False)

@@ -180,6 +180,8 @@ def _qdialog_block(css: str) -> str:
 
 class TestIslandSheetGlass:
     def test_settings_dialog_root_is_transparent(self, qapp, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QWidget
+
         from voiceink.config import Config
         from voiceink.ui import design_tokens as tok
         from voiceink.ui.settings_window import SettingsWindow
@@ -189,6 +191,8 @@ class TestIslandSheetGlass:
         monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
         win = SettingsWindow(Config(config_dir=tmp_path))
         try:
+            assert isinstance(win, QWidget)
+            assert not hasattr(win, "_sheet")
             body = _qdialog_block(win.styleSheet())
             assert "transparent" in body
             assert tok.BG not in body
@@ -196,12 +200,17 @@ class TestIslandSheetGlass:
             win.close()
 
     def test_history_dialog_and_right_pane_are_transparent(self, qapp):
+        from PyQt6.QtWidgets import QWidget
+
         from voiceink.ui import design_tokens as tok
         from voiceink.ui.history_window import HistoryWindow
         from tests.test_history_window import FakeHistoryStore
 
         win = HistoryWindow(FakeHistoryStore())
         try:
+            assert isinstance(win, QWidget)
+            assert not hasattr(win, "_sheet")
+            assert not hasattr(win, "_close_btn")
             body = _qdialog_block(win.styleSheet())
             assert "transparent" in body
             assert tok.BG not in body

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
-    QDialog, QVBoxLayout, QHBoxLayout, QWidget,
+    QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QMessageBox, QFrame,
     QStackedWidget,
@@ -59,7 +59,7 @@ _LLM_ACTION_BTN_WIDTH = 88
 # ── Settings Window ──────────────────────────────────────────────
 
 
-class SettingsWindow(QDialog):
+class SettingsWindow(QWidget):
     hotkey_updated = pyqtSignal(str)
     settings_changed = pyqtSignal()
     auto_start_changed = pyqtSignal(bool)
@@ -68,6 +68,8 @@ class SettingsWindow(QDialog):
     theme_changed = pyqtSignal(str)
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
+    closed = pyqtSignal()
+    finished = pyqtSignal(int)
 
     def __init__(self, config: Config, parent=None, pending_segment_count=None):
         super().__init__(parent)
@@ -87,16 +89,7 @@ class SettingsWindow(QDialog):
         self.reapply_theme()
 
     def _setup_window(self):
-        from voiceink.ui.island_chrome import (
-            ISLAND_SETTINGS_WIDTH,
-            ISLAND_SHEET_HEIGHT,
-            apply_island_sheet_flags,
-        )
-
         self.setWindowTitle("设置")
-        apply_island_sheet_flags(self)
-        self.setMinimumSize(ISLAND_SETTINGS_WIDTH, 520)
-        self.resize(ISLAND_SETTINGS_WIDTH, ISLAND_SHEET_HEIGHT)
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
 
     def reapply_theme(self) -> None:
@@ -174,77 +167,25 @@ class SettingsWindow(QDialog):
                 f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
             )
 
+    def show_page(self, index: int) -> None:
+        self._pages.setCurrentIndex(index)
+
     def _on_nav_changed(self, row: int):
-        self._pages.setCurrentIndex(row)
-        self._sync_island_nav(row)
-
-    def _on_island_nav(self, row: int) -> None:
-        self._on_nav_changed(row)
-
-    def _sync_island_nav(self, row: int) -> None:
-        if not hasattr(self, "_island_nav"):
-            return
-        for index, btn in enumerate(self._island_nav):
-            btn.blockSignals(True)
-            btn.setChecked(index == row)
-            btn.blockSignals(False)
+        self.show_page(row)
 
     def _open_about_from_general(self) -> None:
-        self._on_island_nav(3)
+        self.show_page(3)
 
-    # ── Layout ─────────────────────────────────────────
-
-    def showEvent(self, event):
-        from voiceink.ui.island_chrome import position_island
-
-        super().showEvent(event)
-        position_island(self, width=self.width())
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if self.parent() is None:
+            self.closed.emit()
+            self.finished.emit(0)
 
     def _setup_ui(self):
-        from voiceink.ui.island_chrome import island_container_css
-
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-
-        self._sheet = QWidget()
-        self._sheet.setObjectName("islandSheet")
-        self._sheet.setStyleSheet(island_container_css())
-        sheet_lay = QVBoxLayout(self._sheet)
-        sheet_lay.setContentsMargins(0, 0, 0, 0)
-        sheet_lay.setSpacing(0)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(16, 12, 12, 8)
-        self._island_title = QLabel("设置")
-        self._island_title.setObjectName("islandSheetTitle")
-        self._island_title.setStyleSheet(
-            f"color: {_tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 600;"
-            f" background: transparent;"
-        )
-        header.addWidget(self._island_title)
-        header.addSpacing(12)
-        self._island_nav = []
-        for index, label in enumerate(("通用", "引擎", "润色", "关于")):
-            btn = QPushButton(label)
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(28)
-            btn.clicked.connect(lambda _=False, row=index: self._on_island_nav(row))
-            self._island_nav.append(btn)
-            header.addWidget(btn)
-        self._island_nav[0].setChecked(True)
-        header.addStretch()
-        self._close_btn = QPushButton("\u2715")
-        self._close_btn.setFixedSize(28, 28)
-        self._close_btn.setObjectName("islandClose")
-        self._close_btn.clicked.connect(self.close)
-        header.addWidget(self._close_btn)
-        sheet_lay.addLayout(header)
-
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
 
         # The content column starts directly with the active page. Settings are
         # auto-saved, so persistent action chrome would only consume space.
@@ -280,10 +221,7 @@ class SettingsWindow(QDialog):
                 page.set_spacing(16)
         pages_lay.addWidget(self._pages, 1)
         content_lay.addWidget(pages_host, 1)
-        body.addWidget(content_wrap, 1)
-
-        sheet_lay.addLayout(body, 1)
-        root.addWidget(self._sheet, 1)
+        root.addWidget(content_wrap, 1)
 
     # ── Page: General ──────────────────────────────────
 

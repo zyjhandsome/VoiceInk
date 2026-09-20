@@ -262,7 +262,8 @@ class TestSidebarVisualContracts:
         win = SettingsWindow(Config(config_dir=tmp_path))
         try:
             assert not hasattr(win, "_sidebar")
-            assert [b.text() for b in win._island_nav] == ["通用", "引擎", "润色", "关于"]
+            assert not hasattr(win, "_island_nav")
+            assert win._pages.count() == 4
         finally:
             win.close()
 
