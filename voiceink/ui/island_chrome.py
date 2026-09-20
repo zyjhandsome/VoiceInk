@@ -24,6 +24,11 @@ def position_island(widget: QWidget, width: int | None = None) -> None:
     widget.move(QPoint(x, y))
 
 
+def position_listen_bar(widget: QWidget, width: int | None = None) -> None:
+    """Place the listen bar at the top-center of the screen under the cursor."""
+    position_island(widget, width=width)
+
+
 def island_window_flags() -> Qt.WindowType:
     return (
         Qt.WindowType.FramelessWindowHint

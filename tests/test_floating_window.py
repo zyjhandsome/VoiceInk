@@ -147,12 +147,12 @@ class TestModelLoadingGuard:
 
 class TestFloatingWindowClassicColors:
     def test_recording_uses_record_accent_others_neutral(self, win):
-        from voiceink.ui.design_tokens import ISLAND_MINT, STATE_RECORD
+        from voiceink.ui.design_tokens import STATE_LISTEN, STATE_RECORD
 
         win.show_listening()
         listen_ss = win._status_label.styleSheet().lower()
         assert STATE_RECORD.lower() not in listen_ss
-        assert ISLAND_MINT.lower() in listen_ss
+        assert STATE_LISTEN.lower() in listen_ss
 
         win.show_recording()
         rec_ss = win._status_label.styleSheet().lower()
@@ -162,8 +162,36 @@ class TestFloatingWindowClassicColors:
         assert STATE_RECORD.lower() not in win._status_label.styleSheet().lower()
 
 
+def test_listen_bar_is_thin_without_extra_actions(win):
+    from voiceink.ui.floating_window import BAR_HEIGHT, BAR_WIDTH
+    win.show_listening()
+    assert win.height() <= BAR_HEIGHT + 8
+    assert win.width() <= BAR_WIDTH + 16
+    assert win._end_btn.text() == "结束"
+    assert not hasattr(win, "_history_btn")
+    assert not hasattr(win, "_settings_btn")
+
+
+def test_partial_text_grows_excerpt_only(win):
+    from voiceink.ui.floating_window import BAR_EXCERPT_HEIGHT
+    win.show_listening()
+    win.update_partial_text("下一步把这份纪要贴到会议群里。")
+    assert win.height() <= BAR_EXCERPT_HEIGHT + 8
+    assert "纪要" in win._text_label.text()
+    assert win._end_btn.text() == "结束"
+
+
 class TestCloseButton:
-    def test_close_emits_stop_when_listening(self, win):
+    def test_end_emits_stop_when_listening(self, win):
+        stops = []
+        win.continuous_stop_requested.connect(lambda: stops.append(True))
+        win.show_listening()
+        win._end_btn.click()
+        assert stops == [True]
+
+    def test_listening_close_emits_stop_if_present(self, win):
+        if not hasattr(win, "_close_btn"):
+            return
         stops = []
         win.continuous_stop_requested.connect(lambda: stops.append(True))
         win.show_listening()
@@ -172,13 +200,11 @@ class TestCloseButton:
 
     def test_close_dismisses_when_idle(self, win):
         win.show_continuous_idle("Alt+Space")
-        win._on_close_clicked()
+        if hasattr(win, "_on_close_clicked"):
+            win._on_close_clicked()
+        else:
+            win.dismiss_if_idle()
         assert win.isVisible() is False
-
-    def test_update_close_button_tooltip(self, win):
-        win.show_listening()
-        win._update_close_button()
-        assert "结束" in win._close_btn.toolTip()
 
 
 class TestSubWidgets:
