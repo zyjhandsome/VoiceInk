@@ -32,23 +32,26 @@ Effective theme is always `light` or `dark`.
 |------|-----|----------------------|
 | Accent / focus | `#2563EB` | `ACCENT` / `--color-accent` |
 | Accent text | `#2563EB` | `ACCENT_TEXT` |
-| Primary container | `#2563EB` | `PRIMARY_CONTAINER` |
+| Primary container | `#0D0D0D` | `PRIMARY_CONTAINER` |
+| Primary on | `#FFFFFF` | `PRIMARY_ON` |
+| Primary hover | `#262626` | `PRIMARY_CONTAINER_HOVER` |
+| Primary pressed | `#404040` | `PRIMARY_CONTAINER_PRESSED` |
 | Accent Hover | `#1D4ED8` | `ACCENT_HV` |
 | Accent Soft | `rgba(37, 99, 235, 0.08)` | `ACCENT_SOFT` |
-| Background | `#F3F4F6` | `BG` / `--color-background` |
+| Background | `#FFFFFF` | `BG` / `--color-background` |
 | Surface | `#FFFFFF` | `SURFACE` |
-| Surface Muted | `#F9FAFB` | `SURFACE_PEARL` |
+| Surface Muted | `#F7F7F7` | `SURFACE_PEARL` |
 | Foreground | `#111827` | `TEXT` / `--color-foreground` |
 | Foreground Secondary | `#4B5563` | `TEXT_SEC` |
 | Foreground Dim | `#667085` | `TEXT_DIM` |
-| Border | `#E5E7EB` | `BORDER` / `--color-border` |
+| Border | `rgba(13,13,13,0.08)` | `BORDER` / `HAIRLINE` |
 | Control Border | `#D1D5DB` | `CONTROL_BORDER` |
 | Destructive / Record | `#C81E1E` / `#DC2626` | `RED` / `STATE_RECORD` |
-| Success / toggle on | `#15803D` | `GREEN` / `TOGGLE_ON` |
+| Success / toggle on | `#15803D` | `GREEN` / `TOGGLE_ON` / `STATE_LISTEN` |
 | Focus Ring | `#2563EB` | `ACCENT_FOCUS` |
-| Row Selected | `#EFF6FF` | `ROW_SELECTED` |
+| Nav / row selected | `rgba(13,13,13,0.06)` | `NAV_SELECTED_BG` / `ROW_SELECTED` |
 
-**Notes:** Brand interactive axis is blue; recording red is semantic only (not chrome primary). Cool neutrals — no warm pearl wash.
+**Notes:** Chrome and primary fill are ink (`#0D0D0D` on `#FFFFFF`); blue remains leftover focus/accent only. Recording red is semantic only. Flush white surfaces — no cool gray page wash.
 
 ### Color Palette — Dark
 
@@ -56,28 +59,31 @@ Effective theme is always `light` or `dark`.
 |------|-----|----------------------|
 | Accent / focus | `#3B82F6` | `ACCENT` |
 | Accent text | `#60A5FA` | `ACCENT_TEXT` |
-| Primary container | `#2563EB` | `PRIMARY_CONTAINER` |
+| Primary container | `#FFFFFF` | `PRIMARY_CONTAINER` |
+| Primary on | `#0D0D0D` | `PRIMARY_ON` |
+| Primary hover | `#E8E8E8` | `PRIMARY_CONTAINER_HOVER` |
+| Primary pressed | `#D0D0D0` | `PRIMARY_CONTAINER_PRESSED` |
 | Accent Hover | `#60A5FA` | `ACCENT_HV` |
 | Accent Soft | `rgba(59, 130, 246, 0.16)` | `ACCENT_SOFT` |
-| Background | `#111827` | `BG` |
-| Surface | `#1F2937` | `SURFACE` |
-| Surface Muted | `#374151` | `SURFACE_PEARL` |
+| Background | `#181818` | `BG` |
+| Surface | `#181818` | `SURFACE` |
+| Surface Muted | `#181818` | `SURFACE_PEARL` |
 | Foreground | `#F9FAFB` | `TEXT` |
 | Foreground Secondary | `#D1D5DB` | `TEXT_SEC` |
 | Foreground Dim | `#9CA3AF` | `TEXT_DIM` |
-| Border | `#374151` | `BORDER` |
+| Border | `rgba(255,255,255,0.08)` | `BORDER` / `HAIRLINE` |
 | Control Border | `#4B5563` | `CONTROL_BORDER` |
 | Destructive / Record | `#F87171` | `RED` / `STATE_RECORD` |
-| Success / toggle on | `#16A34A` | `GREEN` / `TOGGLE_ON` (quiet mid-green; not neon `#22C55E`) |
+| Success / toggle on | `#16A34A` | `GREEN` / `TOGGLE_ON` / `STATE_LISTEN` (quiet mid-green; not neon `#22C55E`) |
 | Focus Ring | `#3B82F6` | `ACCENT_FOCUS` |
-| Row Selected | `rgba(59, 130, 246, 0.20)` | `ROW_SELECTED` |
+| Nav / row selected | `rgba(255,255,255,0.06)` | `NAV_SELECTED_BG` / `ROW_SELECTED` |
 
 ### Floating overlay (theme-aware)
 
 | Role | Light | Dark |
 |------|-------|------|
-| Float BG | `rgba(255, 255, 255, 236)` | `rgba(10, 10, 12, 236)` |
-| Float Surface | `#FFFFFF` | `#0A0A0C` |
+| Float BG | `rgba(255, 255, 255, 236)` | `rgba(24, 24, 24, 236)` |
+| Float Surface | `#FFFFFF` | `#181818` |
 | Float Border | `rgba(17, 24, 39, 0.10)` | `rgba(255, 255, 255, 0.12)` |
 | Float Text | `#111827` | `#FFFFFF` |
 | Float Text Sec | `#4B5563` | `rgba(235, 235, 245, 0.72)` |
@@ -115,7 +121,7 @@ Effective theme is always `light` or `dark`.
 | `SPACE_MD` / `--space-md` | `16px` | Standard padding |
 | `SPACE_LG` / `--space-lg` | `24px` | Section padding |
 | `SPACE_XL` | `32px` | Large gaps |
-| `SIDEBAR_WIDTH` | `248px` | Settings rail |
+| `SIDEBAR_WIDTH` | `160px` | Settings rail |
 | `CONTROL_NUMERIC_WIDTH` | `120px` | History spinboxes (flat stepper + suffix) |
 
 ### Shape
@@ -140,14 +146,14 @@ Effective theme is always `light` or `dark`.
 
 ### Buttons
 
-- Primary: accent fill, on-accent text, radius MD, visible `:focus` ring 2px accent
+- Primary: ink fill (`PRIMARY_CONTAINER` / `PRIMARY_ON`), radius MD, visible `:focus` ring 2px accent
 - Ghost / danger: semantic colors; danger uses destructive red
 - Hover: darken/lighten within theme; no large translate on tray-adjacent chrome
 
 ### Cards / settings groups
 
 - Surface fill, 1px border, radius LG
-- Selected nav: accent soft wash + 3px accent bar (not saturated full fill)
+- Selected nav: ink wash (`NAV_SELECTED_BG`) + 3px accent bar (not saturated full fill)
 
 ### Inputs
 

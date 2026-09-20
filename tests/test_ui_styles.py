@@ -54,7 +54,7 @@ class TestColorContrastContracts:
             (light["ACCENT_TEXT"], light["BG"]),
             (light["RED"], light["BG"]),
             (light["GREEN"], light["BG"]),
-            ("#FFFFFF", light["PRIMARY_CONTAINER"]),
+            (light["PRIMARY_ON"], light["PRIMARY_CONTAINER"]),
         ):
             assert _contrast(foreground, background) >= 4.5
 
@@ -63,15 +63,15 @@ class TestColorContrastContracts:
 
         dark = tokens_for("dark")
         selected_background = _blend(
-            dark["ACCENT"], dark["SETTINGS_SIDEBAR_BG"], 0.16
+            "#FFFFFF", dark["SETTINGS_SIDEBAR_BG"], 0.06
         )
-        assert _contrast(dark["ACCENT_TEXT"], selected_background) >= 4.5
+        assert _contrast(dark["TEXT"], selected_background) >= 4.5
         for background in (
             dark["PRIMARY_CONTAINER"],
             dark["PRIMARY_CONTAINER_HOVER"],
             dark["PRIMARY_CONTAINER_PRESSED"],
         ):
-            assert _contrast("#FFFFFF", background) >= 4.5
+            assert _contrast(dark["PRIMARY_ON"], background) >= 4.5
 
 
 class TestSettingsStyles:
@@ -159,7 +159,7 @@ class TestSidebarVisualContracts:
         from voiceink.ui import design_tokens as t
 
         t.activate("light")
-        assert t.NAV_BG.upper() == t.BG.upper() == "#F3F4F6"
+        assert t.NAV_BG.upper() == t.BG.upper() == "#FFFFFF"
 
     def test_nav_btn_style_uses_single_left_bar_and_soft_wash(self):
         from voiceink.ui.design_tokens import ACCENT, NAV_SELECTED_BG
@@ -274,16 +274,44 @@ class TestClassicDesktopTokens:
         t.activate("light")
         light = t.tokens_for("light")
         assert t.ACCENT.upper() == light["ACCENT"].upper() == "#2563EB"
-        assert t.BG.upper() == light["BG"].upper() == "#F3F4F6"
         assert "Inter" not in t.FONT
         assert t.RADIUS_MD == 8
         assert t.STATE_RECORD.upper() in {"#DC2626", "#E5484D", "#EF4444", "#F87171"}
-        assert t.STATE_LISTEN == t.ISLAND_MINT
         assert t.STATE_RECOGNIZE in (t.FLOAT_TEXT, t.FLOAT_TEXT_SEC)
         assert t.STATE_POLISH in (t.FLOAT_TEXT, t.FLOAT_TEXT_SEC)
         assert t.SETTINGS_SIDEBAR_BG.upper() == t.SURFACE.upper()
-        assert t.NAV_SELECTED_BG == t.ACCENT_SOFT
         assert "#" not in t.NAV_SELECTED_BG.lower() or t.NAV_SELECTED_BG.startswith("rgba")
+
+    def test_ink_surfaces_and_primary(self):
+        from voiceink.ui import design_tokens as t
+        from voiceink.ui.design_tokens import tokens_for
+
+        light = tokens_for("light")
+        dark = tokens_for("dark")
+        assert light["BG"] == light["SURFACE"] == light["NAV_BG"] == "#FFFFFF"
+        assert dark["BG"] == dark["SURFACE"] == dark["NAV_BG"] == "#181818"
+        assert light["PRIMARY_CONTAINER"] == "#0D0D0D"
+        assert light["PRIMARY_ON"] == "#FFFFFF"
+        assert dark["PRIMARY_CONTAINER"] == "#FFFFFF"
+        assert dark["PRIMARY_ON"] == "#0D0D0D"
+        assert t.SIDEBAR_WIDTH == 160
+        t.activate("dark")
+        assert t.STATE_LISTEN == t.GREEN
+        t.activate("light")
+        assert t.STATE_LISTEN == t.GREEN
+
+    def test_primary_buttons_use_primary_on(self):
+        import voiceink.ui.settings_styles as st
+        from voiceink.ui import design_tokens as t
+
+        t.activate("light")
+        st.reload_styles()
+        primary = st.build_btn_primary()
+        accent_sm = st.build_btn_accent_sm()
+        assert f"color: {t.PRIMARY_ON}" in primary
+        assert f"color: {t.PRIMARY_ON}" in accent_sm
+        assert "color: white" not in primary
+        assert "color: white" not in accent_sm
 
     def test_dark_tokens_differ_from_light(self):
         from voiceink.ui.design_tokens import tokens_for

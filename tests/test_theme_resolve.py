@@ -98,7 +98,9 @@ class TestSettingsAppearanceEntry:
         css = win.styleSheet()
         assert tok.tokens_for("dark")["TEXT"] in css
         assert "background: transparent" in css
-        assert f"background: {tok.tokens_for('dark')['BG']}" not in css
+        dialog_block = css.split("QDialog {", 1)[1].split("}", 1)[0]
+        assert "background: transparent" in dialog_block
+        assert f"background: {tok.tokens_for('dark')['BG']}" not in dialog_block
 
     def test_settings_island_header_restyles_on_dark_theme(
         self, tmp_path: Path, monkeypatch
@@ -214,11 +216,11 @@ class TestSettingsAppearanceEntry:
         try:
             apply_theme(mode="dark", surfaces=(win,))
             card.reapply_styles()
-            assert "#1F2937" in card.styleSheet().upper()
+            assert "#181818" in card.styleSheet().upper()
 
             apply_theme(mode="light", surfaces=(win,))
             card.reapply_styles()
-            assert tok.BG.upper() == "#F3F4F6"
+            assert tok.BG.upper() == "#FFFFFF"
             assert "TRANSPARENT" in win._pages_host.styleSheet().upper()
             assert "#111827" not in win._pages_host.styleSheet().upper()
             assert tok.FLOAT_BG.upper() in win._sheet.styleSheet().upper()
@@ -321,7 +323,7 @@ class TestSurfaceThemeReapply:
 
         apply_theme(mode="dark")
         css = _menu_stylesheet()
-        assert "#1F2937" in css.upper() or "#111827" in css.upper()
+        assert "#181818" in css.upper()
         assert "#F9FAFB" in css.upper()
 
     def test_history_spinbox_widths_equal_under_dark(self, tmp_path: Path, monkeypatch):
@@ -362,7 +364,7 @@ class TestSurfaceThemeReapply:
 
         search = win._search_edit.styleSheet()
         assert "QLineEdit:focus" in search
-        assert "#374151" in search.upper()  # dark SURFACE_PEARL
+        assert "#181818" in search.upper()  # dark SURFACE_PEARL
 
         list_css = win._session_list.styleSheet()
         assert "border-left" in list_css
@@ -378,7 +380,7 @@ class TestSurfaceThemeReapply:
         assert "#F9FAFB" in title_css  # dark TEXT
 
         undo_css = win._undo_bar.styleSheet().upper()
-        assert "#374151" in undo_css  # dark SURFACE_PEARL
+        assert "#181818" in undo_css  # dark SURFACE_PEARL
 
         feedback_css = win._feedback_label.styleSheet().upper()
         assert "#F9FAFB" in feedback_css
@@ -616,8 +618,12 @@ class TestFourSurfaceThemeAwareProtocol:
             assert dark_text in history_css.upper()
             assert "background: transparent" in settings_css
             assert "background: transparent" in history_css
-            assert f"background: {dark_bg}" not in settings_css
-            assert f"background: {dark_bg}" not in history_css
+            settings_dialog = settings_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            history_dialog = history_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            assert "background: transparent" in settings_dialog
+            assert "background: transparent" in history_dialog
+            assert f"background: {dark_bg}" not in settings_dialog
+            assert f"background: {dark_bg}" not in history_dialog
             float_sheet = floating._container.styleSheet().upper()
             assert tok.tokens_for("dark")["FLOAT_BG"].upper() in float_sheet
             assert tray._normal_icon is not before_icon
@@ -660,8 +666,12 @@ class TestFourSurfaceThemeAwareProtocol:
             assert dark_text in history_css.upper()
             assert "background: transparent" in settings_css
             assert "background: transparent" in history_css
-            assert f"background: {tok.BG}" not in settings_css
-            assert f"background: {tok.BG}" not in history_css
+            settings_dialog = settings_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            history_dialog = history_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            assert "background: transparent" in settings_dialog
+            assert "background: transparent" in history_dialog
+            assert f"background: {tok.BG}" not in settings_dialog
+            assert f"background: {tok.BG}" not in history_dialog
             assert tok.TEXT.upper() in history._title_label.styleSheet().upper()
         finally:
             settings.close()

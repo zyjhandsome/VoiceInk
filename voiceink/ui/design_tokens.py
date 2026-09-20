@@ -98,7 +98,7 @@ SPACE_XL = 32
 PAGE_MARGIN_H = 20
 PAGE_MARGIN_V = 16
 CONTENT_MAX_WIDTH = 9999
-SIDEBAR_WIDTH = 248
+SIDEBAR_WIDTH = 160
 
 # Wide enough for values like「5500 场」plus a 22px flat stepper column.
 CONTROL_NUMERIC_WIDTH = 120
@@ -127,23 +127,24 @@ _LIGHT: dict[str, Any] = {
     "ACCENT_ON_DARK": "#FFFFFF",
     "ACCENT_BG": "#DBEAFE",
     "ACCENT_SOFT": "rgba(37, 99, 235, 0.08)",
-    "PRIMARY_CONTAINER": "#2563EB",
-    "PRIMARY_CONTAINER_HOVER": "#1D4ED8",
-    "PRIMARY_CONTAINER_PRESSED": "#1E40AF",
+    "PRIMARY_CONTAINER": "#0D0D0D",
+    "PRIMARY_CONTAINER_HOVER": "#262626",
+    "PRIMARY_CONTAINER_PRESSED": "#404040",
+    "PRIMARY_ON": "#FFFFFF",
     "SECONDARY_CONTAINER": "#E5E7EB",
-    "BG": "#F3F4F6",
-    "NAV_BG": "#F3F4F6",
+    "BG": "#FFFFFF",
+    "NAV_BG": "#FFFFFF",
     "SURFACE": "#FFFFFF",
-    "SURFACE_PEARL": "#F9FAFB",
-    "BORDER": "#E5E7EB",
-    "HAIRLINE": "#E5E7EB",
+    "SURFACE_PEARL": "#F7F7F7",
+    "BORDER": "rgba(13,13,13,0.08)",
+    "HAIRLINE": "rgba(13,13,13,0.08)",
     "OUTLINE_VARIANT": "#D1D5DB",
     "DIVIDER_SOFT": "#E5E7EB",
-    "ROW_SELECTED": "#EFF6FF",
+    "ROW_SELECTED": "rgba(13,13,13,0.06)",
     "INPUT_BG": "#FFFFFF",
     "BAR_OFF": "#E5E7EB",
     "SETTINGS_SIDEBAR_BG": "#FFFFFF",
-    "NAV_SELECTED_BG": "rgba(37, 99, 235, 0.08)",
+    "NAV_SELECTED_BG": "rgba(13,13,13,0.06)",
     "TEXT": "#111827",
     "TEXT_SEC": "#4B5563",
     "TEXT_DIM": "#667085",
@@ -198,23 +199,24 @@ _DARK: dict[str, Any] = {
     "ACCENT_ON_DARK": "#FFFFFF",
     "ACCENT_BG": "#1E3A5F",
     "ACCENT_SOFT": "rgba(59, 130, 246, 0.16)",
-    "PRIMARY_CONTAINER": "#2563EB",
-    "PRIMARY_CONTAINER_HOVER": "#1D4ED8",
-    "PRIMARY_CONTAINER_PRESSED": "#1E40AF",
+    "PRIMARY_CONTAINER": "#FFFFFF",
+    "PRIMARY_CONTAINER_HOVER": "#E8E8E8",
+    "PRIMARY_CONTAINER_PRESSED": "#D0D0D0",
+    "PRIMARY_ON": "#0D0D0D",
     "SECONDARY_CONTAINER": "#374151",
-    "BG": "#111827",
-    "NAV_BG": "#111827",
-    "SURFACE": "#1F2937",
-    "SURFACE_PEARL": "#374151",
-    "BORDER": "#374151",
-    "HAIRLINE": "#374151",
+    "BG": "#181818",
+    "NAV_BG": "#181818",
+    "SURFACE": "#181818",
+    "SURFACE_PEARL": "#181818",
+    "BORDER": "rgba(255,255,255,0.08)",
+    "HAIRLINE": "rgba(255,255,255,0.08)",
     "OUTLINE_VARIANT": "#4B5563",
     "DIVIDER_SOFT": "#374151",
-    "ROW_SELECTED": "rgba(59, 130, 246, 0.20)",
+    "ROW_SELECTED": "rgba(255,255,255,0.06)",
     "INPUT_BG": "#1F2937",
     "BAR_OFF": "#4B5563",
-    "SETTINGS_SIDEBAR_BG": "#1F2937",
-    "NAV_SELECTED_BG": "rgba(59, 130, 246, 0.16)",
+    "SETTINGS_SIDEBAR_BG": "#181818",
+    "NAV_SELECTED_BG": "rgba(255,255,255,0.06)",
     "TEXT": "#F9FAFB",
     "TEXT_SEC": "#D1D5DB",
     "TEXT_DIM": "#9CA3AF",
@@ -244,8 +246,8 @@ _DARK: dict[str, Any] = {
     "TRAY_MENU_CHECK": "#F9FAFB",
     "TRAY_MENU_ARROW": "#9CA3AF",
     "ISLAND_MINT": "#B8F0D2",
-    "FLOAT_BG": "rgba(10, 10, 12, 236)",
-    "FLOAT_TILE": "#0A0A0C",
+    "FLOAT_BG": "rgba(24, 24, 24, 236)",
+    "FLOAT_TILE": "#181818",
     "FLOAT_BORDER": "rgba(255, 255, 255, 0.12)",
     "FLOAT_BORDER_INNER": "rgba(210, 210, 215, 0.24)",
     "CHIP_BG": "rgba(210, 210, 215, 0.40)",
@@ -272,8 +274,8 @@ def activate(effective: str) -> None:
     g = globals()
     for key in _COLOR_KEYS:
         g[key] = vals[key]
-    # Float state aliases: listen uses island mint; others follow float text
-    g["STATE_LISTEN"] = vals["ISLAND_MINT"]
+    # Float state aliases: listen uses semantic green; others follow float text
+    g["STATE_LISTEN"] = vals["GREEN"]
     g["STATE_RECOGNIZE"] = vals["FLOAT_TEXT"]
     g["STATE_POLISH"] = vals["FLOAT_TEXT"]
     g["STATE_SUCCESS"] = vals["FLOAT_TEXT"]

@@ -177,7 +177,7 @@ def build_window_css() -> str:
 def build_btn_primary() -> str:
     return f"""
     QPushButton {{
-        background: {t.PRIMARY_CONTAINER}; color: white;
+        background: {t.PRIMARY_CONTAINER}; color: {t.PRIMARY_ON};
         border: 1px solid {t.PRIMARY_CONTAINER};
         border-radius: {t.RADIUS_MD}px; padding: 9px 14px; font-size: {t.TYPE_BODY_SM}px; font-weight: 600;
     }}
@@ -263,7 +263,7 @@ def build_btn_accent_sm() -> str:
     h, pad_h, focus_pad_h, font_px = _btn_sm_metrics()
     return f"""
     QPushButton {{
-        background: {t.PRIMARY_CONTAINER}; color: white;
+        background: {t.PRIMARY_CONTAINER}; color: {t.PRIMARY_ON};
         border: 1px solid {t.PRIMARY_CONTAINER};
         border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
         font-weight: 600; min-height: {h}px; max-height: {h}px;
