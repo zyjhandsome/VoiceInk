@@ -330,10 +330,10 @@ class SettingsWindow(QWidget):
             f" font-weight: 600; background: transparent;"
         )
         head.addWidget(title)
-        badge = QLabel("当前引擎")
+        badge = QLabel("当前")
         badge.setProperty("viRole", "engineHeroBadge")
         badge.setStyleSheet(
-            f"background: {_tok.ACCENT_SOFT}; color: {_tok.ACCENT_TEXT};"
+            f"background: {_tok.SURFACE_PEARL}; color: {_tok.TEXT_SEC};"
             f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
             f" font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -39,6 +39,7 @@ class MainWindow(QWidget):
         self._config = config
         self._history_store = history_store
         self._page = "general"
+        self._drag_offset = None
         self._setup_window()
         self._setup_ui()
         self.reapply_theme()
@@ -85,6 +86,8 @@ class MainWindow(QWidget):
         cap.addWidget(self._min_btn)
         cap.addWidget(self._max_btn)
         cap.addWidget(self._close_btn)
+        for handle in (self._caption, self._title, self._ink_dot):
+            handle.installEventFilter(self)
         root.addWidget(self._caption)
 
         body = QHBoxLayout()
@@ -160,6 +163,35 @@ class MainWindow(QWidget):
 
     def current_page(self) -> str:
         return self._page
+
+    def _caption_drag_target(self, obj) -> bool:
+        return obj in (self._caption, self._title, self._ink_dot)
+
+    def eventFilter(self, obj, event):
+        if not self._caption_drag_target(obj) or self.isMaximized():
+            return super().eventFilter(obj, event)
+        etype = event.type()
+        if (
+            etype == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            self._drag_offset = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
+            return False
+        if (
+            etype == QEvent.Type.MouseMove
+            and self._drag_offset is not None
+            and event.buttons() & Qt.MouseButton.LeftButton
+        ):
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            return True
+        if (
+            etype == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            self._drag_offset = None
+        return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:
         event.ignore()

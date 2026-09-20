@@ -38,6 +38,46 @@ def test_chrome_size_and_nav(qapp, tmp_path, monkeypatch):
         win.close()
         store.close()
 
+def test_caption_drag_moves_window(qapp, tmp_path, monkeypatch):
+    from PyQt6.QtCore import QEvent, QPoint, QPointF
+    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtWidgets import QApplication
+
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        win.show()
+        win.move(200, 160)
+        QApplication.processEvents()
+        origin = QPoint(win.pos())
+        local = QPoint(40, 18)
+        press_global = win._caption.mapToGlobal(local)
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(local),
+            QPointF(press_global),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(win._caption, press)
+        delta = QPoint(80, 40)
+        moved_local = local + delta
+        move = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(moved_local),
+            QPointF(press_global + delta),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(win._caption, move)
+        QApplication.processEvents()
+        assert win.pos() == origin + delta
+    finally:
+        win.close()
+        store.close()
+
+
 def test_close_hides_does_not_quit(qapp, tmp_path, monkeypatch):
     win, store = _make_main_window(tmp_path, monkeypatch)
     try:

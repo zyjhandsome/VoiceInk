@@ -257,7 +257,11 @@ class TestSettingsAppearanceEntry:
                 lb for lb in win._model_hero_host.findChildren(QLabel)
                 if lb.property("viRole") == "engineHeroBadge"
             )
-            assert tok.ACCENT_TEXT.upper() in badge.styleSheet().upper()
+            assert badge.text() == "当前"
+            assert tok.SURFACE_PEARL.upper() in badge.styleSheet().upper()
+            assert tok.TEXT_SEC.upper() in badge.styleSheet().upper()
+            assert tok.ACCENT_SOFT.upper() not in badge.styleSheet().upper()
+            assert tok.ACCENT_TEXT.upper() not in badge.styleSheet().upper()
 
             # Polish action buttons share one right-edge column width.
             assert win._llm_key_toggle.width() == win._llm_test_btn.width() == win._prompt_reset_btn.width()
