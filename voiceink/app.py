@@ -262,7 +262,7 @@ class App(QObject):
             log.warning("语音模型 %s 未下载，请在设置中下载模型", name)
             hint = (
                 f"请下载语音模型「{name}」。"
-                "Windows 可双击托盘打开设置 → 引擎；或右键托盘 → 设置 → 引擎。"
+                "Windows 可双击托盘打开主窗口，再到设置 → 引擎；或右键托盘 → 打开 VoiceInk。"
             )
             self._floating.show_error(hint)
             self._tray.showMessage(
@@ -288,7 +288,7 @@ class App(QObject):
         self._floating.show_error(hint)
         self._tray.showMessage(
             "VoiceInk",
-            f"{hint} Windows 可双击托盘打开设置 → 引擎。",
+            f"{hint} Windows 可双击托盘打开主窗口，再到设置 → 引擎。",
             QSystemTrayIcon.MessageIcon.Warning,
             6000,
         )
@@ -1089,7 +1089,7 @@ class App(QObject):
             hotkey = self._continuous_hotkey_label()
             mode_tip = (
                 f"当前为「自动持续转写」：按住 {hotkey} 开始监听，"
-                "按 Esc 或点击浮窗右上角 × 停止。"
+                "按 Esc 或听写条「结束」停止。"
             )
         else:
             hk = format_hotkey(self._config.get("hotkey", "ctrl+space"))
@@ -1104,7 +1104,7 @@ class App(QObject):
             "请先在设置 → 引擎 中下载至少一个语音模型"
             "（若安装包已附带模型，启动后会自动载入）。\n\n"
             "默认快捷键为 Ctrl+Space；若与输入法冲突，可在设置中改为 Alt+Space。\n"
-            "Windows：双击托盘图标可打开设置。"
+            "Windows：双击托盘图标可打开主窗口。"
         )
         QMessageBox.information(None, "欢迎使用 VoiceInk", text)
         self._config.set("first_run_welcome_seen", True)

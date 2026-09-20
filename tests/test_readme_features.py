@@ -270,6 +270,14 @@ class TestReadmeIslandCopy:
         assert "设置 → 模型" not in build
         assert "设置 → 引擎" in build
 
+    def test_readme_describes_main_window_not_island(self):
+        from pathlib import Path
+
+        text = Path("README.md").read_text(encoding="utf-8")
+        assert "打开 VoiceInk" in text
+        assert "听写条" in text or "薄" in text
+        assert "双击托盘会唤醒空间岛" not in text
+
 
 class TestReadmeSettingsLifecycle:
     """README: 修改触发方式/音频来源后保存生效；关闭设置恢复快捷键。"""
