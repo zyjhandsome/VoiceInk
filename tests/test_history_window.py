@@ -389,21 +389,34 @@ def test_tray_menu_has_history_entry_signal(qapp):
 
 
 def test_app_show_history_window_reuses_single_window(qapp, monkeypatch):
+    from unittest.mock import MagicMock
+
     created: list[object] = []
 
-    class FakeHistoryWindow:
-        def __init__(self, store):
-            self.store = store
+    class FakeHistoryWidget:
+        def __init__(self):
+            self.refresh_calls = 0
+
+        def refresh(self):
+            self.refresh_calls += 1
+
+    class FakeMainWindow:
+        def __init__(self, config, history_store):
+            self.config = config
+            self.store = history_store
+            self._history = FakeHistoryWidget()
+            self._settings = MagicMock()
+            self._page = "general"
             self.shown = 0
             self.raised = 0
             self.activated = 0
             created.append(self)
 
-        def isVisible(self):
-            return self.shown > 0
+        def show_page(self, page):
+            self._page = page
 
-        def refresh(self):
-            pass
+        def current_page(self):
+            return self._page
 
         def show(self):
             self.shown += 1
@@ -414,16 +427,31 @@ def test_app_show_history_window_reuses_single_window(qapp, monkeypatch):
         def activateWindow(self):
             self.activated += 1
 
-    monkeypatch.setattr("voiceink.app.HistoryWindow", FakeHistoryWindow)
+        def installEventFilter(self, obj):
+            pass
+
+    monkeypatch.setattr("voiceink.app.MainWindow", FakeMainWindow)
     app = App.__new__(App)
+    app._config = object()
     app._history = object()
-    app._history_win = None
+    app._main = None
+    app._pending_segment_count = 0
+    app._hotkey_mgr = MagicMock()
+    app.apply_appearance_theme = lambda: None
+    app._sync_settings_runtime_status = lambda: None
 
     app._show_history_window()
+    first = app._main
     app._show_history_window()
 
     assert len(created) == 1
+    assert app._main is first
     assert created[0].store is app._history
-    assert created[0].shown == 1
+    assert created[0].current_page() == "history"
+    assert created[0].shown == 2
     assert created[0].raised == 2
     assert created[0].activated == 2
+    assert created[0]._history.refresh_calls == 2
+
+    app._show_main_window(None)
+    assert created[0]._history.refresh_calls == 3

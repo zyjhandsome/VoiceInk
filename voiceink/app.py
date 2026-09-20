@@ -890,6 +890,8 @@ class App(QObject):
             self._main.installEventFilter(self)
         if page:
             self._main.show_page(page)
+        if page == "history" or (not page and self._main.current_page() == "history"):
+            self._main._history.refresh()
         self.apply_appearance_theme()
         self._main._settings.reload_settings()
         self._sync_settings_runtime_status()
