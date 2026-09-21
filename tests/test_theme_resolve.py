@@ -406,7 +406,7 @@ class TestSurfaceThemeReapply:
 
         win = HistoryWindow(FakeHistoryStore())
         try:
-            row = win._session_list.itemWidget(win._session_list.item(0))
+            row = win._session_list.itemWidget(win.session_items()[0])
             assert row is not None
             preview = row.findChild(QLabel, "streamPreview")
             assert preview is not None

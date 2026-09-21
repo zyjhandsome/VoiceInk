@@ -21,9 +21,14 @@ _DEFAULT_UI_FONT = "Microsoft YaHei UI"
 UI_FONT_FAMILY = _DEFAULT_UI_FONT
 FONT = f'"{_DEFAULT_UI_FONT}"'
 FONT_DISPLAY = FONT
-FONT_MONO = (
-    '"Cascadia Mono", "Consolas", "JetBrains Mono", monospace'
+# Qt stylesheets accept one family. Resolve at runtime; do not ship a CSS list.
+MONO_STACK = (
+    "Cascadia Mono",
+    "Consolas",
+    "JetBrains Mono",
 )
+_DEFAULT_MONO_FONT = "Cascadia Mono"
+FONT_MONO = f'"{_DEFAULT_MONO_FONT}"'
 
 # Typography size ladder (px in QSS; same ints passed to QFont where used today).
 TYPE_CAPTION = 12
@@ -97,20 +102,39 @@ def resolve_ui_font_family(
     return _DEFAULT_UI_FONT
 
 
+def resolve_mono_font_family(
+    *,
+    available_families: Optional[Sequence[str]] = None,
+    preferred: Optional[Sequence[str]] = None,
+) -> str:
+    """Pick one installed monospace family. QSS cannot use a fallback list."""
+    stack = tuple(preferred) if preferred is not None else MONO_STACK
+    if available_families is None:
+        available_families = _probe_system_font_families()
+    available = {name.casefold(): name for name in available_families}
+    for name in stack:
+        hit = available.get(name.casefold())
+        if hit is not None:
+            return hit
+    return _DEFAULT_MONO_FONT
+
+
 def refresh_ui_font(
     *,
     available_families: Optional[Sequence[str]] = None,
     preferred: Optional[Sequence[str]] = None,
 ) -> str:
-    """Resolve and publish FONT / FONT_DISPLAY / UI_FONT_FAMILY for QSS and QFont."""
-    global UI_FONT_FAMILY, FONT, FONT_DISPLAY
+    """Resolve and publish FONT / FONT_DISPLAY / FONT_MONO for QSS and QFont."""
+    global UI_FONT_FAMILY, FONT, FONT_DISPLAY, FONT_MONO
     family = resolve_ui_font_family(
         available_families=available_families,
         preferred=preferred,
     )
+    mono = resolve_mono_font_family(available_families=available_families)
     UI_FONT_FAMILY = family
     FONT = f'"{family}"'
     FONT_DISPLAY = FONT
+    FONT_MONO = f'"{mono}"'
     return family
 
 RADIUS_XS = 4

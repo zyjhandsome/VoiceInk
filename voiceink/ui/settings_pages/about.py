@@ -29,14 +29,14 @@ def build_about_page(win) -> QWidget:
     brand_name = QLabel("VoiceInk")
     brand_name.setProperty("viRole", "kvKey")
     brand_name.setStyleSheet(
-        f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 550;"
+        f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 700;"
         f" background: transparent;"
     )
     brand_lay.addWidget(brand_name)
     brand_lay.addStretch(1)
     win._about_version_label = QLabel(f"版本 {VERSION}")
     win._about_version_label.setStyleSheet(
-        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_CAPTION}px; font-weight: 600;"
+        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_CAPTION}px; font-weight: 700;"
         f" background: {tok.SURFACE_PEARL}; border: 1px solid {tok.HAIRLINE};"
         f" border-radius: {tok.RADIUS_PILL}px; padding: 3px 10px;"
     )
@@ -57,7 +57,7 @@ def build_about_page(win) -> QWidget:
     win._about_paths_toggle.setStyleSheet(
         f"QPushButton#aboutPathsToggle {{"
         f" color: {tok.TEXT_SEC}; background: transparent; border: none;"
-        f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 500;"
+        f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 400;"
         f" text-align: left; padding: 10px 16px;"
         f"}}"
         f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"

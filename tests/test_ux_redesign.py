@@ -58,6 +58,37 @@ def test_runtime_and_trigger_instructions_follow_actual_state(main_window):
     assert "不用" in hint
 
 
+def test_sidebar_status_is_not_a_card_and_nav_has_no_stale_focus_ring(main_window):
+    win = main_window
+    # No nav button is focused just by opening the window.
+    assert not any(btn.hasFocus() for btn in win._nav_buttons)
+    assert all(btn.focusPolicy() == Qt.FocusPolicy.TabFocus for btn in win._nav_buttons)
+    assert not hasattr(win, "_nav_heading")
+    assert "border-radius: 8px" not in win._runtime_label.styleSheet()
+    win._settings.set_runtime_status("模型载入中…")
+    assert "AMBER" in win._status_tone(win._runtime_label.text())
+    win._settings.set_runtime_status("就绪")
+    assert win._status_tone(win._runtime_label.text()) == "GREEN"
+
+
+def test_engine_hero_shows_model_load_state(main_window):
+    from PyQt6.QtWidgets import QLabel
+    settings = main_window._settings
+    settings._model_hero_status = QLabel()
+    settings.set_runtime_status("模型载入中…")
+    assert settings._model_hero_status.text() == "模型载入中…"
+    settings.set_runtime_status("就绪")
+    assert "已载入" in settings._model_hero_status.text()
+
+
+def test_main_window_edge_hit_test(main_window):
+    win = main_window
+    w, h = win.width(), win.height()
+    assert win._hit_test_edge(2, h // 2) is not None
+    assert win._hit_test_edge(w - 2, h - 2) is not None
+    assert win._hit_test_edge(w // 2, h // 2) is None
+
+
 def test_trigger_choice_uses_same_name_as_runtime_mode(main_window):
     cards = main_window._settings.findChildren(CompactPickCard)
     titles = [card._title_label.text() for card in cards]
@@ -85,13 +116,15 @@ def test_radio_choices_support_arrow_keys(main_window, _qapp_session):
     assert settings._trigger_hotkey_rb.isChecked()
 
 
-def test_polish_disabled_removes_configuration_and_example(main_window):
+def test_polish_disabled_removes_configuration_but_keeps_example(main_window):
     win = main_window._settings
     win._llm_enable_row.setChecked(True)
     assert not win._llm_container.isHidden()
     win._llm_enable_row.setChecked(False)
     assert win._llm_container.isHidden()
-    assert win._llm_preview_card.isHidden()
+    # The before/after example is what helps a user decide to enable it,
+    # so it must be visible while the feature is still off.
+    assert not win._llm_preview_card.isHidden()
 
 
 def test_audio_error_remains_inline_with_recovery(main_window, monkeypatch):
@@ -139,7 +172,7 @@ def test_history_rows_reflow_to_splitter_width(_qapp_session):
         _qapp_session.processEvents()
         win._splitter.setSizes([220, 500])
         _qapp_session.processEvents()
-        row = win._session_list.itemWidget(win._session_list.item(0))
+        row = win._session_list.itemWidget(win.session_items()[0])
         assert row.width() <= win._session_list.viewport().width()
     finally:
         win.close()
@@ -153,10 +186,12 @@ def test_history_can_load_older_sessions(_qapp_session):
     store.segments = {s.session_id: [] for s in store.sessions}
     win = HistoryWindow(store)
     try:
-        assert win._session_list.count() == 50
+        assert win.session_count() == 50
         assert not win._more_btn.isHidden()
+        # The button belongs to the list it extends, not a page footer.
+        assert win._more_btn.parentWidget() is win._left_pane
         win._load_more()
-        assert win._session_list.count() == 55
+        assert win.session_count() == 55
         assert win._more_btn.isHidden()
     finally:
         win.close()
@@ -175,35 +210,71 @@ def test_refresh_keeps_search_and_current_selection(_qapp_session):
     store = FakeHistoryStore()
     win = HistoryWindow(store)
     try:
-        win._session_list.setCurrentRow(1)
+        win._session_list.setCurrentItem(win.session_items()[1])
         win.refresh()
         assert win._selected_session_ids() == ["older"]
         win._search_edit.setText("older")
         win._perform_search()
         win.refresh()
         assert store.search_terms[-1] == "older"
-        assert win._session_list.count() == 1
+        assert win.session_count() == 1
     finally:
         win.close()
 
 
-def test_repeated_delete_and_refresh_preserve_single_undo_batch(_qapp_session, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+def test_repeated_delete_and_refresh_preserve_single_undo_batch(_qapp_session):
     store = FakeHistoryStore()
     win = HistoryWindow(store)
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
     try:
         win._delete_selected_sessions()
         win.refresh()
-        assert win._session_list.count() == 1
+        assert win.session_count() == 1
         assert win._selected_session_ids() == ["older"]
         win._delete_selected_sessions()
         win.refresh()
-        assert win._session_list.count() == 0
+        assert win.session_count() == 0
         assert len(win._pending_delete) == 2
+        assert "2 项" in win._feedback_label.text()
         win._undo_pending_delete()
-        assert win._session_list.count() == 2
+        assert win.session_count() == 2
         assert store.deleted_sessions == []
+    finally:
+        win.close()
+
+
+def test_copy_feedback_does_not_swallow_pending_undo(_qapp_session):
+    store = FakeHistoryStore()
+    win = HistoryWindow(store)
+    try:
+        win._delete_selected_sessions()
+        assert not win._undo_btn.isHidden()
+        win._copy_selected_raw()
+        assert "已复制" in win._feedback_label.text()
+        assert win._undo_btn.isHidden()
+        win._feedback_timer.stop()
+        win._end_transient_feedback()
+        assert "撤销" in win._feedback_label.text()
+        assert not win._undo_btn.isHidden()
+        assert win._undo_timer.isActive()
+    finally:
+        win.close()
+
+
+def test_day_group_headers_split_sessions_by_day(_qapp_session):
+    from dataclasses import replace
+    store = FakeHistoryStore()
+    newer, older = store.sessions
+    store.sessions = [newer, replace(older, created_at=older.created_at - 86_400_000 * 3)]
+    win = HistoryWindow(store)
+    try:
+        headers = [
+            win._session_list.item(i)
+            for i in range(win._session_list.count())
+            if not win._session_list.item(i).data(Qt.ItemDataRole.UserRole)
+        ]
+        assert len(headers) == 2
+        assert win.session_count() == 2
+        assert all(not (h.flags() & Qt.ItemFlag.ItemIsSelectable) for h in headers)
     finally:
         win.close()
 
@@ -231,10 +302,14 @@ def test_listen_bar_stop_action_matches_session_state(_qapp_session):
 
 
 def test_clear_all_cancels_pending_undo(_qapp_session, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+    from PyQt6.QtWidgets import QDialog
     store = FakeHistoryStore()
     win = HistoryWindow(store)
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    # Clearing everything is irreversible, so it keeps a confirmation.
+    monkeypatch.setattr(
+        "voiceink.ui.history_window._ClearHistoryDialog.exec",
+        lambda _dialog: QDialog.DialogCode.Accepted,
+    )
     try:
         win._delete_selected_sessions()
         win._clear_all_history()

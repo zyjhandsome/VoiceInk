@@ -152,3 +152,22 @@ def test_show_page_embeds_hosts(qapp, tmp_path, monkeypatch):
     finally:
         win.close()
         store.close()
+
+
+def test_show_page_history_refreshes_list(qapp, tmp_path, monkeypatch):
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        refreshes: list[int] = []
+        original = win._history.refresh
+
+        def spy():
+            refreshes.append(1)
+            original()
+
+        win._history.refresh = spy
+        win.show_page("general")
+        win.show_page("history")
+        assert refreshes
+    finally:
+        win.close()
+        store.close()

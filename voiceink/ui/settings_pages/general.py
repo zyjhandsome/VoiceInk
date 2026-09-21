@@ -189,7 +189,7 @@ def build_general_page(win) -> QWidget:
     win._theme_title_label = QLabel("主题")
     win._theme_title_label.setProperty("viRole", "rowTitle")
     win._theme_title_label.setStyleSheet(
-        f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 500; background: transparent;"
+        f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 400; background: transparent;"
     )
     win._theme_desc_label = QLabel("跟随系统时按 Windows 外观显示")
     win._theme_desc_label.setProperty("viRole", "rowSubtitle")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 from PyQt6.QtCore import QEvent, QRectF, Qt
-from PyQt6.QtGui import QKeySequence, QPainterPath, QRegion, QShortcut
+from PyQt6.QtGui import QCursor, QKeySequence, QPainterPath, QRegion, QShortcut
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -31,11 +31,19 @@ PAGE_OBJECT_NAMES = (
 )
 
 _CAPTION_H = 42
+_CAPTION_BTN_W = 46
 _NAV_BTN_H = 40
 _NAV_FONT_PX = 14
 _INK_DOT_PX = 8
+_STATUS_DOT_PX = 8
+_RESIZE_BORDER_PX = 6
 _WINDOW_W = 960
 _WINDOW_H = 640
+
+# Win32 WM_NCHITTEST results used for native edge resizing of the frameless window.
+_WM_NCHITTEST = 0x0084
+_HTLEFT, _HTRIGHT, _HTTOP, _HTTOPLEFT, _HTTOPRIGHT = 10, 11, 12, 13, 14
+_HTBOTTOM, _HTBOTTOMLEFT, _HTBOTTOMRIGHT = 15, 16, 17
 
 
 class MainWindow(QWidget):
@@ -49,11 +57,14 @@ class MainWindow(QWidget):
         self._setup_ui()
         self.reapply_theme()
         self.show_page("general")
-        self._nav_buttons[1].setFocus(Qt.FocusReason.OtherFocusReason)
+        # No programmatic focus on a nav button: the focus ring must only
+        # appear for keyboard navigation, never as a second "selected" state.
 
     def _setup_window(self) -> None:
         self.setWindowTitle("VoiceInk")
         self.setObjectName("mainWindow")
+        # Focusable but invisible focus target (see showEvent).
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.setWindowFlags(
             Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
         )
@@ -82,9 +93,12 @@ class MainWindow(QWidget):
         self._max_btn = QPushButton("□")
         self._close_btn = QPushButton("×")
         for btn in (self._min_btn, self._max_btn, self._close_btn):
-            btn.setFixedSize(36, 32)
+            # Match the Windows caption-button hit target (46×32).
+            btn.setFixedSize(_CAPTION_BTN_W, 32)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            # Like native caption buttons: mouse targets, not tab stops.
+            # Alt+F4 / Ctrl+W remain the keyboard path.
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for btn, text in ((self._min_btn, "最小化"), (self._max_btn, "最大化 / 还原"),
                           (self._close_btn, "关闭窗口，保留托盘运行")):
             btn.setAccessibleName(text)
@@ -112,12 +126,8 @@ class MainWindow(QWidget):
         self._sidebar.setObjectName("mainSidebar")
         self._sidebar.setFixedWidth(tok.SIDEBAR_WIDTH)
         side = QVBoxLayout(self._sidebar)
-        side.setContentsMargins(12, 18, 12, 16)
+        side.setContentsMargins(12, 16, 12, 16)
         side.setSpacing(4)
-
-        self._nav_heading = QLabel("工作空间")
-        side.addWidget(self._nav_heading)
-        side.addSpacing(8)
 
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
@@ -127,7 +137,9 @@ class MainWindow(QWidget):
             btn.setCheckable(True)
             btn.setFixedHeight(_NAV_BTN_H)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            # TabFocus: keyboard users get a focus ring, mouse clicks do not
+            # leave a stale ring competing with the checked state.
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setAccessibleName(label)
             btn.setToolTip(f"{label}  ·  Ctrl+{index + 1}")
             key = PAGE_KEYS[index]
@@ -136,15 +148,29 @@ class MainWindow(QWidget):
             self._nav_buttons.append(btn)
             side.addWidget(btn)
         side.addStretch(1)
-        self._runtime_label = QLabel("状态待确认")
+
+        # Runtime status: a separator + status dot + text. Deliberately not a
+        # filled card, so it cannot be mistaken for a sixth (selected) nav item.
+        self._status_rule = QWidget()
+        self._status_rule.setFixedHeight(1)
+        side.addWidget(self._status_rule)
+        side.addSpacing(10)
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(8, 0, 8, 0)
+        status_row.setSpacing(8)
+        self._status_dot = QLabel()
+        self._status_dot.setFixedSize(_STATUS_DOT_PX, _STATUS_DOT_PX)
+        status_row.addWidget(self._status_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._runtime_label = QLabel("正在启动…")
         self._runtime_label.setWordWrap(True)
         self._runtime_label.setAccessibleName("当前运行状态")
+        status_row.addWidget(self._runtime_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        side.addLayout(status_row)
+        side.addSpacing(6)
         self._mode_label = QLabel()
         self._mode_label.setWordWrap(True)
         self._shortcut_label = QLabel()
         self._shortcut_label.setWordWrap(True)
-        side.addWidget(self._runtime_label)
-        side.addSpacing(4)
         side.addWidget(self._mode_label)
         side.addWidget(self._shortcut_label)
         body.addWidget(self._sidebar)
@@ -164,7 +190,7 @@ class MainWindow(QWidget):
         self._size_grip = QSizeGrip(self)
         self._size_grip.setFixedSize(16, 16)
         self._size_grip.setToolTip("拖动调整窗口大小")
-        self._settings.runtime_status_changed.connect(self._runtime_label.setText)
+        self._settings.runtime_status_changed.connect(self._set_runtime_status)
         self._settings.settings_changed.connect(self._refresh_usage_summary)
         self._settings.hotkey_updated.connect(self._refresh_usage_summary)
         self._history.history_preferences_requested.connect(self._open_history_preferences)
@@ -201,6 +227,29 @@ class MainWindow(QWidget):
         self._settings._pages.widget(0).ensureWidgetVisible(row)
         row.setFocus()
 
+    @staticmethod
+    def _status_tone(text: str) -> str:
+        """Map a runtime status string to a semantic token name."""
+        if any(word in text for word in ("失败", "错误", "不可用")):
+            return "RED"
+        if any(word in text for word in ("载入", "加载", "启动", "未就绪", "下载")):
+            return "AMBER"
+        if "就绪" in text:
+            return "GREEN"
+        return "TEXT_DIM"
+
+    def _set_runtime_status(self, text: str) -> None:
+        self._runtime_label.setText(text)
+        self._paint_status_dot()
+
+    def _paint_status_dot(self) -> None:
+        from voiceink.ui import design_tokens as live
+
+        color = getattr(live, self._status_tone(self._runtime_label.text()), live.TEXT_DIM)
+        self._status_dot.setStyleSheet(
+            f"background: {color}; border-radius: {_STATUS_DOT_PX // 2}px;"
+        )
+
     def _refresh_usage_summary(self, *_args) -> None:
         source = {"microphone": "麦克风", "system": "电脑声", "mixed": "混合音频"}.get(
             self._config.get("audio.input_source", "microphone"), "麦克风")
@@ -221,6 +270,12 @@ class MainWindow(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._apply_window_shape()
+        # Park focus on the window itself: otherwise Qt hands it to the first
+        # tab stop and a nav button shows a focus ring nobody asked for. Tab
+        # from here reaches the nav / page controls as usual.
+        fw = self.focusWidget()
+        if fw is None or fw in self._nav_buttons:
+            self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _toggle_maximized(self) -> None:
         if self.isMaximized():
@@ -270,6 +325,7 @@ class MainWindow(QWidget):
         }
         if key == "history":
             self._stack.setCurrentIndex(0)
+            self._history.refresh()
         else:
             self._stack.setCurrentIndex(1)
             self._settings.show_page(settings_index[key])
@@ -339,7 +395,7 @@ class MainWindow(QWidget):
         )
         self._title.setStyleSheet(
             f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px;"
-            f" font-weight: 600; background: transparent;"
+            f" font-weight: 700; background: transparent;"
         )
         self._ink_dot.setStyleSheet(
             f"background: {live.TEXT}; border-radius: {_INK_DOT_PX // 2}px;"
@@ -363,17 +419,67 @@ class MainWindow(QWidget):
             f" border: 2px solid transparent; border-radius: {live.RADIUS_MD}px;"
             f" font-size: {_NAV_FONT_PX}px; text-align: left; padding: 0 10px; }}"
             f"QPushButton:checked {{ background: {live.NAV_SELECTED_BG};"
-            f" color: {live.TEXT}; font-weight: 600; }}"
+            f" color: {live.TEXT}; font-weight: 700; }}"
             f"QPushButton:hover:!checked {{ background: {live.ROW_HOVER}; color: {live.TEXT}; }}"
             f"QPushButton:focus {{ border-color: {live.ACCENT_FOCUS}; }}"
         )
         for btn in self._nav_buttons:
             btn.setStyleSheet(nav_css)
-        for label in (self._nav_heading, self._mode_label, self._shortcut_label):
+        for label in (self._mode_label, self._shortcut_label):
             label.setStyleSheet(f"color: {live.TEXT_SEC}; font-size: {live.TYPE_CAPTION}px;"
-                               " background: transparent; padding: 4px 8px;")
+                               " background: transparent; padding: 2px 8px;")
+        self._status_rule.setStyleSheet(f"background: {live.HAIRLINE};")
         self._runtime_label.setStyleSheet(
-            f"color: {live.TEXT}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 600;"
-            f" background: {live.NAV_SELECTED_BG}; border-radius: 8px; padding: 10px 8px;")
+            f"color: {live.TEXT}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 700;"
+            f" background: transparent; padding: 0;")
+        self._paint_status_dot()
         self._stack.setStyleSheet(f"background: {live.BG};")
         self._apply_window_shape()
+
+    # ── native edge resize (Windows) ─────────────────────────────
+
+    def _hit_test_edge(self, x: int, y: int) -> int | None:
+        """Return the HT* code for a window-local point on the resize border."""
+        if self.isMaximized():
+            return None
+        b = _RESIZE_BORDER_PX
+        w, h = self.width(), self.height()
+        left, right = x < b, x >= w - b
+        top, bottom = y < b, y >= h - b
+        if top and left:
+            return _HTTOPLEFT
+        if top and right:
+            return _HTTOPRIGHT
+        if bottom and left:
+            return _HTBOTTOMLEFT
+        if bottom and right:
+            return _HTBOTTOMRIGHT
+        if left:
+            return _HTLEFT
+        if right:
+            return _HTRIGHT
+        if top:
+            return _HTTOP
+        if bottom:
+            return _HTBOTTOM
+        return None
+
+    def nativeEvent(self, event_type, message):
+        # Note: deliberately never delegates to super().nativeEvent(); the
+        # PyQt6 base implementation faults when re-entered with the voidptr.
+        # QWidget's default is a no-op, so (False, 0) is equivalent.
+        if sys.platform == "win32" and event_type in (b"windows_generic_MSG", "windows_generic_MSG"):
+            try:
+                from ctypes import wintypes
+
+                msg = wintypes.MSG.from_address(int(message))
+                if msg.message == _WM_NCHITTEST and self.windowHandle() is not None:
+                    # QCursor.pos() is already in logical coordinates, which
+                    # keeps the hit test correct on mixed-DPI monitor setups.
+                    local = self.mapFromGlobal(QCursor.pos())
+                    hit = self._hit_test_edge(local.x(), local.y())
+                    if hit is not None:
+                        return True, hit
+            except Exception:
+                pass
+        return False, 0

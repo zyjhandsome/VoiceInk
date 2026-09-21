@@ -105,6 +105,7 @@ class SettingsWindow(QWidget):
         from voiceink.ui.island_chrome import island_container_css
 
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
+        self._paint_model_hero_status()
         if hasattr(self, "_sheet"):
             self._sheet.setStyleSheet(island_container_css())
         if hasattr(self, "_island_nav"):
@@ -116,7 +117,7 @@ class SettingsWindow(QWidget):
                 )
         if hasattr(self, "_island_title"):
             self._island_title.setStyleSheet(
-                f"color: {tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 600;"
+                f"color: {tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 700;"
                 f" background: transparent;"
             )
         if hasattr(self, "_close_btn"):
@@ -150,7 +151,7 @@ class SettingsWindow(QWidget):
             self._paint_llm_prompt_edit()
         if hasattr(self, "_about_version_label"):
             self._about_version_label.setStyleSheet(
-                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
+                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 700;"
                 f" background: {tok.SURFACE_PEARL}; border: 1px solid {tok.HAIRLINE};"
                 f" border-radius: {tok.RADIUS_PILL}px; padding: 3px 10px;"
             )
@@ -163,7 +164,7 @@ class SettingsWindow(QWidget):
             self._about_paths_toggle.setStyleSheet(
                 f"QPushButton#aboutPathsToggle {{"
                 f" color: {tok.TEXT_SEC}; background: transparent; border: none;"
-                f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 500;"
+                f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 400;"
                 f" text-align: left; padding: 10px 16px;"
                 f"}}"
                 f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
@@ -229,7 +230,28 @@ class SettingsWindow(QWidget):
 
     def set_runtime_status(self, hint: str) -> None:
         self._runtime_status_hint = hint.strip() or "就绪"
+        self._paint_model_hero_status()
         self.runtime_status_changed.emit(self._runtime_status_hint)
+
+    def _paint_model_hero_status(self) -> None:
+        """「已下载 ≠ 已载入」— the engine page must say whether the model is usable."""
+        label = getattr(self, "_model_hero_status", None)
+        if label is None:
+            return
+        status = self._runtime_status_hint
+        ready = "就绪" in status
+        failed = any(word in status for word in ("失败", "错误", "不可用"))
+        if ready:
+            fg, bg, text = _tok.GREEN, _tok.GREEN_BG, "已载入 · 可用"
+        elif failed:
+            fg, bg, text = _tok.RED, _tok.RED_BG, status
+        else:
+            fg, bg, text = _tok.AMBER_TEXT, _tok.AMBER_SOFT, status
+        label.setText(text)
+        label.setStyleSheet(
+            f"background: {bg}; color: {fg}; border-radius: {_tok.RADIUS_PILL}px;"
+            f" padding: 3px 10px; font-size: {_tok.TYPE_CAPTION}px; font-weight: 700;"
+        )
 
     def _configure_numeric_spin(self, spin: QSpinBox) -> None:
         """Shared metrics for flat themed QSpinBox steppers."""
@@ -307,6 +329,7 @@ class SettingsWindow(QWidget):
             item = self._model_hero_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self._model_hero_status = None
 
         from voiceink.speech_recognizer import DEFAULT_MODEL_ID, get_model_info, is_model_downloaded
 
@@ -330,7 +353,7 @@ class SettingsWindow(QWidget):
         title.setProperty("viRole", "engineHeroTitle")
         title.setStyleSheet(
             f"color: {_tok.TEXT}; font-family: {_tok.FONT_DISPLAY}; font-size: {_tok.TYPE_HERO}px;"
-            f" font-weight: 600; background: transparent;"
+            f" font-weight: 700; background: transparent;"
         )
         head.addWidget(title)
         badge = QLabel("当前")
@@ -338,9 +361,14 @@ class SettingsWindow(QWidget):
         badge.setStyleSheet(
             f"background: {_tok.SURFACE_PEARL}; color: {_tok.TEXT_SEC};"
             f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
-            f" font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
+            f" font-size: {_tok.TYPE_CAPTION}px; font-weight: 700;"
         )
         head.addWidget(badge)
+        self._model_hero_status = QLabel()
+        self._model_hero_status.setAccessibleName("当前模型载入状态")
+        self._model_hero_status.setToolTip("下载完成后仍需载入内存；载入完成前快捷键不会响应。")
+        head.addWidget(self._model_hero_status)
+        self._paint_model_hero_status()
         head.addStretch()
         size = QLabel(f"{info['size_mb']} MB")
         size.setProperty("viRole", "engineHeroSize")
@@ -392,9 +420,9 @@ class SettingsWindow(QWidget):
             if title:
                 hdr = QLabel(title)
                 hdr.setStyleSheet(
-                    f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 600;"
+                    f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 700;"
                     f" padding: 0 4px; background: transparent;"
-                    f" letter-spacing: 0.02em;"
+                    f" letter-spacing: 0;"
                 )
                 section_lay.addWidget(hdr)
 
@@ -511,10 +539,9 @@ class SettingsWindow(QWidget):
             anchor_y = self._llm_enable_row.mapTo(page.widget(), self._llm_enable_row.rect().topLeft()).y()
             scroll_before = page.verticalScrollBar().value()
 
+        # The before/after example stays visible in both states: it is the
+        # information a user needs *before* deciding to turn polishing on.
         self._llm_container.setVisible(enabled)
-        self._llm_preview_card.setVisible(enabled)
-        if hasattr(self, "_llm_preview_divider"):
-            self._llm_preview_divider.setVisible(enabled)
 
         if page is not None and page.widget() is not None:
             def _restore() -> None:
@@ -761,9 +788,6 @@ class SettingsWindow(QWidget):
         llm_on = self._config.get("llm.enabled", False)
         self._llm_enable_row.setChecked(llm_on)
         self._llm_container.setVisible(llm_on)
-        self._llm_preview_card.setVisible(llm_on)
-        if hasattr(self, "_llm_preview_divider"):
-            self._llm_preview_divider.setVisible(llm_on)
         self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
         self._llm_key_edit.setText(self._config.get("llm.api_key", ""))
         self._llm_model_edit.setText(self._config.get("llm.model_name", ""))

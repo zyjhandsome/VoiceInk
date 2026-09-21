@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ class HistoryStore:
         self._thread: threading.Thread | None = None
         self._ready = threading.Event()
         self._init_error: BaseException | None = None
+        self._committed_callbacks: list[Callable[[], None]] = []
 
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +137,16 @@ class HistoryStore:
                 exc_info=self._init_error,
             )
             self.disabled = True
+
+    def add_committed_callback(self, callback: Callable[[], None]) -> None:
+        self._committed_callbacks.append(callback)
+
+    def _notify_committed(self) -> None:
+        for callback in list(self._committed_callbacks):
+            try:
+                callback()
+            except Exception:
+                logger.exception("HistoryStore committed callback failed")
 
     def enqueue(self, record: SegmentRecord) -> None:
         if self.disabled:
@@ -306,6 +318,9 @@ class HistoryStore:
             elif op == "cleanup":
                 retention_days, max_entries, active_session_id = payload
                 self._do_cleanup(conn, retention_days, max_entries, active_session_id)
+            else:
+                return
+            self._notify_committed()
         except Exception:
             logger.exception("HistoryStore writer op failed")
             try:

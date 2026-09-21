@@ -102,7 +102,9 @@ Effective theme is always `light` or `dark`.
 
 - **UI Font resolve (runtime):** prefer `Microsoft YaHei UI` / `Microsoft YaHei` so QSS (single family) keeps CJK; skip Latin-only families such as `Segoe UI Variable` when a CJK family is present (`resolve_ui_font_family` / `FONT_STACK`)
 - **UI Font stack (docs):** `"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable", "Segoe UI"`
-- **Mono:** `"Cascadia Mono", "Consolas", "JetBrains Mono", monospace`
+- **Mono resolve (runtime):** `resolve_mono_font_family` picks one installed family — Cascadia Mono, else Consolas, else JetBrains Mono — and publishes that single quoted name as `FONT_MONO`. Qt stylesheets do not honor a CSS fallback list.
+- **Weights:** Microsoft YaHei UI ships Regular and Bold only. UI text uses font-weight 400 (body, unselected, quiet controls) or 700 (titles, selected items, badges, primary actions). Do not use 500, 550, or 600.
+- **Tracking:** letter-spacing 0 on Chinese UI text. No negative tracking.
 - **Mood:** technical, precision, clean, premium desktop utility
 - **Do not** ship runtime Google Fonts imports in the desktop app
 
@@ -162,10 +164,16 @@ Effective theme is always `light` or `dark`.
 ### Cards / settings groups
 
 - Surface fill, 1px border, radius LG
-- Main navigation: ink wash (`NAV_SELECTED_BG`), semibold label, 40px row height, 2px keyboard focus ring.
+- Main navigation: ink wash (`NAV_SELECTED_BG`), semibold label, 40px row height, 2px keyboard focus ring. Focus ring appears only for keyboard navigation (TabFocus) — never as a second "selected" state on open.
+- Sidebar runtime status: hairline + 8px semantic dot (`GREEN` ready / `AMBER` loading / `RED` failure) + text. Not a filled card, so it cannot read as a sixth nav item.
 - Task choices: native radio indicator, title and task-specific explanation; full card is clickable.
 - Settings pages: 20px page title, purpose sentence, grouped 14px section labels.
-- History: resizable list/detail splitter, 16px reading text, width-aware single-line previews.
+- Engine hero card shows the *load* state (「已载入 · 可用」/「模型载入中…」) beside the「当前」badge; downloaded ≠ usable.
+- Polish page keeps the before/after example visible while the feature is off.
+- History list: 58px rows (`HH:MM` mono + preview / app · source · N 段), non-selectable day headers (今天 / 昨天 / date), selected row = `ACCENT_SOFT` wash + 3px `ACCENT` left bar.
+- History detail: title is the session identity (day + time), stats right-aligned, metadata chips, then a「润色 / 原文」segmented view toggle (only when a polished text exists). Segments render as numbered blocks with `HH:MM:SS · duration` captions; search hits highlighted with `AMBER_SOFT`.
+- History action bar is fixed (buttons disable, never disappear): primary copy on the left,「导出」「删除」on the right. Multi-select keeps「复制」enabled and joins each session's effective text, oldest first, with a blank line between sessions.「清空全部历史」is a quiet text action on the list summary row, disabled when there is nothing to clear, and confirms with an in-app card (取消 / 清空). History preferences stay in Settings; the empty state still offers「设置历史记录」when recording is off.
+- History list scrollbar is a single transparent-track thumb. The splitter handle stays transparent at rest so it does not read as a second scrollbar.
 
 ### Inputs
 
@@ -191,7 +199,11 @@ Effective theme is always `light` or `dark`.
 - Ctrl+1…5 switches pages, Ctrl+F opens history search, Ctrl+W hides to tray; shortcuts pause during hotkey capture.
 - Model and audio test errors remain readable at their controls; success does not require a modal.
 - History refresh preserves selection and search; pending deletions stay hidden and share an eight-second undo batch.
-- Closing the main window preserves the tray process; title-bar double click maximizes/restores, corner grip resizes.
+- Deleting sessions has exactly one safety net: the undo toast. No confirmation dialog. Only「清空全部历史」(irreversible) confirms.
+- History feedback (copied / exported / undo) is an overlay toast anchored to the bottom of the page, never a layout row — nothing shifts.
+- History keyboard: `Delete` removes the selection, `Ctrl+C` copies the effective text (joined when several sessions are selected), `Ctrl/Shift` multi-select.
+- Closing the main window preserves the tray process; title-bar double click maximizes/restores; every window edge resizes (native `WM_NCHITTEST`), plus the corner grip.
+- Tray: single click opens the main window on every platform (Windows defers by the double-click interval so a double click opens once).
 - No emoji-as-icon; use drawn/SVG icons
 - Theme switch applies without restart; preference persisted as `appearance.theme_mode`
 - Keep recording red rationed to recording/error semantics

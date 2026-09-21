@@ -61,13 +61,13 @@ def reload_styles() -> None:
     from voiceink.ui import design_tokens as tok
 
     SECTION_LABEL = (
-        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600;"
+        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 700;"
         f" padding: 0 2px 2px 2px; letter-spacing: 0;"
         f" background: transparent;"
     )
     PAGE_TITLE = (
         f"color: {tok.TEXT}; font-family: {tok.FONT_DISPLAY}; font-size: {tok.TYPE_TITLE_LG}px;"
-        f" font-weight: 600; letter-spacing: 0; padding: 2px 0 0 0;"
+        f" font-weight: 700; letter-spacing: 0; padding: 2px 0 0 0;"
     )
     PAGE_SUBTITLE = (
         f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; padding: 0;"
@@ -130,14 +130,14 @@ def reload_styles() -> None:
         border-radius: {tok.RADIUS_MD}px;
         color: {tok.TEXT_SEC};
         font-size: {tok.TYPE_BODY_SM}px;
-        font-weight: 500;
+        font-weight: 400;
         background: transparent;
     }}
     QPushButton#settingsNavBtn:checked {{
         background: {tok.NAV_SELECTED_BG};
         border-left: {tok.NAV_SELECTED_BAR_PX}px solid {tok.ACCENT};
         color: {tok.ACCENT_TEXT};
-        font-weight: 600;
+        font-weight: 700;
     }}
     QPushButton#settingsNavBtn:hover:!checked {{
         background: {tok.ROW_HOVER};
@@ -176,13 +176,13 @@ def reload_styles() -> None:
         border-radius: 0;
         color: {tok.TEXT_DIM};
         font-size: {tok.TYPE_BODY_SM}px;
-        font-weight: 500;
+        font-weight: 400;
         background: transparent;
         min-width: 56px;
     }}
     QPushButton#settingsSubTabBtn:checked {{
         color: {tok.ACCENT_TEXT};
-        font-weight: 600;
+        font-weight: 700;
         border-bottom: 2px solid {tok.ACCENT};
         background: transparent;
     }}
@@ -259,7 +259,7 @@ class PageHero(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._inline_status.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 400;"
             f" background: transparent;"
         )
         # Reserve status width so 已关闭 ↔ 已开启 · … does not shove the title.
@@ -291,7 +291,7 @@ class PageHero(QWidget):
         self._title.setStyleSheet(PAGE_TITLE)
         self._subtitle.setStyleSheet(PAGE_SUBTITLE)
         self._inline_status.setStyleSheet(
-            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500;"
+            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 400;"
             f" background: transparent;"
         )
 
@@ -364,7 +364,7 @@ def polish_preview_content() -> QWidget:
     head = QLabel("效果预览")
     head.setProperty("viRole", "polishPreviewHeading")
     head.setStyleSheet(
-        f"color: {TEXT}; font-size: {tok.TYPE_TITLE}px; font-weight: 600; background: transparent;"
+        f"color: {TEXT}; font-size: {tok.TYPE_TITLE}px; font-weight: 700; background: transparent;"
     )
     lay.addWidget(head)
 
@@ -376,7 +376,7 @@ def polish_preview_content() -> QWidget:
         tag = QLabel(label)
         tag.setProperty("viRole", "polishPreviewLabel")
         tag.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 700;"
             f" background: transparent;"
         )
         row_lay.addWidget(tag, 0, Qt.AlignmentFlag.AlignTop)
@@ -496,7 +496,7 @@ def stylesheet_for_role(role: object) -> str | None:
         return SECTION_LABEL
     if role == "rowTitle":
         return (
-            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 500;"
+            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 400;"
             f" background: transparent;"
         )
     if role == "rowSubtitle":
@@ -506,7 +506,7 @@ def stylesheet_for_role(role: object) -> str | None:
         )
     if role == "fieldLabel":
         return (
-            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 500;"
+            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 400;"
             f" background: transparent;"
         )
     if role == "hint":
@@ -518,12 +518,12 @@ def stylesheet_for_role(role: object) -> str | None:
         return FOOTNOTE
     if role == "polishPreviewHeading":
         return (
-            f"color: {live.TEXT}; font-size: {live.TYPE_TITLE}px; font-weight: 600;"
+            f"color: {live.TEXT}; font-size: {live.TYPE_TITLE}px; font-weight: 700;"
             f" background: transparent;"
         )
     if role == "polishPreviewLabel":
         return (
-            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_BODY_SM}px; font-weight: 600;"
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_BODY_SM}px; font-weight: 700;"
             f" background: transparent;"
         )
     if role == "polishPreviewText":
@@ -533,7 +533,7 @@ def stylesheet_for_role(role: object) -> str | None:
         )
     if role == "kvKey":
         return (
-            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 550;"
+            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 700;"
             f" min-width: 80px; background: transparent;"
         )
     if role == "kvValue":
@@ -547,7 +547,7 @@ def stylesheet_for_role(role: object) -> str | None:
         )
     if role == "pickTitle":
         return (
-            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 600;"
+            f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px; font-weight: 700;"
             f" background: transparent;"
         )
     if role == "pickSubtitle":
@@ -589,7 +589,7 @@ def reapply_subtree(root: QWidget) -> None:
             label.setStyleSheet(css)
         elif label.objectName() == "settingsGroupTitle":
             label.setStyleSheet(
-                f"color: {live.TEXT_DIM}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 600;"
+                f"color: {live.TEXT_DIM}; font-size: {live.TYPE_FOOTNOTE}px; font-weight: 700;"
                 f" padding: 0 2px 2px 2px; background: transparent;"
                 f" letter-spacing: 0;"
             )
@@ -633,7 +633,7 @@ def settings_section(
         hdr = QLabel(title)
         hdr.setObjectName("settingsGroupTitle")
         hdr.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 600;"
+            f"color: {TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 700;"
             f" padding: 2px 2px 2px 2px; background: transparent;"
             f" letter-spacing: 0;"
         )
@@ -762,7 +762,7 @@ def option_row(title: str, subtitle: str = "") -> QWidget:
     t = QLabel(title)
     t.setProperty("viRole", "rowTitle")
     t.setStyleSheet(
-        f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 500; background: transparent;"
+        f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 400; background: transparent;"
     )
     lay.addWidget(t)
     if subtitle:
@@ -804,7 +804,7 @@ def stacked_field_row(label: str, widget: QWidget, hint: str = "") -> QWidget:
     lbl = QLabel(label)
     lbl.setProperty("viRole", "fieldLabel")
     lbl.setStyleSheet(
-        f"color: {TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 500; background: transparent;"
+        f"color: {TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 400; background: transparent;"
     )
     lbl.setBuddy(widget)
     outer.addWidget(lbl)
@@ -842,7 +842,7 @@ def kv_row(key: str, value: str, *, mono: bool = False) -> QWidget:
     k = QLabel(key)
     k.setProperty("viRole", "kvKey")
     k.setStyleSheet(
-        f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 550; min-width: 80px;"
+        f"color: {TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 700; min-width: 80px;"
     )
     k.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     v = QLabel(value)
@@ -949,7 +949,7 @@ class ChoiceCard(QFrame):
         t = QLabel(title)
         t.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         t.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600; background: transparent;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 700; background: transparent;"
         )
         lay.addWidget(t)
 
@@ -1039,7 +1039,7 @@ class VerticalChoiceCard(QFrame):
         text_col.setSpacing(2)
         t = QLabel(title)
         t.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 600; background: transparent;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 700; background: transparent;"
         )
         text_col.addWidget(t)
         s = QLabel(subtitle)
@@ -1154,7 +1154,7 @@ class CompactPickCard(QFrame):
             f"{self._subtitle}，{'已选中' if checked else '未选中'}".strip("，")
         )
         self._title_label.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 700;"
             f" background: transparent;"
         )
         self._subtitle_label.setStyleSheet(
@@ -1332,7 +1332,7 @@ class ThemeModeSegment(QWidget):
                     background: transparent;
                     color: {tok.TEXT_SEC};
                     font-size: {tok.TYPE_FOOTNOTE}px;
-                    font-weight: 500;
+                    font-weight: 400;
                     padding: 5px 10px;
                     min-height: 28px;
                     border-radius: 6px;
@@ -1340,7 +1340,7 @@ class ThemeModeSegment(QWidget):
                 QPushButton#themeModeSegBtn:checked {{
                     background: {tok.SURFACE};
                     color: {tok.TEXT};
-                    font-weight: 600;
+                    font-weight: 700;
                     border: 2px solid transparent;
                 }}
                 QPushButton#themeModeSegBtn:hover:!checked {{
@@ -1415,7 +1415,7 @@ class WideTestButton(QWidget):
 
         self._label = QLabel(text)
         self._label.setStyleSheet(
-            f"color: {TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 500; background: transparent;"
+            f"color: {TEXT}; font-size: {tok.TYPE_BODY}px; font-weight: 400; background: transparent;"
         )
         lay.addWidget(self._label, 1, Qt.AlignmentFlag.AlignVCenter)
 
@@ -1481,7 +1481,7 @@ def paint_device_selection_link(btn: QPushButton) -> None:
     btn.setStyleSheet(f"""
         QPushButton#deviceSelectionLink {{
             color: {tok.ACCENT_TEXT}; background: transparent; border: none;
-            font-size: {tok.TYPE_BODY_SM}px; font-weight: 500; text-align: left; padding: 4px 0;
+            font-size: {tok.TYPE_BODY_SM}px; font-weight: 400; text-align: left; padding: 4px 0;
         }}
         QPushButton#deviceSelectionLink:hover {{ color: {tok.ACCENT_TEXT_HOVER}; }}
         QPushButton#deviceSelectionLink:focus {{
@@ -1501,7 +1501,7 @@ def collapsible_toggle_btn(text: str) -> QPushButton:
             background: transparent;
             border: none;
             font-size: {tok.TYPE_BODY_SM}px;
-            font-weight: 500;
+            font-weight: 400;
             text-align: left;
             padding: 6px 4px;
         }}
@@ -1772,7 +1772,7 @@ class ToggleOptionRow(QWidget):
             role = label.property("viRole")
             if role == "rowTitle":
                 label.setStyleSheet(
-                    f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 500;"
+                    f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 400;"
                     f" background: transparent;"
                 )
             elif role == "rowSubtitle":

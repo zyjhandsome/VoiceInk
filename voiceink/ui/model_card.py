@@ -142,14 +142,14 @@ class ModelCard(QFrame):
             f" border-radius: {tok.RADIUS_MD}px; }}"
         )
         self._name_lbl.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: {tok.TYPE_TITLE_SM}px; font-weight: 600;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_TITLE_SM}px; font-weight: 700;"
             f" background: transparent;"
         )
         if self._badge is not None:
             self._badge.setStyleSheet(
                 f"background: {tok.SURFACE_PEARL}; color: {tok.TEXT_SEC};"
                 f" border-radius: {tok.RADIUS_PILL}px;"
-                f"padding: 3px 9px; font-size: {tok.TYPE_CAPTION}px; font-weight: 600;"
+                f"padding: 3px 9px; font-size: {tok.TYPE_CAPTION}px; font-weight: 700;"
             )
         self._size_lbl.setStyleSheet(
             f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; background: transparent;"

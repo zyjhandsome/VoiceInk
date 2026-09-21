@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -59,6 +60,61 @@ class TestResolveUiFontFamily:
         metrics = QFontMetrics(QFont(family))
         missing = [ch for ch in "设置听写历史配置" if not metrics.inFont(ch)]
         assert missing == [], f"{family} missing {missing}"
+
+
+class TestResolveMonoFontFamily:
+    def test_prefers_cascadia_mono(self):
+        from voiceink.ui.design_tokens import resolve_mono_font_family
+
+        family = resolve_mono_font_family(
+            available_families=("Consolas", "Cascadia Mono", "Segoe UI")
+        )
+        assert family == "Cascadia Mono"
+
+    def test_falls_back_to_consolas_then_jetbrains(self):
+        from voiceink.ui.design_tokens import resolve_mono_font_family
+
+        assert resolve_mono_font_family(
+            available_families=("Arial", "Consolas")
+        ) == "Consolas"
+        assert resolve_mono_font_family(
+            available_families=("JetBrains Mono",)
+        ) == "JetBrains Mono"
+
+    def test_default_literal_when_none_installed(self):
+        from voiceink.ui.design_tokens import resolve_mono_font_family
+
+        assert resolve_mono_font_family(available_families=()) == "Cascadia Mono"
+
+    def test_refresh_publishes_one_quoted_family(self, monkeypatch):
+        from voiceink.ui import design_tokens as dt
+
+        monkeypatch.setattr(dt, "resolve_ui_font_family", lambda **kwargs: "Mock UI Font")
+        monkeypatch.setattr(dt, "resolve_mono_font_family", lambda **kwargs: "Mock Mono")
+        dt.refresh_ui_font()
+        assert dt.FONT_MONO == '"Mock Mono"'
+        assert "," not in dt.FONT_MONO
+
+
+class TestYaHeiWeightAndTracking:
+    def test_ui_sources_use_only_regular_and_bold(self):
+        banned_weight = re.compile(r"font-weight:\s*(500|550|600)\b")
+        banned_tracking = re.compile(r"letter-spacing:\s*(-|0\.\d)")
+        offenders: list[str] = []
+        for path in Path("voiceink/ui").rglob("*.py"):
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if (
+                    banned_weight.search(line)
+                    or banned_tracking.search(line)
+                    or "DemiBold" in line
+                ):
+                    offenders.append(f"{path.as_posix()}:{lineno}: {line.strip()}")
+        assert offenders == []
+
+    def test_master_documents_two_weights_and_mono_resolve(self):
+        master = Path("design-system/MASTER.md").read_text(encoding="utf-8")
+        assert "resolve_mono_font_family" in master
+        assert "400" in master and "700" in master
 
 
 class TestApplyThemeRefreshesFont:

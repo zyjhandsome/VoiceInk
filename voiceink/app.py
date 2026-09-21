@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import numpy as np
-from PyQt6.QtCore import QEvent, QObject, QTimer
+from PyQt6.QtCore import QEvent, QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 
 from voiceink.config import (
@@ -64,6 +64,8 @@ class _PendingHistoryRecord:
 
 class App(QObject):
     """Central orchestrator that connects all modules."""
+
+    _history_committed = pyqtSignal()
 
     # 友好化错误信息映射
     ERROR_HINTS = {
@@ -167,6 +169,8 @@ class App(QObject):
         self._hotkey_mgr.continuous_listen_start.connect(self._on_continuous_hotkey_start)
         self._hotkey_mgr.hotkey_tap_too_short.connect(self._on_hotkey_tap_too_short)
         self._hotkey_mgr.esc_pressed.connect(self._on_esc_pressed)
+        self._history.add_committed_callback(self._history_committed.emit)
+        self._history_committed.connect(self._refresh_open_history_ui)
         self._hotkey_mgr.listener_status.connect(self._on_hotkey_listener_status)
 
         self._recorder.volume_changed.connect(self._floating.update_volume)
@@ -803,6 +807,11 @@ class App(QObject):
 
         self._enqueue_history_record(record)
         QTimer.singleShot(300, self._pump_segment_queue)
+
+    def _refresh_open_history_ui(self) -> None:
+        if self._main is None:
+            return
+        self._main._history.refresh()
 
     def _enqueue_history_record(self, record: SegmentRecord | None) -> None:
         if record is None:

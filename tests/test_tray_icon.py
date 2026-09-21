@@ -23,13 +23,27 @@ def tray(qapp):
 
 
 class TestTrayActivation:
-    def test_windows_ignores_single_trigger(self, tray, monkeypatch):
+    def test_windows_double_click_opens_once(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         emitted: list[object] = []
         tray.wake_island.connect(lambda: emitted.append(True))
 
         tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
         tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
+
+        assert len(emitted) == 1
+        assert not tray._single_click_timer.isActive()
+
+    def test_windows_single_click_opens_after_double_click_interval(self, tray, monkeypatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+        emitted: list[object] = []
+        tray.wake_island.connect(lambda: emitted.append(True))
+
+        tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        assert emitted == []
+        assert tray._single_click_timer.isActive()
+        tray._single_click_timer.stop()
+        tray._single_click_timer.timeout.emit()
 
         assert len(emitted) == 1
 

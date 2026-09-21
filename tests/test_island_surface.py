@@ -99,7 +99,7 @@ class TestHistoryTimeStream:
         try:
             assert window._session_list.objectName() == "historyTimeStream"
             assert window._left_pane is window._stream_host
-            first = window._session_list.item(0)
+            first = window.session_items()[0]
             widget = window._session_list.itemWidget(first)
             assert widget is not None
             from PyQt6.QtWidgets import QLabel

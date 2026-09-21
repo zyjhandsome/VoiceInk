@@ -192,6 +192,23 @@ def test_queued_segments_after_user_stop_keep_same_session() -> None:
         assert [r.seq for r in records] == [0, 1]
 
 
+def test_history_commit_refreshes_open_main_window() -> None:
+    from PyQt6.QtWidgets import QApplication
+    from unittest.mock import MagicMock
+
+    with app_harness() as h:
+        app = h["app"]
+        history_ui = MagicMock()
+        app._main = MagicMock()
+        app._main._history = history_ui
+
+        callback = h["history"].add_committed_callback.call_args[0][0]
+        callback()
+        QApplication.processEvents()
+
+        history_ui.refresh.assert_called()
+
+
 def test_clipboard_and_error_paste_results_enqueue_history() -> None:
     with app_harness() as h:
         _drive_segment(h["app"], h["paster"], "copied text", result="clipboard")

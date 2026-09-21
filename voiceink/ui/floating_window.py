@@ -176,11 +176,11 @@ class FloatingWindow(QWidget):
 
         self._paint_container()
         self._status_label.setFont(
-            _ui_font(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.DemiBold)
+            _ui_font(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.Bold)
         )
         self._status_label.setStyleSheet(
             f"color: {tok.FLOAT_TEXT}; background: transparent;"
-            f" font-family: {tok.FONT_DISPLAY}; letter-spacing: -0.2px;"
+            f" font-family: {tok.FONT_DISPLAY};"
         )
         self._end_btn.setStyleSheet(f"""
             QPushButton {{
@@ -188,7 +188,7 @@ class FloatingWindow(QWidget):
                 color: {tok.PRIMARY_ON};
                 border: none;
                 font-size: {tok.TYPE_CAPTION}px;
-                font-weight: 600;
+                font-weight: 700;
                 border-radius: 15px;
                 padding: 0px 12px;
             }}
@@ -203,7 +203,7 @@ class FloatingWindow(QWidget):
         self._text_label.setFont(_ui_font(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM))
         self._text_label.setStyleSheet(
             f"color: {tok.FLOAT_TEXT}; background: transparent;"
-            f" font-family: {tok.FONT}; letter-spacing: -0.2px;"
+            f" font-family: {tok.FONT};"
         )
         if hasattr(self, "_state_token"):
             self._set_state(self._status_label.text(), self._state_token,
@@ -250,7 +250,7 @@ class FloatingWindow(QWidget):
 
         self._status_label = QLabel("准备中...")
         self._status_label.setFont(
-            _ui_font(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.DemiBold)
+            _ui_font(tok.UI_FONT_FAMILY, tok.TYPE_BODY_SM, QFont.Weight.Bold)
         )
         header_row.addWidget(self._status_label)
         self._source = "microphone"
@@ -336,7 +336,7 @@ class FloatingWindow(QWidget):
         self._status_label.setText(text)
         self._status_label.setStyleSheet(
             f"color: {color}; background: transparent;"
-            f" font-family: {tok.FONT_DISPLAY}; letter-spacing: -0.2px;"
+            f" font-family: {tok.FONT_DISPLAY};"
         )
         self._dot.set_color(color)
         self._waveform.set_accent(color)

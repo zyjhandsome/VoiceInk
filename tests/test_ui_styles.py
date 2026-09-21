@@ -180,7 +180,7 @@ class TestSidebarVisualContracts:
         from voiceink.ui.settings_components import PAGE_TITLE, SECTION_LABEL
 
         assert "font-size: 20px" in PAGE_TITLE
-        assert "font-weight: 600" in PAGE_TITLE
+        assert "font-weight: 700" in PAGE_TITLE
         assert "letter-spacing: -" not in PAGE_TITLE
         assert "letter-spacing: 0" in PAGE_TITLE
         assert TEXT_SEC.lower() in SECTION_LABEL.lower()

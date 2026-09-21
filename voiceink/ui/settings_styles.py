@@ -107,7 +107,7 @@ def build_window_css() -> str:
         border-radius: {t.RADIUS_MD}px;
         padding: 10px 12px;
         font-size: {t.TYPE_BODY_SM}px;
-        font-weight: 600;
+        font-weight: 700;
         font-family: {t.FONT_MONO};
         min-height: 24px;
     }}
@@ -179,7 +179,7 @@ def build_btn_primary() -> str:
     QPushButton {{
         background: {t.PRIMARY_CONTAINER}; color: {t.PRIMARY_ON};
         border: 1px solid {t.PRIMARY_CONTAINER};
-        border-radius: {t.RADIUS_MD}px; padding: 9px 14px; font-size: {t.TYPE_BODY_SM}px; font-weight: 600;
+        border-radius: {t.RADIUS_MD}px; padding: 9px 14px; font-size: {t.TYPE_BODY_SM}px; font-weight: 700;
     }}
     QPushButton:hover {{
         background: {t.PRIMARY_CONTAINER_HOVER};
@@ -220,7 +220,7 @@ def build_btn_ghost_sm() -> str:
         background: {t.SURFACE_PEARL}; color: {t.TEXT_SEC};
         border: 1px solid {t.HAIRLINE};
         border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
-        font-weight: 500; min-height: {h}px; max-height: {h}px;
+        font-weight: 400; min-height: {h}px; max-height: {h}px;
     }}
     QPushButton:hover {{ background: {t.SURFACE}; color: {t.TEXT}; border-color: {t.CONTROL_BORDER}; }}
     QPushButton:checked {{
@@ -239,12 +239,13 @@ def build_btn_danger_sm() -> str:
     QPushButton {{
         background: transparent; color: {t.RED}; border: 1px solid {t.RED_BG};
         border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
-        font-weight: 500; min-height: {h}px; max-height: {h}px;
+        font-weight: 400; min-height: {h}px; max-height: {h}px;
     }}
     QPushButton:hover {{ background: {t.RED_BG}; color: {t.RED}; }}
     QPushButton:focus {{
         border: 2px solid {t.ACCENT_FOCUS}; padding: 0px {focus_pad_h}px;
     }}
+    QPushButton:disabled {{ color: {t.TEXT_DIM}; background: transparent; border-color: {t.HAIRLINE}; }}
 """
 
 
@@ -252,7 +253,7 @@ def build_btn_green_sm() -> str:
     return f"""
     QPushButton {{
         background: {t.GREEN_BG}; color: {t.GREEN}; border: none;
-        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: {t.TYPE_FOOTNOTE}px; font-weight: 600;
+        border-radius: {t.RADIUS_SM}px; padding: 8px 16px; font-size: {t.TYPE_FOOTNOTE}px; font-weight: 700;
     }}
     QPushButton:hover {{ background: {t.GREEN_BG}; }}
     QPushButton:disabled {{ background: {t.BAR_OFF}; color: {t.TEXT_DIM}; }}
@@ -267,7 +268,7 @@ def build_btn_accent_sm() -> str:
         background: {t.PRIMARY_CONTAINER}; color: {t.PRIMARY_ON};
         border: 1px solid {t.PRIMARY_CONTAINER};
         border-radius: {t.RADIUS_SM}px; padding: 0px {pad_h}px; font-size: {font_px}px;
-        font-weight: 600; min-height: {h}px; max-height: {h}px;
+        font-weight: 700; min-height: {h}px; max-height: {h}px;
     }}
     QPushButton:hover {{
         background: {t.PRIMARY_CONTAINER_HOVER};

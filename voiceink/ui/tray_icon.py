@@ -262,14 +262,38 @@ class TrayIcon(QSystemTrayIcon):
 
     @pyqtSlot(QSystemTrayIcon.ActivationReason)
     def _on_activated(self, reason):
-        # Windows emits Trigger on the first click of a double-click, then DoubleClick.
-        # Handling both would fire twice; on Windows only respond to double-click.
+        # Windows emits Trigger on the first click of a double-click, then
+        # DoubleClick. Most users single-click a tray icon, so respond to a
+        # single click too — but defer it by the double-click interval so a
+        # double-click still opens the window exactly once.
         if sys.platform == "win32":
-            if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            if reason == QSystemTrayIcon.ActivationReason.Trigger:
+                self._arm_single_click()
+            elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+                self._disarm_single_click()
                 self.wake_island.emit()
             return
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.wake_island.emit()
+
+    def _arm_single_click(self) -> None:
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QApplication
+
+        timer = getattr(self, "_single_click_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self.wake_island.emit)
+            self._single_click_timer = timer
+        app = QApplication.instance()
+        interval = app.doubleClickInterval() if app is not None else 400
+        timer.start(max(150, int(interval)))
+
+    def _disarm_single_click(self) -> None:
+        timer = getattr(self, "_single_click_timer", None)
+        if timer is not None:
+            timer.stop()
 
     def set_recording(self, is_recording: bool):
         self._apply_icon_kind("recording" if is_recording else "normal")
