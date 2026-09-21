@@ -68,6 +68,7 @@ class MainWindow(QWidget):
         root.setSpacing(0)
 
         self._caption = QWidget()
+        self._caption.setObjectName("mainCaption")
         self._caption.setFixedHeight(_CAPTION_H)
         cap = QHBoxLayout(self._caption)
         cap.setContentsMargins(12, 0, 8, 0)
@@ -328,9 +329,13 @@ class MainWindow(QWidget):
             f" border-radius: {radius}px; }}"
         )
         self._caption.setStyleSheet(
-            f"background: {live.BG};"
+            f"QWidget#mainCaption {{"
+            f" background: {live.BG};"
+            f" border: none;"
+            f" border-bottom: 1px solid {live.CONTROL_BORDER};"
             f" border-top-left-radius: {radius}px;"
             f" border-top-right-radius: {radius}px;"
+            f"}}"
         )
         self._title.setStyleSheet(
             f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px;"

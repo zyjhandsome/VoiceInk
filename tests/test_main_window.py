@@ -65,6 +65,21 @@ def test_outer_border_uses_explicit_window_frame(qapp, tmp_path, monkeypatch):
         store.close()
 
 
+def test_caption_chrome_is_distinct_from_content(qapp, tmp_path, monkeypatch):
+    from voiceink.ui import design_tokens as tok
+
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        css = win._caption.styleSheet()
+        assert win._caption.objectName() == "mainCaption"
+        assert f"background: {tok.BG}" in css
+        assert f"border-bottom: 1px solid {tok.CONTROL_BORDER}" in css
+        assert win._caption.height() == 42
+    finally:
+        win.close()
+        store.close()
+
+
 def test_caption_drag_moves_window(qapp, tmp_path, monkeypatch):
     from PyQt6.QtCore import QEvent, QPoint, QPointF
     from PyQt6.QtGui import QMouseEvent
