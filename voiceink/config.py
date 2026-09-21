@@ -85,7 +85,7 @@ DEFAULT_CONFIG = {
         "max_entries": 5000,
     },
     "appearance": {
-        "theme_mode": "system",
+        "theme_mode": "dark",
     },
 }
 

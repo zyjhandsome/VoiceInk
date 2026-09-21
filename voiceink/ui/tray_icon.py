@@ -2,16 +2,28 @@ import sys
 
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import (
-    QIcon, QPixmap, QPainter, QColor, QBrush, QPen,
+    QIcon, QIconEngine, QPixmap, QPainter, QColor, QBrush, QPen,
     QRadialGradient, QPainterPath, QActionGroup
 )
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF, QPointF
 
+def _menu_font():
+    from PyQt6.QtGui import QFont
+
+    from voiceink.ui import design_tokens as tok
+
+    font = QFont(tok.UI_FONT_FAMILY)
+    font.setPixelSize(tok.TRAY_MENU_FONT)
+    return font
+
+
 def _menu_stylesheet() -> str:
     from voiceink.ui import design_tokens as tok
 
-    # Right padding leaves room for submenu chevron / check indicator.
-    pad_right = tok.TRAY_MENU_PAD_H + 22
+    # Windows styled menus do not inherit QMenu's font onto items, and they
+    # do not reserve a check column. Pad every row the same so labels line up
+    # past the check, with a matching gutter for the submenu chevron.
+    pad_right = tok.TRAY_MENU_PAD_H + 4
     return f"""
     QMenu {{
         background-color: {tok.SURFACE};
@@ -20,9 +32,11 @@ def _menu_stylesheet() -> str:
         border-radius: {tok.TRAY_MENU_RADIUS}px;
         padding: 4px 0px;
         font-family: {tok.FONT};
-        font-size: {tok.TYPE_BODY_SM}px;
+        font-size: {tok.TRAY_MENU_FONT}px;
     }}
     QMenu::item {{
+        font-family: {tok.FONT};
+        font-size: {tok.TRAY_MENU_FONT}px;
         padding: {tok.TRAY_MENU_PAD_V}px {pad_right}px {tok.TRAY_MENU_PAD_V}px {tok.TRAY_MENU_PAD_H}px;
         margin: 0px;
         border-radius: 0px;
@@ -33,31 +47,79 @@ def _menu_stylesheet() -> str:
         color: {tok.TEXT};
     }}
     QMenu::item:disabled {{
-        color: {tok.TRAY_MENU_DISABLED};
+        color: {tok.TEXT_DIM};
+        background: transparent;
+        font-size: {tok.TYPE_CAPTION}px;
+    }}
+    QMenu::item:disabled:selected {{
         background: transparent;
     }}
     QMenu::separator {{
         height: 1px;
         background: {tok.TRAY_MENU_SEPARATOR};
-        margin: 2px 0px;
+        margin: 6px 12px;
     }}
     QMenu::indicator {{
-        width: 14px;
-        height: 14px;
-        margin-left: 4px;
+        width: 12px;
+        height: 12px;
+        margin-left: 6px;
     }}
     QMenu::right-arrow {{
-        width: 10px;
-        height: 10px;
-        margin-right: 10px;
+        width: 8px;
+        height: 8px;
+        margin-right: 12px;
     }}
     """
 
 
-def create_microphone_icon(color: str | None = None, recording: bool = False, size: int = 64) -> QIcon:
+_MENU_JOIN = " · "
+
+
+def _paired_label(lead: str, detail: str) -> str:
+    """Keep a caption and its value adjacent. Extra menu width stays to the right."""
+    lead = (lead or "").strip()
+    detail = (detail or "").strip()
+    if lead and detail:
+        return f"{lead}{_MENU_JOIN}{detail}"
+    return lead or detail
+
+
+def _model_switch_title(active_name: str) -> str:
+    return _paired_label("切换模型", active_name) or "切换模型"
+
+
+def _model_choice_label(model: dict) -> str:
+    return _paired_label(str(model.get("name") or ""), str(model.get("languages") or ""))
+
+
+def _paint_menu(menu) -> None:
+    if menu is None:
+        return
+    menu.setFont(_menu_font())
+    menu.setStyleSheet(_menu_stylesheet())
+
+
+def _windows_small_icon_px() -> int | None:
+    """Notification-area glyph size. A mismatch here is what leaves the slot blank."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        px = int(ctypes.windll.user32.GetSystemMetrics(49))  # SM_CXSMICON
+    except (AttributeError, OSError, ValueError):
+        return None
+    if 16 <= px <= 64:
+        return px
+    return None
+
+
+def _microphone_pixmap(color: str | None, recording: bool, size: int) -> QPixmap:
     from voiceink.ui import design_tokens as tok
 
     pixmap = QPixmap(QSize(size, size))
+    # Windows drops the tray glyph when the bitmap's device pixel ratio is not 1.
+    pixmap.setDevicePixelRatio(1.0)
     pixmap.fill(Qt.GlobalColor.transparent)
 
     painter = QPainter(pixmap)
@@ -88,6 +150,12 @@ def create_microphone_icon(color: str | None = None, recording: bool = False, si
         s * 0.22, s * 0.22
     )
 
+    # Dark theme plate is near-white (#F9FAFB). A white mic on that plate
+    # has no silhouette, so the tray glyph reads as empty.
+    plate = QColor(tok.STATE_RECORD if recording else (color or tok.TEXT))
+    glyph = QColor(26, 26, 26, 245) if plate.lightness() > 200 else QColor(255, 255, 255, 245)
+    grille = QColor(255, 255, 255, 90) if glyph.lightness() < 128 else QColor(26, 26, 26, 90)
+
     mic_w = s * 0.22
     mic_h = s * 0.32
     mic_x = cx - mic_w / 2
@@ -95,17 +163,17 @@ def create_microphone_icon(color: str | None = None, recording: bool = False, si
 
     mic_path = QPainterPath()
     mic_path.addRoundedRect(QRectF(mic_x, mic_y, mic_w, mic_h), mic_w / 2, mic_w / 2)
-    painter.setBrush(QBrush(QColor(255, 255, 255, 245)))
+    painter.setBrush(QBrush(glyph))
     painter.drawPath(mic_path)
 
-    painter.setPen(QPen(QColor(255, 255, 255, 80), 1))
+    painter.setPen(QPen(grille, 1))
     grille_top = mic_y + mic_h * 0.3
     grille_bottom = mic_y + mic_h * 0.7
     for i in range(3):
         y = grille_top + (grille_bottom - grille_top) * i / 2
         painter.drawLine(QPointF(mic_x + mic_w * 0.25, y), QPointF(mic_x + mic_w * 0.75, y))
 
-    arc_pen = QPen(QColor(255, 255, 255, 220), s * 0.035)
+    arc_pen = QPen(glyph, s * 0.035)
     arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     painter.setPen(arc_pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -140,7 +208,76 @@ def create_microphone_icon(color: str | None = None, recording: bool = False, si
             )
 
     painter.end()
-    return QIcon(pixmap)
+    pixmap.setDevicePixelRatio(1.0)
+    return pixmap
+
+
+def _icon_pixel_sizes(size: int) -> list[int]:
+    sizes = {16, 20, 24, 32, size}
+    small = _windows_small_icon_px()
+    if small is not None:
+        sizes.add(small)
+    return sorted(s for s in sizes if 16 <= s <= max(size, 16))
+
+
+def create_microphone_icon(color: str | None = None, recording: bool = False, size: int = 64) -> QIcon:
+    icon = QIcon()
+    for px in _icon_pixel_sizes(size):
+        icon.addPixmap(_microphone_pixmap(color, recording, px))
+    return icon
+
+
+class _TrayMicrophoneEngine(QIconEngine):
+    """Hand Windows a shell-sized bitmap at 1x.
+
+    QIcon.pixmap() otherwise multiplies by the screen scale. On a 200% display
+    the tray asks for 32px and receives a 64px image at devicePixelRatio 2,
+    and the notification area draws nothing.
+    """
+
+    def __init__(self, color: str | None = None, recording: bool = False):
+        super().__init__()
+        self._color = color
+        self._recording = recording
+
+    def clone(self):
+        return _TrayMicrophoneEngine(self._color, self._recording)
+
+    def availableSizes(self, mode, state):
+        metric = _windows_small_icon_px() or 16
+        return [QSize(side, side) for side in sorted({16, 32, metric})]
+
+    def actualSize(self, size, mode, state):
+        metric = _windows_small_icon_px()
+        if metric is None:
+            side = max(size.width(), size.height())
+        else:
+            side = metric
+        return QSize(side, side)
+
+    def pixmap(self, size, mode, state):
+        side = max(16, int(min(size.width(), size.height()) or 16))
+        return _microphone_pixmap(self._color, self._recording, side)
+
+    def scaledPixmap(self, size, mode, state, scale):
+        # Default engine does pixmap(size * scale), which reintroduces the 2x bitmap.
+        del scale
+        return self.pixmap(size, mode, state)
+
+    def paint(self, painter, rect, mode, state):
+        side = max(16, int(min(rect.width(), rect.height())))
+        painter.drawPixmap(rect, self.pixmap(QSize(side, side), mode, state))
+
+
+def _fresh_microphone_icon(kind: str) -> QIcon:
+    """A new QIcon each call. Reusing one cache key makes Windows ignore NIM_MODIFY."""
+    from voiceink.ui import design_tokens as tok
+
+    if kind == "recording":
+        return QIcon(_TrayMicrophoneEngine(recording=True))
+    if kind == "attention":
+        return QIcon(_TrayMicrophoneEngine(color=tok.ATTENTION, recording=False))
+    return QIcon(_TrayMicrophoneEngine())
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -156,7 +293,7 @@ class TrayIcon(QSystemTrayIcon):
 
         self._icon_kind = "normal"
         self._rebuild_icons()
-        self.setIcon(self._normal_icon)
+        self._apply_icon_kind("normal")
         self._idle_tooltip = "VoiceInk - 就绪"
         self._status_summary = "就绪"
         self.setToolTip(self._idle_tooltip)
@@ -178,28 +315,58 @@ class TrayIcon(QSystemTrayIcon):
 
     def _apply_icon_kind(self, kind: str) -> None:
         self._icon_kind = kind
-        if kind == "recording":
-            self.setIcon(self._recording_icon)
-        elif kind == "attention":
-            self.setIcon(self._attention_icon)
-        else:
-            self.setIcon(self._normal_icon)
+        # A newly painted icon changes the cache key. Windows ignores
+        # NIM_MODIFY when Qt repeats the QIcon it already failed to draw,
+        # which leaves a blank slot after the tooltip already says 就绪.
+        self.setIcon(_fresh_microphone_icon(kind))
+
+    def show(self) -> None:
+        super().show()
+        self._schedule_icon_republish()
+
+    def _schedule_icon_republish(self) -> None:
+        if sys.platform != "win32":
+            return
+        from PyQt6.QtCore import QTimer
+
+        timers: list[QTimer] = []
+        for delay in (0, 400):
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._republish_icon)
+            timer.start(delay)
+            timers.append(timer)
+        self._icon_republish_timers = timers
+
+    def _republish_icon(self) -> None:
+        self._apply_icon_kind(self._icon_kind)
 
     def reapply_theme(self) -> None:
-        css = _menu_stylesheet()
-        if self._menu is not None:
-            self._menu.setStyleSheet(css)
-        if self._model_menu is not None:
-            self._model_menu.setStyleSheet(css)
+        _paint_menu(self._menu)
+        _paint_menu(self._model_menu)
         kind = getattr(self, "_icon_kind", "normal")
         self._rebuild_icons()
         self._apply_icon_kind(kind)
+        self._publish_window_icon()
+
+    def _publish_window_icon(self) -> None:
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return
+        icon = _fresh_microphone_icon("normal")
+        app.setWindowIcon(icon)
+        for widget in app.topLevelWidgets():
+            try:
+                widget.setWindowIcon(icon)
+            except RuntimeError:
+                continue
 
     def _setup_menu(self):
-        menu_css = _menu_stylesheet()
         menu = QMenu()
         self._menu = menu
-        menu.setStyleSheet(menu_css)
+        _paint_menu(menu)
 
         self._status_action = menu.addAction(self._status_summary)
         self._status_action.setEnabled(False)
@@ -211,14 +378,10 @@ class TrayIcon(QSystemTrayIcon):
         history_action = menu.addAction("历史")
         history_action.triggered.connect(self.history_requested.emit)
 
-        menu.addSeparator()
-
         self._model_menu = menu.addMenu("切换模型")
-        self._model_menu.setStyleSheet(menu_css)
+        _paint_menu(self._model_menu)
         empty = self._model_menu.addAction("加载中...")
         empty.setEnabled(False)
-
-        menu.addSeparator()
 
         self._auto_start_action = menu.addAction("开机自启")
         self._auto_start_action.setCheckable(True)
@@ -239,6 +402,12 @@ class TrayIcon(QSystemTrayIcon):
                 pass
 
         self._model_menu.clear()
+        active_name = ""
+        for model in downloaded_models:
+            if model.get("id") == active_id:
+                active_name = str(model.get("name") or "")
+                break
+        self._model_menu.setTitle(_model_switch_title(active_name))
 
         if not downloaded_models:
             empty = self._model_menu.addAction("暂无已下载模型")
@@ -250,7 +419,7 @@ class TrayIcon(QSystemTrayIcon):
         self._model_group.setExclusive(True)
 
         for m in downloaded_models:
-            action = self._model_menu.addAction(m["name"])
+            action = self._model_menu.addAction(_model_choice_label(m))
             action.setCheckable(True)
             action.setChecked(m["id"] == active_id)
             action.setData(m["id"])
@@ -324,6 +493,9 @@ class TrayIcon(QSystemTrayIcon):
         self._status_action.setText(self._status_summary)
         self._idle_tooltip = f"VoiceInk - {self._status_summary}"
         self.setToolTip(self._idle_tooltip)
+        # Tooltip updates succeed even when the shell never accepted the glyph.
+        # Push the icon again once we know the tray slot exists.
+        self._republish_icon()
 
     def set_activity_tooltip(self, state: str | None):
         """Brief tray hint for background work. None = idle."""

@@ -56,8 +56,9 @@
 
 | 模式 | 说明 |
 |------|------|
-| **跟随系统**（默认） | 按 Windows 浅/深色外观解析有效主题 |
-| **浅色** / **暗色** | 手动覆盖；立即生效，无需重启 |
+| **暗色**（默认） | 固定深色；立即生效，无需重启 |
+| **浅色** | 固定浅色；立即生效，无需重启 |
+| **跟随系统** | 按 Windows 浅/深色外观解析有效主题 |
 
 - 入口：**设置 → 通用 → 外观 → 主题**；偏好键 `appearance.theme_mode`（`system` / `light` / `dark`）
 - 一次作用于主窗口、听写条、托盘菜单（含全局控件样式）
@@ -205,7 +206,7 @@ py -3.10 -m pytest tests/test_readme_features.py tests/test_theme_resolve.py tes
 | **P0** | 粘贴不假成功；持续模式收尾句不丢；加载中不被其它错误盖住 |
 | **P1** | 默认 Alt+Z；下载≠载入有反馈；润色失败降级原文；加载失败听写条变红 |
 | **P2** | Esc 结束持续监听；30s 无语音提示；混合采集系统声失败有警告；保存设置时队列确认 |
-| **UI** | 默认 `appearance.theme_mode=system`；切换浅/暗/系统后主窗口、听写条、托盘一致换肤且无需重启；设置控件对齐在 light/dark 下仍成立 |
+| **UI** | 默认 `appearance.theme_mode=dark`；切换浅/暗/系统后主窗口、听写条、托盘一致换肤且无需重启；设置控件对齐在 light/dark 下仍成立 |
 
 变更 `app.py`、触发模式、持续模式或模型就绪流程时，**必须**更新本 README 相关段落并扩展 `tests/test_readme_features.py`。变更主题 / tokens / 四表面样式时，同步 [`design-system/voiceink/MASTER.md`](design-system/voiceink/MASTER.md) 与 `tests/test_theme_resolve.py` / `tests/test_ui_styles.py`。
 
@@ -248,7 +249,7 @@ A: 仅在本机 `~/.voiceink/history.db` 保存文本历史与少量元数据（
 
 **Q: 如何切换浅色 / 暗色？**
 
-A: 设置 → 通用 → 外观 → 主题。默认「跟随系统」；也可固定「浅色」或「暗色」。偏好写入 `~/.voiceink/config.json` 的 `appearance.theme_mode`，重启后仍生效。
+A: 设置 → 通用 → 外观 → 主题。默认「暗色」；也可固定「浅色」或「跟随系统」。偏好写入 `~/.voiceink/config.json` 的 `appearance.theme_mode`，重启后仍生效。
 
 **Q: Linux / macOS 权限？**  
 A: Linux 装 `xdotool`；macOS 在辅助功能中授权 VoiceInk。

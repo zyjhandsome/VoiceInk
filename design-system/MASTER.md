@@ -170,7 +170,7 @@ Effective theme is always `light` or `dark`.
 - Settings pages: 20px page title, purpose sentence, grouped 14px section labels.
 - Engine hero card shows the *load* state (「已载入 · 可用」/「模型载入中…」) beside the「当前」badge; downloaded ≠ usable.
 - Polish page keeps the before/after example visible while the feature is off.
-- History list: 58px rows (`HH:MM` mono + preview / app · source · N 段), non-selectable day headers (今天 / 昨天 / date), selected row = `ACCENT_SOFT` wash + 3px `ACCENT` left bar.
+- History list: 58px rows (`HH:MM` mono + preview / app · source · N 段), non-selectable day headers (今天 / 昨天 / date), selected row = `ACCENT_SOFT` wash + 3px `ACCENT` left bar. No rounded accent capsule around the row.
 - History detail: title is the session identity (day + time), stats right-aligned, metadata chips, then a「润色 / 原文」segmented view toggle (only when a polished text exists). Segments render as numbered blocks with `HH:MM:SS · duration` captions; search hits highlighted with `AMBER_SOFT`.
 - History action bar is fixed (buttons disable, never disappear): primary copy on the left,「导出」「删除」on the right. Multi-select keeps「复制」enabled and joins each session's effective text, oldest first, with a blank line between sessions.「清空全部历史」is a quiet text action on the list summary row, disabled when there is nothing to clear, and confirms with an in-app card (取消 / 清空). History preferences stay in Settings; the empty state still offers「设置历史记录」when recording is off.
 - History list scrollbar is a single transparent-track thumb. The splitter handle stays transparent at rest so it does not read as a second scrollbar.

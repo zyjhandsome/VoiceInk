@@ -350,6 +350,45 @@ def test_clear_all_is_a_quiet_summary_action(qapp):
         window.close()
 
 
+def test_selected_session_row_is_not_an_accent_capsule(qapp):
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        item_css = window._session_list.styleSheet().split("QScrollBar")[0]
+        assert "border-radius" not in item_css
+        assert "outline: none" in item_css
+    finally:
+        window.close()
+
+
+def test_selected_rows_keep_an_accent_bar_when_multi_selected(qapp):
+    from voiceink.ui import design_tokens as tok
+
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        items = window.session_items()
+        assert len(items) >= 2
+        items[0].setSelected(True)
+        items[1].setSelected(True)
+        qapp.processEvents()
+
+        selected_css = [
+            window._session_list.itemWidget(item).styleSheet() for item in items
+        ]
+        bar = f"border-left: {tok.NAV_SELECTED_BAR_PX}px solid {tok.ACCENT}"
+        assert all(bar in css for css in selected_css)
+        assert all(tok.ACCENT_SOFT in css for css in selected_css)
+        assert all("border-radius: 0" in css for css in selected_css)
+
+        items[1].setSelected(False)
+        qapp.processEvents()
+        idle = window._session_list.itemWidget(items[1]).styleSheet()
+        assert tok.ACCENT_SOFT not in idle
+        assert f"solid {tok.ACCENT}" not in idle
+        assert "solid transparent" in idle
+    finally:
+        window.close()
+
+
 def test_history_splitter_does_not_look_like_a_second_scrollbar(qapp):
     window = HistoryWindow(FakeHistoryStore())
     try:

@@ -756,7 +756,7 @@ class SettingsWindow(QWidget):
         self._set_history_limit_rows_visible(self._history_enabled_row.isChecked())
 
         theme_mode = normalize_theme_mode(
-            self._config.get("appearance.theme_mode", "system")
+            self._config.get("appearance.theme_mode", "dark")
         )
         idx = self._theme_combo.findData(theme_mode)
         if idx < 0:

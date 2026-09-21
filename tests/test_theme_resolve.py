@@ -30,11 +30,11 @@ class TestResolveEffectiveTheme:
 
 
 class TestThemeConfigDefault:
-    def test_default_theme_mode_is_system(self, tmp_path: Path):
+    def test_default_theme_mode_is_dark(self, tmp_path: Path):
         from voiceink.config import Config
 
         cfg = Config(config_dir=tmp_path)
-        assert cfg.get("appearance.theme_mode") == "system"
+        assert cfg.get("appearance.theme_mode") == "dark"
 
     def test_theme_mode_persists_across_reload(self, tmp_path: Path):
         from voiceink.config import Config
@@ -451,7 +451,7 @@ class TestSurfaceThemeReapply:
         from voiceink.ui import tray_icon as tray_mod
         from voiceink.ui.tray_icon import TrayIcon
 
-        src = inspect.getsource(tray_mod.create_microphone_icon)
+        src = inspect.getsource(tray_mod._microphone_pixmap)
         assert "#FF6961" not in src
         assert "#D64545" not in src
         assert "STATE_RECORD" in src

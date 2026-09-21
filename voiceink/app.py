@@ -956,11 +956,11 @@ class App(QObject):
                 return default
 
         config = _attr("_config")
-        theme_mode = "system"
+        theme_mode = "dark"
         if mode is not None:
             theme_mode = mode
         elif config is not None:
-            theme_mode = config.get("appearance.theme_mode", "system")
+            theme_mode = config.get("appearance.theme_mode", "dark")
 
         surfaces = [
             surface

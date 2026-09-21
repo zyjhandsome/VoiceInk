@@ -418,19 +418,25 @@ class HistoryWindow(QWidget):
                 QListWidget::item {{
                     color: transparent;
                     padding: 0;
-                    border-left: 3px solid transparent;
-                    border-radius: {tok.RADIUS_SM}px;
                     margin: 1px 0;
+                    border: none;
+                    outline: none;
                 }}
-                QListWidget::item:selected {{
+                QListWidget::item:selected,
+                QListWidget::item:selected:focus,
+                QListWidget::item:selected:!active {{
                     background: {tok.ACCENT_SOFT};
-                    border-left: 3px solid {tok.ACCENT};
                     color: transparent;
+                    border: none;
+                    border-left: 3px solid {tok.ACCENT};
+                    outline: none;
                 }}
                 QListWidget::item:hover:!selected {{
                     background: {tok.ROW_HOVER};
+                    border: none;
+                    outline: none;
                 }}
-                QListWidget:focus {{ border: none; }}
+                QListWidget:focus {{ border: none; outline: none; }}
                 QScrollBar:vertical {{
                     background: transparent;
                     width: 6px;
@@ -576,6 +582,36 @@ class HistoryWindow(QWidget):
                     lab.setStyleSheet(time_css)
                 else:
                     lab.setStyleSheet(meta_css)
+        self._sync_row_selection()
+
+    def _paint_stream_row(self, row: QWidget, *, selected: bool) -> None:
+        from voiceink.ui import design_tokens as tok
+
+        # The item widget covers QListWidget::item:selected, so the wash and
+        # left bar have to live on the row itself. A transparent bar on the
+        # idle row keeps the text from jumping when the selection moves.
+        bg = tok.ACCENT_SOFT if selected else "transparent"
+        bar = tok.ACCENT if selected else "transparent"
+        row.setStyleSheet(
+            "QWidget#historyStreamRow {"
+            f" background: {bg};"
+            " border: none;"
+            f" border-left: {tok.NAV_SELECTED_BAR_PX}px solid {bar};"
+            " border-radius: 0;"
+            "}"
+        )
+
+    def _sync_row_selection(self) -> None:
+        if not hasattr(self, "_session_list"):
+            return
+        selected = set(self._selected_session_ids())
+        for i in range(self._session_list.count()):
+            item = self._session_list.item(i)
+            row = self._session_list.itemWidget(item)
+            if row is None or row.objectName() != "historyStreamRow":
+                continue
+            session_id = item.data(Qt.ItemDataRole.UserRole)
+            self._paint_stream_row(row, selected=bool(session_id) and session_id in selected)
 
     def _current_selection_has_polished(self) -> bool:
         selected = self._selected_session_ids()
@@ -901,6 +937,8 @@ class HistoryWindow(QWidget):
 
     def _build_stream_row(self, session: SessionSummary) -> QWidget:
         row = QWidget()
+        row.setObjectName("historyStreamRow")
+        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         lay = QVBoxLayout(row)
         lay.setContentsMargins(10, 8, 10, 8)
         lay.setSpacing(3)
@@ -1054,6 +1092,7 @@ class HistoryWindow(QWidget):
         return "".join(rows)
 
     def _on_selection_changed(self) -> None:
+        self._sync_row_selection()
         selected = self._selected_session_ids()
         count = len(selected)
         has_polished = False
