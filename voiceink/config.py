@@ -14,7 +14,7 @@ from voiceink.speech_recognizer import DEFAULT_MODEL_ID, LEGACY_DEFAULT_MODEL_ID
 log = logging.getLogger("VoiceInk")
 
 # Bump when adding one-time STT default migrations for existing installs.
-STT_MODEL_MIGRATION_VERSION = 1
+STT_MODEL_MIGRATION_VERSION = 2
 
 # Keys left in user configs by older test runs (stripped on load).
 _TEST_POLLUTION_KEYS = frozenset({"test_key", "atomic_test"})
@@ -141,7 +141,7 @@ class Config:
         return bool(dirty)
 
     def _migrate_stt_model(self) -> None:
-        """One-time upgrade: former app defaults → FireRedASR2."""
+        """One-time upgrade: former app defaults → Fun-ASR-Nano."""
         stt = self._config.setdefault("stt", {})
         if stt.get("migration_version", 0) >= STT_MODEL_MIGRATION_VERSION:
             return

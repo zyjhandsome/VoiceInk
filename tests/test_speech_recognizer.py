@@ -13,11 +13,11 @@ class TestSampleRate:
 
 
 class TestDefaultModel:
-    def test_default_model_is_fireredasr2_ctc(self):
-        assert DEFAULT_MODEL_ID == "fireredasr2-ctc"
+    def test_default_model_is_funasr_nano(self):
+        assert DEFAULT_MODEL_ID == "funasr-nano"
         info = get_model_info(DEFAULT_MODEL_ID)
         assert info is not None
-        assert info["name"] == "FireRedASR2"
+        assert info["name"] == "Fun-ASR-Nano"
 
 
 class TestNormalizeAsrOutput:
@@ -138,6 +138,17 @@ class TestModelRegistryContent:
         assert model["loader"] == "qwen3_asr"
         assert model["size_mb"] == 2400
 
+    def test_funasr_nano_model(self):
+        model = get_model_info("funasr-nano")
+        assert model is not None
+        assert model["id"] == "funasr-nano"
+        assert model["loader"] == "funasr_nano"
+        assert model["hf_repo"] == "csukuangfj/sherpa-onnx-funasr-nano-int8-2025-12-30"
+        assert model["dir_name"] == "sherpa-onnx-funasr-nano-int8-2025-12-30"
+        assert "encoder_adaptor.int8.onnx" in model["files"]
+        assert "Qwen3-0.6B/vocab.json" in model["files"]
+        assert DEFAULT_MODEL_ID == "funasr-nano"
+
     def test_unknown_model(self):
         model = get_model_info("nonexistent_model")
         assert model is None
@@ -211,6 +222,12 @@ class TestModelLanguages:
     def test_zipformer_chinese_only(self):
         model = get_model_info("zipformer-ctc-zh")
         assert model["languages"] == "中"
+
+    def test_funasr_nano_languages(self):
+        model = get_model_info("funasr-nano")
+        assert "中" in model["languages"]
+        assert "英" in model["languages"]
+        assert "日" in model["languages"]
 
 
 class TestResolveStartupModelId:
@@ -389,6 +406,59 @@ class TestTranscribeWorkerRun:
         results, errors = self._run(worker)
         assert results == []
         assert errors and "识别失败" in errors[0]
+
+
+class TestCreateRecognizer:
+    def _install_sherpa(self, monkeypatch, **methods):
+        import sys
+        import types
+
+        fake = types.ModuleType("sherpa_onnx")
+
+        class OfflineRecognizer:
+            pass
+
+        for name, fn in methods.items():
+            setattr(OfflineRecognizer, name, classmethod(fn))
+        fake.OfflineRecognizer = OfflineRecognizer
+        monkeypatch.setitem(sys.modules, "sherpa_onnx", fake)
+        return fake
+
+    def test_funasr_nano_uses_official_factory(self, tmp_path, monkeypatch):
+        from voiceink import speech_recognizer as sr
+
+        captured = {}
+
+        def from_funasr_nano(cls, **kwargs):
+            captured.update(kwargs)
+            return object()
+
+        self._install_sherpa(monkeypatch, from_funasr_nano=from_funasr_nano)
+        monkeypatch.setattr(sr, "get_model_dir", lambda mid: tmp_path)
+        sr._create_recognizer("funasr-nano", 4)
+        assert captured["encoder_adaptor"] == str(tmp_path / "encoder_adaptor.int8.onnx")
+        assert captured["llm"] == str(tmp_path / "llm.int8.onnx")
+        assert captured["embedding"] == str(tmp_path / "embedding.int8.onnx")
+        assert captured["tokenizer"] == str(tmp_path / "Qwen3-0.6B")
+        assert captured["num_threads"] == 4
+
+    def test_qwen3_uses_official_factory(self, tmp_path, monkeypatch):
+        from voiceink import speech_recognizer as sr
+
+        captured = {}
+
+        def from_qwen3_asr(cls, **kwargs):
+            captured.update(kwargs)
+            return object()
+
+        self._install_sherpa(monkeypatch, from_qwen3_asr=from_qwen3_asr)
+        monkeypatch.setattr(sr, "get_model_dir", lambda mid: tmp_path)
+        sr._create_recognizer("qwen3-asr-0.6b", 2)
+        assert captured["conv_frontend"] == str(tmp_path / "conv_frontend.onnx")
+        assert captured["encoder"] == str(tmp_path / "encoder.int8.onnx")
+        assert captured["decoder"] == str(tmp_path / "decoder.int8.onnx")
+        assert captured["tokenizer"] == str(tmp_path / "tokenizer")
+        assert captured["num_threads"] == 2
 
 
 class TestModelLoadWorkerRun:

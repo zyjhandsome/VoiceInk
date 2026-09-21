@@ -403,7 +403,7 @@ class App(QObject):
             if not self._recognizer.is_loading:
                 self._tray.showMessage(
                     "VoiceInk",
-                    "语音模型未就绪。请在设置 → 引擎 中下载 FireRedASR2 并等待加载完成。",
+                    "语音模型未就绪。请在设置 → 引擎 中下载默认模型并等待加载完成。",
                     QSystemTrayIcon.MessageIcon.Warning,
                     6000,
                 )

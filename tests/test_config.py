@@ -51,7 +51,7 @@ class TestConfigDefaults:
 
     def test_default_model_id(self):
         assert DEFAULT_CONFIG["stt"]["model_id"] == DEFAULT_MODEL_ID
-        assert DEFAULT_MODEL_ID == "fireredasr2-ctc"
+        assert DEFAULT_MODEL_ID == "funasr-nano"
 
     def test_default_num_threads(self):
         assert DEFAULT_CONFIG["stt"]["num_threads"] == 4

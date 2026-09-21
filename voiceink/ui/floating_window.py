@@ -519,7 +519,7 @@ class FloatingWindow(QWidget):
         self._set_state("模型载入中", STATE_RECOGNIZE, pulse=False)
         self._waveform.hide()
         self._apply_excerpt(
-            detail or "模型文件已下载，正在载入内存（FireRedASR2 约需 10-40 秒）…"
+            detail or "模型文件已下载，正在载入内存，请稍候…"
         )
         self._present()
 

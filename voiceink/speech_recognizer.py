@@ -11,10 +11,10 @@ log = logging.getLogger("VoiceInk")
 SAMPLE_RATE = 16000
 
 # Default STT model for new installs, config fallback, and release EXE bundling.
-DEFAULT_MODEL_ID = "fireredasr2-ctc"
+DEFAULT_MODEL_ID = "funasr-nano"
 
 # Former app-wide defaults; upgraded to DEFAULT_MODEL_ID once (see config.py migration).
-LEGACY_DEFAULT_MODEL_IDS = frozenset({"qwen3-asr-0.6b"})
+LEGACY_DEFAULT_MODEL_IDS = frozenset({"qwen3-asr-0.6b", "fireredasr2-ctc"})
 
 # Qwen3-ASR may emit XML-style delimiters; FireRedASR2 emits <sil>, <zh>, etc.
 _ASR_TAG_PATTERNS = (
@@ -166,6 +166,26 @@ MODEL_REGISTRY = [
             "tokenizer/vocab.json",
             "tokenizer/merges.txt",
             "tokenizer/tokenizer_config.json",
+        ],
+    },
+    {
+        "id": "funasr-nano",
+        "name": "Fun-ASR-Nano",
+        "description": "FunASR 旗舰，SenseVoice 编码 + Qwen3",
+        "accuracy": 5,
+        "speed": 2,
+        "languages": "中/英/日/方言",
+        "size_mb": 950,
+        "loader": "funasr_nano",
+        "hf_repo": "csukuangfj/sherpa-onnx-funasr-nano-int8-2025-12-30",
+        "dir_name": "sherpa-onnx-funasr-nano-int8-2025-12-30",
+        "files": [
+            "encoder_adaptor.int8.onnx",
+            "llm.int8.onnx",
+            "embedding.int8.onnx",
+            "Qwen3-0.6B/vocab.json",
+            "Qwen3-0.6B/merges.txt",
+            "Qwen3-0.6B/tokenizer.json",
         ],
     },
 ]
@@ -442,38 +462,23 @@ def _create_recognizer(model_id: str, num_threads: int):
             debug=False,
         )
     elif loader == "qwen3_asr":
-        # Workaround: sherpa-onnx 1.12.35 from_qwen3_asr() passes unsupported
-        # 'hotwords' kwarg to C++ OfflineQwen3ASRModelConfig, causing a crash.
-        # Build the config objects manually to bypass the bug.
-        from sherpa_onnx import (
-            OfflineQwen3ASRModelConfig,
-            OfflineModelConfig,
-            OfflineRecognizerConfig,
-            FeatureExtractorConfig,
-        )
-
-        qwen3_cfg = OfflineQwen3ASRModelConfig(
+        return sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
             conv_frontend=str(model_dir / "conv_frontend.onnx"),
             encoder=str(model_dir / "encoder.int8.onnx"),
             decoder=str(model_dir / "decoder.int8.onnx"),
             tokenizer=str(model_dir / "tokenizer"),
-        )
-        model_cfg = OfflineModelConfig(
-            qwen3_asr=qwen3_cfg,
             num_threads=num_threads,
             debug=False,
-            provider="cpu",
         )
-        feat_cfg = FeatureExtractorConfig(sampling_rate=16000, feature_dim=128)
-        rec_cfg = OfflineRecognizerConfig(
-            feat_config=feat_cfg,
-            model_config=model_cfg,
-            decoding_method="greedy_search",
+    elif loader == "funasr_nano":
+        return sherpa_onnx.OfflineRecognizer.from_funasr_nano(
+            encoder_adaptor=str(model_dir / "encoder_adaptor.int8.onnx"),
+            llm=str(model_dir / "llm.int8.onnx"),
+            embedding=str(model_dir / "embedding.int8.onnx"),
+            tokenizer=str(model_dir / "Qwen3-0.6B"),
+            num_threads=num_threads,
+            debug=False,
         )
-        rec = sherpa_onnx.OfflineRecognizer.__new__(sherpa_onnx.OfflineRecognizer)
-        rec.recognizer = sherpa_onnx.lib._sherpa_onnx.OfflineRecognizer(rec_cfg)
-        rec.config = rec_cfg
-        return rec
     else:
         raise ValueError(f"不支持的 loader: {loader}")
 

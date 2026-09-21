@@ -2,7 +2,7 @@
 
 本地离线语音转文字：采集**麦克风** / **电脑播放声** / **混合** → 本地 ASR 识别 →（可选）大模型润色 → 自动粘贴到光标位置。默认 **自动持续转写**（按住快捷键开始整场监听，停顿后自动出字）；也可切换为 **按住说话、松开识别**。
 
-版本号以 **`voiceink/version.py`** 中的 `__version__` 为准（当前 **1.3.9**）；安装包文件名、Inno 元数据与 Windows 下 `VoiceInk.exe` 属性均与之同步。
+版本号以 **`voiceink/version.py`** 中的 `__version__` 为准（当前 **1.4.0**）；安装包文件名、Inno 元数据与 Windows 下 `VoiceInk.exe` 属性均与之同步。
 
 **文档导航**
 
@@ -31,14 +31,15 @@
 |------|------|
 | 仅麦克风 / 仅电脑播放 / 混合 | 16 kHz 单声道；设置中 **测试声音** 验证设备 |
 
-- 引擎 **sherpa-onnx**，本地离线识别；内置 **8 款模型**，默认 **FireRedASR2**（约 740 MB）
-- **已下载 ≠ 已载入**：每次冷启动须载入内存（FireRedASR2 约 **10–40 秒**），等托盘「就绪」后再用
+- 引擎 **sherpa-onnx**（≥ 1.13.8），本地离线识别；内置 **9 款模型**，默认 **Fun-ASR-Nano**（约 950 MB）
+- **已下载 ≠ 已载入**：每次冷启动须载入内存（Fun-ASR-Nano 约数十秒），等托盘「就绪」后再用
 - 持续模式按停顿 **VAD 切分**；结束监听会 **flush 收尾句**
 - 结果自动去掉 `<asr_text>`、`<sil>` 等标记
 
 | 模型 | 特点 | 约体积 |
 |------|------|--------|
-| **FireRedASR2**（默认） | 中文准确率最高，含方言 | 740 MB |
+| **Fun-ASR-Nano**（默认） | FunASR 旗舰，中/英/日 + 方言 | 950 MB |
+| FireRedASR2 | 中文准确率最高，含方言 | 740 MB |
 | FireRedASR2 AED | 更高精度，较慢 | 1.2 GB |
 | Qwen3-ASR 1.7B / 0.6B | 阿里大模型 ASR | 2.4 GB / 983 MB |
 | Paraformer 中文 / 三语 | 高精度 | 240 MB |
@@ -103,7 +104,7 @@ pip install -r requirements.txt   # PyQt6、sherpa-onnx、sounddevice、pynput �
 
 ### 安装（Windows，推荐）
 
-安装 **`dist/VoiceInk-Setup-1.3.9.exe`**（Git LFS，约 498 MB；克隆后 `git lfs pull`）。无安装包见 [从源码打包](#从源码打包)。
+安装 **[Releases](https://github.com/zyjhandsome/VoiceInk/releases)** 中的 **`VoiceInk-Setup-1.4.0.exe`**（约 500 MB）。无安装包见 [从源码打包](#从源码打包)。
 
 ### 从源码运行
 
@@ -168,7 +169,7 @@ py -3.10 run.py
 
 ## 从源码打包
 
-**Windows 10/11**，Python 3.10+，本地须有 **FireRedASR2** 模型。生成安装包还需 [Inno Setup 6](https://jrsoftware.org/isdl.php)。
+**Windows 10/11**，Python 3.10+，本地须有 **Fun-ASR-Nano** 模型。生成安装包还需 [Inno Setup 6](https://jrsoftware.org/isdl.php)。
 
 ```bash
 pip install -r requirements.txt
@@ -208,7 +209,7 @@ py -3.10 -m pytest tests/test_readme_features.py tests/test_theme_resolve.py tes
 ## 常见问题
 
 **Q: 选好模型了，为什么启动还要等很久？**  
-A: **下载/选好** ≠ **载入内存**；FireRedASR2 冷启动约 10–40 秒。等托盘「就绪」再按热键。
+A: **下载/选好** ≠ **载入内存**；默认 Fun-ASR-Nano 冷启动约数十秒。等托盘「就绪」再按热键。
 
 **Q: 托盘已就绪，听写条还在加载？**  
 A: 正常应同步；以听写条为准，加载完成前勿按热键。
@@ -228,11 +229,11 @@ A: 按住说话需约 **0.18 秒**，持续转写约 **0.30 秒**；短按不会
 **Q: 结果里有 `<asr_text>` / `<sil>`？**  
 A: 应自动清洗；若仍出现请升级至最新版。
 
-**Q: 打包提示缺少 FireRedASR2？**  
+**Q: 打包提示缺少 Fun-ASR-Nano？**  
 A: 运行 `python voiceink_build/download_bundle_model_for_build.py`。
 
 **Q: 识别不准？**  
-A: 可试 Qwen3-ASR、FireRedASR2 AED；要快可换 SenseVoice。
+A: 可试 FireRedASR2、Qwen3-ASR、FireRedASR2 AED；要快可换 SenseVoice。
 
 **Q: 无法自动粘贴？**  
 A: 管理员终端、密码框等会拦截；会提示「已复制」，请手动 Ctrl+V。
