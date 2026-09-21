@@ -28,6 +28,7 @@ from voiceink.ui.settings_components import (
     group_divider,
     info_callout,
     labeled_row,
+    page_header,
     settings_group,
     settings_section,
     stacked_field_row,
@@ -37,6 +38,7 @@ from voiceink.ui.settings_components import (
 def build_general_page(win) -> QWidget:
     """Prototype v3 layout: stacked 录音 → 音频 → 偏好 cards (top to bottom)."""
     page = SettingsPage()
+    page.add(page_header("通用", "按你的习惯设置听写。更改会自动保存。"))
 
     # ── 录音 ──
     record_card = settings_group()
@@ -215,7 +217,7 @@ def build_general_page(win) -> QWidget:
     prefs_lay.addWidget(win._restore_clipboard_row)
     prefs_lay.addWidget(group_divider())
 
-    win._history_enabled_row = ToggleOptionRow("保存语音历史")
+    win._history_enabled_row = ToggleOptionRow("保存语音历史", "在本机保存转写文本，便于搜索和复制；不保存音频")
     win._history_retention_days_spin = QSpinBox()
     win._history_retention_days_spin.setRange(1, 3650)
     win._history_retention_days_spin.setSuffix(" 天")

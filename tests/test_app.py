@@ -37,6 +37,14 @@ class TestIslandUserCopy:
         assert "设置 → 引擎" in App.ERROR_HINTS["模型未就绪"]
         assert "设置 → 引擎" in App.ERROR_HINTS["模型未下载"]
 
+    def test_model_load_progress_copy_is_single_line(self):
+        with app_harness() as h:
+            h["recorder"].is_continuous = False
+            h["app"]._on_model_load_progress("正在加载 Fun-ASR-Nano…")
+            detail = h["floating"].show_model_loading.call_args[0][0]
+            assert "\n" not in detail
+            assert "正在加载 Fun-ASR-Nano…" in detail
+
     def test_loading_status_uses_zai_ru_vocab(self):
         with app_harness() as h:
             h["recognizer"].is_loading = True

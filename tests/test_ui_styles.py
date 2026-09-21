@@ -147,7 +147,7 @@ class TestSettingsStyles:
             import voiceink.ui.settings_styles as st
 
             assert card._delete_btn is not None
-            assert card._delete_btn.styleSheet() == st.BTN_GHOST_SM
+            assert card._delete_btn.styleSheet() == st.BTN_DANGER_SM
         finally:
             card.close()
 
@@ -159,13 +159,14 @@ class TestSidebarVisualContracts:
         from voiceink.ui import design_tokens as t
 
         t.activate("light")
-        assert t.NAV_BG.upper() == t.BG.upper() == "#FFFFFF"
+        assert t.NAV_BG.upper() == "#F6F7F8"
+        assert t.BG.upper() == "#FFFFFF"
 
     def test_nav_btn_style_uses_single_left_bar_and_soft_wash(self):
         from voiceink.ui.design_tokens import ACCENT, NAV_SELECTED_BG
         from voiceink.ui.settings_components import NAV_BTN_STYLE
 
-        assert "font-size: 13px" in NAV_BTN_STYLE
+        assert "font-size: 14px" in NAV_BTN_STYLE
         # Prototype v3: left bar + soft wash + accent label.
         checked_block = NAV_BTN_STYLE.split(":checked")[1].split("}")[0]
         assert f"background: {NAV_SELECTED_BG}" in checked_block
@@ -175,15 +176,15 @@ class TestSidebarVisualContracts:
         assert "border: 2px solid" not in checked_block
 
     def test_page_title_avoids_negative_tracking(self):
-        from voiceink.ui.design_tokens import TEXT_DIM
+        from voiceink.ui.design_tokens import TEXT_SEC
         from voiceink.ui.settings_components import PAGE_TITLE, SECTION_LABEL
 
         assert "font-size: 20px" in PAGE_TITLE
         assert "font-weight: 600" in PAGE_TITLE
         assert "letter-spacing: -" not in PAGE_TITLE
         assert "letter-spacing: 0" in PAGE_TITLE
-        assert TEXT_DIM.lower() in SECTION_LABEL.lower()
-        assert "font-size: 12px" in SECTION_LABEL
+        assert TEXT_SEC.lower() in SECTION_LABEL.lower()
+        assert "font-size: 14px" in SECTION_LABEL
 
     def test_group_and_hero_surfaces_are_bordered_cards(self):
         from voiceink.ui.design_tokens import BORDER, RADIUS_LG, SURFACE
@@ -292,13 +293,15 @@ class TestClassicDesktopTokens:
 
         light = tokens_for("light")
         dark = tokens_for("dark")
-        assert light["BG"] == light["SURFACE"] == light["NAV_BG"] == "#FFFFFF"
-        assert dark["BG"] == dark["SURFACE"] == dark["NAV_BG"] == "#181818"
+        assert light["BG"] == light["SURFACE"] == "#FFFFFF"
+        assert dark["BG"] == dark["SURFACE"] == "#181818"
+        assert light["NAV_BG"] == "#F6F7F8"
+        assert dark["NAV_BG"] == "#141618"
         assert light["PRIMARY_CONTAINER"] == "#0D0D0D"
         assert light["PRIMARY_ON"] == "#FFFFFF"
         assert dark["PRIMARY_CONTAINER"] == "#FFFFFF"
         assert dark["PRIMARY_ON"] == "#0D0D0D"
-        assert t.SIDEBAR_WIDTH == 160
+        assert t.SIDEBAR_WIDTH == 184
         t.activate("dark")
         assert t.STATE_LISTEN == t.GREEN
         t.activate("light")

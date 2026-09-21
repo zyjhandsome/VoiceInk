@@ -1,5 +1,9 @@
 # Design System Master File
 
+> **2026-09-21 desktop redesign:** Current UX decisions and audit are in
+> [`../docs/ux-redesign.md`](../docs/ux-redesign.md). This revision supersedes older
+> prototype and island layouts. Runtime tokens remain in `voiceink/ui/design_tokens.py`.
+
 > **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
 > If that file exists, its rules **override** this Master file.
 > If not, strictly follow the rules below.
@@ -41,6 +45,7 @@ Effective theme is always `light` or `dark`.
 | Background | `#FFFFFF` | `BG` / `--color-background` |
 | Surface | `#FFFFFF` | `SURFACE` |
 | Surface Muted | `#F7F7F7` | `SURFACE_PEARL` |
+| Navigation surface | `#F6F7F8` | `NAV_BG` |
 | Foreground | `#111827` | `TEXT` / `--color-foreground` |
 | Foreground Secondary | `#4B5563` | `TEXT_SEC` |
 | Foreground Dim | `#667085` | `TEXT_DIM` |
@@ -51,7 +56,7 @@ Effective theme is always `light` or `dark`.
 | Focus Ring | `#2563EB` | `ACCENT_FOCUS` |
 | Nav / row selected | `rgba(13,13,13,0.06)` | `NAV_SELECTED_BG` / `ROW_SELECTED` |
 
-**Notes:** Chrome and primary fill are ink (`#0D0D0D` on `#FFFFFF`); blue remains leftover focus/accent only. Recording red is semantic only. Flush white surfaces — no cool gray page wash.
+**Notes:** Ink primary actions; blue for keyboard focus and links. A subtle neutral rail separates navigation from the reading surface. Recording red is semantic only.
 
 ### Color Palette — Dark
 
@@ -67,7 +72,9 @@ Effective theme is always `light` or `dark`.
 | Accent Soft | `rgba(59, 130, 246, 0.16)` | `ACCENT_SOFT` |
 | Background | `#181818` | `BG` |
 | Surface | `#181818` | `SURFACE` |
-| Surface Muted | `#181818` | `SURFACE_PEARL` |
+| Surface Muted | `#222528` | `SURFACE_PEARL` |
+| Navigation surface | `#141618` | `NAV_BG` |
+| Input surface | `#202326` | `INPUT_BG` |
 | Foreground | `#F9FAFB` | `TEXT` |
 | Foreground Secondary | `#D1D5DB` | `TEXT_SEC` |
 | Foreground Dim | `#9CA3AF` | `TEXT_DIM` |
@@ -93,20 +100,20 @@ Effective theme is always `light` or `dark`.
 
 ### Typography
 
-- **UI Font resolve (runtime):** prefer `Segoe UI Variable` when installed, else `Microsoft YaHei UI`, else `Segoe UI` (`resolve_ui_font_family` / `FONT_STACK`)
-- **UI Font stack (docs):** `"Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI"`
+- **UI Font resolve (runtime):** prefer `Microsoft YaHei UI` / `Microsoft YaHei` so QSS (single family) keeps CJK; skip Latin-only families such as `Segoe UI Variable` when a CJK family is present (`resolve_ui_font_family` / `FONT_STACK`)
+- **UI Font stack (docs):** `"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable", "Segoe UI"`
 - **Mono:** `"Cascadia Mono", "Consolas", "JetBrains Mono", monospace`
 - **Mood:** technical, precision, clean, premium desktop utility
 - **Do not** ship runtime Google Fonts imports in the desktop app
 
 | Token | Size | Typical use |
 |-------|------|-------------|
-| `TYPE_CAPTION` | `11px` | Badges, meta captions |
-| `TYPE_FOOTNOTE` | `12px` | Footnotes, section labels, tips |
-| `TYPE_BODY_SM` | `13px` | Inputs, nav, tray menu, secondary body |
+| `TYPE_CAPTION` | `12px` | Badges, meta captions |
+| `TYPE_FOOTNOTE` | `13px` | Footnotes and tips |
+| `TYPE_BODY_SM` | `14px` | Inputs, nav, tray menu, section labels |
 | `TYPE_BODY` | `14px` | Global baseline, brand, primary body |
 | `TYPE_TITLE_SM` | `15px` | Model card titles |
-| `TYPE_TITLE` | `16px` | Detail titles |
+| `TYPE_TITLE` | `16px` | Detail titles and history reading text |
 | `TYPE_ICON_LG` | `17px` | Float close glyph |
 | `TYPE_HERO` | `18px` | Engine hero title |
 | `TYPE_TITLE_LG` | `20px` | Settings page titles |
@@ -121,7 +128,8 @@ Effective theme is always `light` or `dark`.
 | `SPACE_MD` / `--space-md` | `16px` | Standard padding |
 | `SPACE_LG` / `--space-lg` | `24px` | Section padding |
 | `SPACE_XL` | `32px` | Large gaps |
-| `SIDEBAR_WIDTH` | `160px` | Settings rail |
+| `SIDEBAR_WIDTH` | `184px` | Navigation and runtime summary |
+| `CONTENT_MAX_WIDTH` | `900px` | Settings document width at larger window sizes |
 | `CONTROL_NUMERIC_WIDTH` | `120px` | History spinboxes (flat stepper + suffix) |
 
 ### Shape
@@ -132,6 +140,7 @@ Effective theme is always `light` or `dark`.
 | `RADIUS_SM` | `6px` |
 | `RADIUS_MD` | `8px` |
 | `RADIUS_LG` | `10px` |
+| `WINDOW_RADIUS` | `12px` |
 
 ### Shadows
 
@@ -153,7 +162,10 @@ Effective theme is always `light` or `dark`.
 ### Cards / settings groups
 
 - Surface fill, 1px border, radius LG
-- Selected nav: ink wash (`NAV_SELECTED_BG`) + 3px accent bar (not saturated full fill)
+- Main navigation: ink wash (`NAV_SELECTED_BG`), semibold label, 40px row height, 2px keyboard focus ring.
+- Task choices: native radio indicator, title and task-specific explanation; full card is clickable.
+- Settings pages: 20px page title, purpose sentence, grouped 14px section labels.
+- History: resizable list/detail splitter, 16px reading text, width-aware single-line previews.
 
 ### Inputs
 
@@ -163,6 +175,9 @@ Effective theme is always `light` or `dark`.
 ### Floating window
 
 - Follows **effective** theme float tokens (not permanently locked to dark)
+- 360×44px at rest; 420×68px with a one-line excerpt. Radius 22px / 16px respectively.
+- The 64×30px stop target appears only during a continuous session; state colors survive theme changes.
+- Native QFont sizes use pixels to match the QSS type scale under display scaling.
 
 ### Tray menu
 
@@ -173,6 +188,10 @@ Effective theme is always `light` or `dark`.
 ## UX Guidelines
 
 - Focus rings visible for keyboard users
+- Ctrl+1…5 switches pages, Ctrl+F opens history search, Ctrl+W hides to tray; shortcuts pause during hotkey capture.
+- Model and audio test errors remain readable at their controls; success does not require a modal.
+- History refresh preserves selection and search; pending deletions stay hidden and share an eight-second undo batch.
+- Closing the main window preserves the tray process; title-bar double click maximizes/restores, corner grip resizes.
 - No emoji-as-icon; use drawn/SVG icons
 - Theme switch applies without restart; preference persisted as `appearance.theme_mode`
 - Keep recording red rationed to recording/error semantics

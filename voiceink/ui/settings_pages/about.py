@@ -7,7 +7,8 @@ from voiceink.config import VERSION
 from voiceink.ui import design_tokens as tok
 from voiceink.ui.settings_components import (
     SettingsPage,
-    info_callout,
+    page_header,
+    footnote,
     settings_group,
     settings_section,
 )
@@ -15,6 +16,7 @@ from voiceink.ui.settings_components import (
 
 def build_about_page(win) -> QWidget:
     page = SettingsPage()
+    page.add(page_header("关于", "VoiceInk · 让语音成为文字"))
     win._about_info_group = settings_group()
     win._about_info_lay = QVBoxLayout(win._about_info_group)
     win._about_info_lay.setContentsMargins(0, 0, 0, 0)
@@ -72,7 +74,11 @@ def build_about_page(win) -> QWidget:
 
     page.add(settings_section("", win._about_info_group))
 
-    win._about_usage_tip = info_callout("", "aboutUsageCallout")
+    win._about_usage_tip = settings_group()
+    win._about_usage_tip.setObjectName("settingsGroup")
+    tip_layout = QVBoxLayout(win._about_usage_tip)
+    tip_layout.setContentsMargins(16, 12, 16, 12)
+    tip_layout.addWidget(footnote(""))
     page.add(win._about_usage_tip)
     page.set_compact()
     page.set_spacing(12)

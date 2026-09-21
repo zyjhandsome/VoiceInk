@@ -61,7 +61,7 @@ def reload_styles() -> None:
     from voiceink.ui import design_tokens as tok
 
     SECTION_LABEL = (
-        f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; font-weight: 600;"
+        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 600;"
         f" padding: 0 2px 2px 2px; letter-spacing: 0;"
         f" background: transparent;"
     )
@@ -552,7 +552,7 @@ def stylesheet_for_role(role: object) -> str | None:
         )
     if role == "pickSubtitle":
         return (
-            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_CAPTION}px; line-height: 1.35;"
+            f"color: {live.TEXT_SEC}; font-size: {live.TYPE_FOOTNOTE}px; line-height: 1.35;"
             f" background: transparent;"
         )
     return None
@@ -603,6 +603,8 @@ def reapply_subtree(root: QWidget) -> None:
             btn.setStyleSheet(ss.BTN_PRIMARY)
         elif role == "ghostSm":
             btn.setStyleSheet(ss.BTN_GHOST_SM)
+        elif role == "accentSm":
+            btn.setStyleSheet(ss.BTN_ACCENT_SM)
 
 
 def settings_group() -> QFrame:
@@ -1094,7 +1096,7 @@ class VerticalChoiceCard(QFrame):
 
 
 class CompactPickCard(QFrame):
-    """Prototype v3 pick tile: title + short desc, full accent border when selected."""
+    """Task choice with visible native radio semantics and a full-row hit target."""
 
     clicked = pyqtSignal()
 
@@ -1123,13 +1125,21 @@ class CompactPickCard(QFrame):
 
         self._title_label = QLabel(title)
         self._title_label.setProperty("viRole", "pickTitle")
-        lay.addWidget(self._title_label)
+        title_row = QHBoxLayout()
+        title_row.addWidget(self._title_label, 1)
+        radio.setParent(self)
+        radio.setAccessibleName(title)
+        radio.setAccessibleDescription(subtitle)
+        radio.setFixedSize(28, 28)
+        title_row.addWidget(radio)
+        lay.addLayout(title_row)
         self._subtitle_label = QLabel(subtitle)
         self._subtitle_label.setProperty("viRole", "pickSubtitle")
         self._subtitle_label.setWordWrap(True)
         lay.addWidget(self._subtitle_label)
 
-        radio.setVisible(False)
+        radio.setVisible(True)
+        self.setFocusProxy(radio)
         radio.toggled.connect(self._sync_style)
         self._sync_style(radio.isChecked())
 
@@ -1148,9 +1158,19 @@ class CompactPickCard(QFrame):
             f" background: transparent;"
         )
         self._subtitle_label.setStyleSheet(
-            f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; line-height: 1.35;"
+            f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; line-height: 1.35;"
             f" background: transparent;"
         )
+        self._radio.setStyleSheet(f"""
+            QRadioButton {{ padding: 2px; spacing: 0; border: 2px solid transparent; border-radius: 6px; background: transparent; }}
+            QRadioButton:focus {{ border-color: {tok.ACCENT_FOCUS}; }}
+            QRadioButton::indicator {{ width: 16px; height: 16px; border-radius: 8px;
+                border: 1px solid {tok.CONTROL_BORDER_HOVER}; background: {tok.SURFACE}; }}
+            QRadioButton::indicator:checked {{ border: 1px solid {tok.PRIMARY_CONTAINER};
+                background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+                    stop:0 {tok.PRIMARY_CONTAINER}, stop:0.55 {tok.PRIMARY_CONTAINER},
+                    stop:0.56 {tok.SURFACE}, stop:1 {tok.SURFACE}); }}
+        """)
         # Ink wash selected row — no accent ring or left bar.
         if checked:
             self.setStyleSheet(f"""
@@ -1176,6 +1196,7 @@ class CompactPickCard(QFrame):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._radio.setChecked(True)
+            self._radio.setFocus()
             self.clicked.emit()
         super().mousePressEvent(event)
 
@@ -1228,8 +1249,8 @@ class TriggerModePicker(QWidget):
         lay.setSpacing(8)
 
         specs = [
-            (continuous_radio, "连续口述", "按一次开始，再按一次结束"),
-            (hotkey_radio, "按住说话", "按住录音，松开结束"),
+            (continuous_radio, "持续转写", "按住启动 · Esc 或「结束」停止"),
+            (hotkey_radio, "按住说话", "按住录音 · 松开后出字"),
         ]
         for rb, title, sub in specs:
             lay.addWidget(CompactPickCard(title, sub, rb), 1)
@@ -1307,7 +1328,7 @@ class ThemeModeSegment(QWidget):
         for btn in self._buttons:
             btn.setStyleSheet(f"""
                 QPushButton#themeModeSegBtn {{
-                    border: none;
+                    border: 2px solid transparent;
                     background: transparent;
                     color: {tok.TEXT_SEC};
                     font-size: {tok.TYPE_FOOTNOTE}px;
@@ -1320,11 +1341,12 @@ class ThemeModeSegment(QWidget):
                     background: {tok.SURFACE};
                     color: {tok.TEXT};
                     font-weight: 600;
-                    border: none;
+                    border: 2px solid transparent;
                 }}
                 QPushButton#themeModeSegBtn:hover:!checked {{
                     color: {tok.TEXT};
                 }}
+                QPushButton#themeModeSegBtn:focus {{ border-color: {tok.ACCENT_FOCUS}; }}
             """)
 
 
@@ -1705,6 +1727,7 @@ class ToggleOptionRow(QWidget):
         self._switch = SwitchControl()
         self._switch.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._switch.setAccessibleName(title)
+        self.setFocusProxy(self._switch)
         if subtitle:
             self._switch.setAccessibleDescription(subtitle)
 
@@ -1840,6 +1863,8 @@ class SettingsPage(QScrollArea):
         self.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         body = QWidget()
+        body.setMaximumWidth(tok.CONTENT_MAX_WIDTH)
+        self.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         # Maximum keeps the scroll document as tall as real content — not the
         # viewport — so AlignTop slack is not scrollable empty space.
         body.setSizePolicy(

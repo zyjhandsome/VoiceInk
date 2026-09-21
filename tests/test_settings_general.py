@@ -82,15 +82,17 @@ class TestGeneralPageLayout:
         assert settings_window._mic_test_btn.text() == "测试声音（约 2 秒）"
         assert settings_window._advanced_audio_btn.text() == "手动选择音频设备"
 
-        # Preference rows: title only (no prototype subtitles).
+        # Simple preferences remain terse; history explains what is retained.
         for row, title in (
             (settings_window._auto_start_row, "开机时自动启动"),
             (settings_window._sound_row, "录音提示音"),
             (settings_window._restore_clipboard_row, "粘贴后恢复剪贴板"),
-            (settings_window._history_enabled_row, "保存语音历史"),
         ):
             texts = [lb.text() for lb in row.findChildren(QLabel) if lb.text()]
             assert texts == [title], texts
+        history_text = " ".join(lb.text() for lb in settings_window._history_enabled_row.findChildren(QLabel))
+        assert "保存语音历史" in history_text
+        assert "不保存音频" in history_text
 
         footnotes = [
             lb.text()
@@ -111,7 +113,7 @@ class TestGeneralPageLayout:
 
         labels = settings_window._about_usage_tip.findChildren(QLabel)
         assert labels
-        assert any(f"color: {AMBER_TEXT}" in label.styleSheet() for label in labels)
+        assert all(f"color: {AMBER_TEXT}" not in label.styleSheet() for label in labels)
 
     def test_settings_stack_contains_only_native_pages(self, settings_window):
         from voiceink.ui.settings_components import SettingsPage

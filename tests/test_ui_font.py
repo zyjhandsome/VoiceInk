@@ -6,13 +6,23 @@ from pathlib import Path
 
 
 class TestResolveUiFontFamily:
-    def test_prefers_segoe_ui_variable_when_present(self):
+    def test_prefers_cjk_family_when_latin_variable_also_present(self):
         from voiceink.ui.design_tokens import resolve_ui_font_family
 
         family = resolve_ui_font_family(
             available_families=("Segoe UI", "Segoe UI Variable", "Microsoft YaHei UI")
         )
-        assert family == "Segoe UI Variable"
+        assert family == "Microsoft YaHei UI"
+
+    def test_skips_family_that_cannot_cover_cjk(self):
+        from voiceink.ui.design_tokens import resolve_ui_font_family
+
+        family = resolve_ui_font_family(
+            available_families=("Segoe UI Variable", "Microsoft YaHei UI"),
+            preferred=("Segoe UI Variable", "Microsoft YaHei UI"),
+            covers_cjk=lambda name: "YaHei" in name,
+        )
+        assert family == "Microsoft YaHei UI"
 
     def test_falls_back_to_yahei_when_segoe_variable_missing(self):
         from voiceink.ui.design_tokens import resolve_ui_font_family
@@ -30,6 +40,25 @@ class TestResolveUiFontFamily:
 
         family = resolve_ui_font_family(available_families=())
         assert family == "Microsoft YaHei UI"
+
+    def test_resolved_runtime_font_covers_common_cjk(self, _qapp_session):
+        import os
+        from pathlib import Path
+
+        from PyQt6.QtGui import QFont, QFontDatabase, QFontMetrics
+
+        from voiceink.ui.design_tokens import refresh_ui_font
+        from voiceink.ui.theme import apply_theme
+
+        windir = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+        yahei = windir / "msyh.ttc"
+        if yahei.exists():
+            QFontDatabase.addApplicationFont(str(yahei))
+        apply_theme(mode="light", system_is_light=True)
+        family = refresh_ui_font()
+        metrics = QFontMetrics(QFont(family))
+        missing = [ch for ch in "设置听写历史配置" if not metrics.inFont(ch)]
+        assert missing == [], f"{family} missing {missing}"
 
 
 class TestApplyThemeRefreshesFont:
@@ -62,9 +91,9 @@ class TestTypographyScaleTokens:
     def test_type_tokens_match_design_ladder(self):
         from voiceink.ui import design_tokens as dt
 
-        assert dt.TYPE_CAPTION == 11
-        assert dt.TYPE_FOOTNOTE == 12
-        assert dt.TYPE_BODY_SM == 13
+        assert dt.TYPE_CAPTION == 12
+        assert dt.TYPE_FOOTNOTE == 13
+        assert dt.TYPE_BODY_SM == 14
         assert dt.TYPE_BODY == 14
         assert dt.TYPE_TITLE_SM == 15
         assert dt.TYPE_TITLE == 16
@@ -79,7 +108,7 @@ class TestTypographyScaleTokens:
 
         sc.reload_styles()
         assert f"font-size: {dt.TYPE_TITLE_LG}px" in sc.PAGE_TITLE
-        assert f"font-size: {dt.TYPE_FOOTNOTE}px" in sc.SECTION_LABEL
+        assert f"font-size: {dt.TYPE_BODY_SM}px" in sc.SECTION_LABEL
         assert f"font-size: {dt.TYPE_BODY_SM}px" in sc.PAGE_SUBTITLE
 
     def test_global_stylesheet_uses_type_body(self):
@@ -100,10 +129,10 @@ class TestThemeSurfacePolish:
             assert t["CHIP_BG_HOVER"] != t["CHIP_BG"]
             assert t["CHIP_BG_PRESS"] != t["CHIP_BG"]
 
-    def test_float_reapply_uses_chip_tokens_not_string_replace(self):
+    def test_float_reapply_uses_primary_tokens_not_string_replace(self):
         source = Path("voiceink/ui/floating_window.py").read_text(encoding="utf-8")
         assert "CHIP_BG.replace" not in source
-        assert "CHIP_BG_HOVER" in source
+        assert "PRIMARY_CONTAINER_HOVER" in source
 
     def test_usage_tip_bar_follows_dark_axis(self):
         import sys

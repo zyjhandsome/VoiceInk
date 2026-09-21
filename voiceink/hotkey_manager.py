@@ -68,7 +68,7 @@ class HotKeyManager(QObject):
     # 从 pynput 线程投递到 Qt 主线程，再启动 QTimer
     _arm_hold_on_main = pyqtSignal()
 
-    def __init__(self, hotkey_str: str = "ctrl+space", parent=None):
+    def __init__(self, hotkey_str: str = "alt+z", parent=None):
         super().__init__(parent)
         self._hotkey_keys = parse_hotkey(hotkey_str)
         self._hotkey_str = hotkey_str

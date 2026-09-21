@@ -49,8 +49,10 @@ def format_hotkey(hotkey: str) -> str:
 TRIGGER_MODE_HOTKEY = "hotkey"
 TRIGGER_MODE_CONTINUOUS = "continuous"
 
+DEFAULT_HOTKEY = "alt+z"
+
 DEFAULT_CONFIG = {
-    "hotkey": "ctrl+space",
+    "hotkey": DEFAULT_HOTKEY,
     "first_run_welcome_seen": True,
     "auto_start": False,
     "sound_enabled": True,

@@ -80,6 +80,12 @@ class TestFloatingWindowStates:
         win.show_busy_transcribing()
         assert "请稍候" in win._status_label.text()
 
+    def test_model_loading_excerpt_stays_single_line(self, win):
+        win.show_model_loading("正在将 Fun-ASR-Nano 载入内存\n第二行请勿录音")
+        assert "\n" not in win._text_label.text()
+        assert win._text_label.isVisible()
+        assert win._text_label.maximumHeight() <= 18
+
     def test_update_partial_text(self, win):
         win.update_partial_text("部分文本")
         assert win._text_label.text() == "部分文本"

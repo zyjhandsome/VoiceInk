@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 
 from voiceink.config import (
     Config,
+    DEFAULT_HOTKEY,
     format_hotkey,
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
@@ -110,7 +111,7 @@ class App(QObject):
 
     def _init_modules(self):
         self._hotkey_mgr = HotKeyManager(
-            self._config.get("hotkey", "ctrl+space")
+            self._config.get("hotkey", DEFAULT_HOTKEY)
         )
         self._recorder = AudioRecorder()
         self._apply_audio_config()
@@ -148,7 +149,7 @@ class App(QObject):
         return self._is_continuous_mode() and self._recorder.is_continuous
 
     def _continuous_hotkey_label(self) -> str:
-        return format_hotkey(self._config.get("hotkey", "ctrl+space"))
+        return format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))
 
     def _refresh_continuous_ui_after_output(self) -> None:
         if self._continuous_session_active():
@@ -328,9 +329,7 @@ class App(QObject):
         if self._recorder.is_continuous:
             log.info("模型重新加载，暂停持续监听")
             self._stop_continuous_listening()
-        self._floating.show_model_loading(
-            f"{msg}\n模型已下载，正在载入内存，完成前请勿开始录音"
-        )
+        self._floating.show_model_loading(f"{msg} · 完成前请勿录音")
         self._tray.set_activity_tooltip("loading")
         self._sync_settings_runtime_status()
 
@@ -676,8 +675,8 @@ class App(QObject):
             # no longer shows idle float, so dismiss explicitly after ready.
             self._floating.dismiss_if_idle()
             tray_msg = (
-                f"持续转写已就绪。按住 {hotkey} 开始监听，说完停顿后自动出字；"
-                "按 Esc 或听写条「结束」停止。"
+                f"持续转写已就绪。按住 {hotkey} 开始监听，说话停顿约 1 秒后自动输入，不用点结束；"
+                "按 Esc 或听写条「结束」停止整场。"
             )
         else:
             log.info("✓ 语音识别模型已就绪，按 %s 开始语音输入", hotkey)
@@ -1092,7 +1091,7 @@ class App(QObject):
                 "按 Esc 或听写条「结束」停止。"
             )
         else:
-            hk = format_hotkey(self._config.get("hotkey", "ctrl+space"))
+            hk = format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))
             mode_tip = f"当前为「按住快捷键」：按住 {hk} 说话，松开后识别并粘贴。"
         text = (
             "VoiceInk 在本地完成语音识别（可选通过网络调用大模型润色）。\n\n"
@@ -1103,7 +1102,7 @@ class App(QObject):
             "· 混合：开会时远端 + 自己都要\n\n"
             "请先在设置 → 引擎 中下载至少一个语音模型"
             "（若安装包已附带模型，启动后会自动载入）。\n\n"
-            "默认快捷键为 Ctrl+Space；若与输入法冲突，可在设置中改为 Alt+Space。\n"
+            "默认快捷键为 Alt+Z；可在设置 → 通用 中更改。\n"
             "Windows：双击托盘图标可打开主窗口。"
         )
         QMessageBox.information(None, "欢迎使用 VoiceInk", text)

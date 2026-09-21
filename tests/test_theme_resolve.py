@@ -365,7 +365,7 @@ class TestSurfaceThemeReapply:
 
         search = win._search_edit.styleSheet()
         assert "QLineEdit:focus" in search
-        assert "#181818" in search.upper()  # dark SURFACE_PEARL
+        assert "#222528" in search.upper()  # dark SURFACE_PEARL
 
         list_css = win._session_list.styleSheet()
         assert "border-left" in list_css
@@ -381,7 +381,7 @@ class TestSurfaceThemeReapply:
         assert "#F9FAFB" in title_css  # dark TEXT
 
         undo_css = win._undo_bar.styleSheet().upper()
-        assert "#181818" in undo_css  # dark SURFACE_PEARL
+        assert "#222528" in undo_css  # dark SURFACE_PEARL
 
         feedback_css = win._feedback_label.styleSheet().upper()
         assert "#F9FAFB" in feedback_css

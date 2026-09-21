@@ -6,7 +6,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -18,6 +19,8 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -25,6 +28,39 @@ from PyQt6.QtWidgets import (
 
 from voiceink.history_store import SegmentRecord, SessionSummary
 from voiceink.ui import settings_styles as _settings_styles
+
+
+class _ElidedLabel(QLabel):
+    """A single-line preview that keeps the full text available to assistive tools."""
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self._full_text = " ".join(text.split())
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._elide()
+
+    def _elide(self):
+        self.setText(QFontMetrics(self.font()).elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, max(0, self.contentsRect().width())))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange) and hasattr(self, "_full_text"):
+            self._elide()
+
+
+class _SessionList(QListWidget):
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Qt can retain the pre-show width of setItemWidget children after a
+        # splitter resize. Reflow before eliding their text to the new width.
+        self.doItemsLayout()
 
 
 def _format_dt(ms: int) -> str:
@@ -105,7 +141,7 @@ def _chip_qss() -> str:
 
     return (
         f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px;"
-        f" background: {tok.SURFACE_PEARL}; border-radius: {tok.RADIUS_PILL}px;"
+        f" background: {tok.SURFACE_PEARL}; border-radius: {tok.RADIUS_XS}px;"
         f" padding: 2px 8px;"
     )
 
@@ -168,12 +204,17 @@ def build_batch_export_markdown(
 
 
 class HistoryWindow(QWidget):
+    history_preferences_requested = pyqtSignal()
+
     def __init__(self, store, parent=None):
         super().__init__(parent)
         self._store = store
         self._sessions_by_id: dict[str, SessionSummary] = {}
         self._pending_delete: list[SessionSummary] = []
         self._search_query = ""
+        self._history_enabled = True
+        self._session_limit = 50
+        self._has_more = False
         self._setup_window()
         self._setup_ui()
         self.refresh()
@@ -203,7 +244,7 @@ class HistoryWindow(QWidget):
             """)
         if hasattr(self, "_title_label"):
             self._title_label.setStyleSheet(
-                f"font-family: {tok.FONT_DISPLAY}; font-size: {tok.TYPE_TITLE}px; font-weight: 600;"
+                f"font-family: {tok.FONT_DISPLAY}; font-size: {tok.TYPE_TITLE_LG}px; font-weight: 600;"
                 f" background: transparent; color: {tok.TEXT};"
             )
         if hasattr(self, "_right_pane"):
@@ -228,7 +269,7 @@ class HistoryWindow(QWidget):
                 QListWidget {{
                     background: transparent;
                     color: transparent;
-                    border: none;
+                    border: 2px solid transparent;
                     padding: 0;
                     outline: none;
                 }}
@@ -240,12 +281,13 @@ class HistoryWindow(QWidget):
                 }}
                 QListWidget::item:selected {{
                     background: {tok.ROW_SELECTED};
-                    border-left: 3px solid {tok.ACCENT};
+                    border-left: 3px solid {tok.TEXT_SEC};
                     color: transparent;
                 }}
                 QListWidget::item:hover:!selected {{
                     background: {tok.SURFACE_PEARL};
                 }}
+                QListWidget:focus {{ border-color: {tok.ACCENT_FOCUS}; border-radius: 8px; }}
             """)
             chip_css = _chip_qss()
             preview_css = (
@@ -288,9 +330,17 @@ class HistoryWindow(QWidget):
                     color: {tok.TEXT};
                     border: none;
                     padding: 12px 0;
-                    font-size: {tok.TYPE_BODY}px;
+                    font-size: {tok.TYPE_TITLE}px;
                 }}
             """)
+        for name in ("_subtitle_label", "_list_summary"):
+            if hasattr(self, name):
+                getattr(self, name).setStyleSheet(
+                    f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px; background: transparent;")
+        if hasattr(self, "_splitter"):
+            self._splitter.setStyleSheet(
+                f"QSplitter::handle {{ background: {tok.HAIRLINE}; margin: 8px 0; }}"
+                f"QSplitter::handle:hover {{ background: {tok.ACCENT_FOCUS}; }}")
         if hasattr(self, "_undo_bar"):
             self._undo_bar.setStyleSheet(f"""
                 QFrame {{
@@ -301,7 +351,11 @@ class HistoryWindow(QWidget):
             """)
         if hasattr(self, "_export_btn"):
             self._export_btn.setStyleSheet(ss.BTN_GHOST_SM)
+        if hasattr(self, "_more_btn"):
+            self._more_btn.setStyleSheet(ss.BTN_GHOST_SM)
+            self._history_preferences_btn.setStyleSheet(ss.BTN_ACCENT_SM)
         if hasattr(self, "_detail_chip_labels"):
+            self._detail_chip_bar.setStyleSheet(f"QWidget#historyMetadata {{ background: {tok.BG}; }}")
             chip_css = _chip_qss()
             for lab in self._detail_chip_labels:
                 lab.setStyleSheet(chip_css)
@@ -332,19 +386,25 @@ class HistoryWindow(QWidget):
 
     def _setup_ui(self) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 14, 16, 14)
-        outer.setSpacing(10)
+        outer.setContentsMargins(30, 22, 24, 20)
+        outer.setSpacing(12)
 
         top = QHBoxLayout()
         self._title_label = QLabel("历史")
         top.addWidget(self._title_label, 1)
-        self._export_btn = QPushButton("导出 Markdown")
+        self._export_btn = QPushButton("导出")
+        self._export_btn.setToolTip("将选中的会话导出为 Markdown 文件")
         self._export_btn.clicked.connect(self._export_selected)
         top.addWidget(self._export_btn)
         outer.addLayout(top)
+        self._subtitle_label = QLabel("找回说过的话，继续整理和使用。")
+        outer.addWidget(self._subtitle_label)
 
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("搜索转写内容")
+        self._search_edit.setAccessibleName("搜索转写内容")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.setToolTip("搜索转写内容 · Ctrl+F")
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(200)
@@ -352,9 +412,10 @@ class HistoryWindow(QWidget):
         self._search_timer.timeout.connect(self._perform_search)
         outer.addWidget(self._search_edit)
 
-        split = QHBoxLayout()
-        split.setContentsMargins(0, 0, 0, 0)
-        split.setSpacing(12)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        self._splitter.setHandleWidth(5)
+        split = self._splitter
 
         stream = QWidget()
         self._stream_host = stream
@@ -363,27 +424,35 @@ class HistoryWindow(QWidget):
         stream_lay = QVBoxLayout(stream)
         stream_lay.setContentsMargins(0, 0, 0, 0)
         stream_lay.setSpacing(0)
-        self._session_list = QListWidget()
+        stream.setMinimumWidth(210)
+        self._list_summary = QLabel()
+        self._list_summary.setContentsMargins(8, 0, 0, 10)
+        stream_lay.addWidget(self._list_summary)
+        self._session_list = _SessionList()
         self._session_list.setObjectName("historyTimeStream")
+        self._session_list.setAccessibleName("转写会话列表")
+        self._session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._session_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self._session_list.itemDoubleClicked.connect(self._expand_session)
         self._session_list.itemSelectionChanged.connect(self._on_selection_changed)
         stream_lay.addWidget(self._session_list, 1)
-        split.addWidget(stream, 1)
+        split.addWidget(stream)
 
         self._right_pane = QWidget()
         right_lay = QVBoxLayout(self._right_pane)
-        right_lay.setContentsMargins(0, 4, 0, 0)
+        right_lay.setContentsMargins(18, 0, 0, 0)
         right_lay.setSpacing(8)
         tools = QHBoxLayout()
         self._detail_title = QLabel("会话详情")
-        tools.addWidget(self._detail_title, 1)
+        self._detail_title.setWordWrap(True)
+        right_lay.addWidget(self._detail_title)
         self._copy_raw_btn = QPushButton("复制原文")
         self._copy_raw_btn.clicked.connect(self._copy_selected_raw)
         tools.addWidget(self._copy_raw_btn)
         self._copy_polished_btn = QPushButton("复制润色")
         self._copy_polished_btn.clicked.connect(self._copy_selected_polished)
         tools.addWidget(self._copy_polished_btn)
+        tools.addStretch(1)
         self._delete_btn = QPushButton("删除")
         self._delete_btn.clicked.connect(self._delete_selected_sessions)
         tools.addWidget(self._delete_btn)
@@ -397,6 +466,7 @@ class HistoryWindow(QWidget):
         self._feedback_timer.timeout.connect(lambda: self._feedback_label.setVisible(False))
 
         self._detail_chip_bar = QWidget()
+        self._detail_chip_bar.setObjectName("historyMetadata")
         self._detail_chips = QHBoxLayout(self._detail_chip_bar)
         self._detail_chips.setContentsMargins(0, 0, 0, 0)
         self._detail_chips.setSpacing(6)
@@ -407,8 +477,13 @@ class HistoryWindow(QWidget):
 
         self._details = QTextEdit()
         self._details.setReadOnly(True)
+        self._details.setAccessibleName("会话转写全文")
         self._details.setPlaceholderText("选择一条转写查看分段内容")
         right_lay.addWidget(self._details, 1)
+        self._history_preferences_btn = QPushButton("设置历史记录")
+        self._history_preferences_btn.clicked.connect(self.history_preferences_requested.emit)
+        self._history_preferences_btn.hide()
+        right_lay.addWidget(self._history_preferences_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._undo_bar = QFrame()
         self._undo_bar.setVisible(False)
@@ -427,16 +502,49 @@ class HistoryWindow(QWidget):
 
         self._clear_all_btn = QPushButton("清空全部历史")
         self._clear_all_btn.clicked.connect(self._clear_all_history)
-        right_lay.addWidget(self._clear_all_btn)
-        split.addWidget(self._right_pane, 1)
-        outer.addLayout(split, 1)
+        split.addWidget(self._right_pane)
+        self._right_pane.setMinimumWidth(360)
+        split.setStretchFactor(0, 2)
+        split.setStretchFactor(1, 3)
+        split.setSizes([260, 440])
+        outer.addWidget(split, 1)
+        bottom = QHBoxLayout()
+        self._more_btn = QPushButton("加载更多会话")
+        self._more_btn.clicked.connect(self._load_more)
+        self._more_btn.hide()
+        bottom.addWidget(self._more_btn)
+        bottom.addStretch(1)
+        bottom.addWidget(self._clear_all_btn)
+        outer.addLayout(bottom)
+        for button in self.findChildren(QPushButton):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._paint_history_styles()
 
     def refresh(self) -> None:
-        self._load_sessions(self._store.list_sessions())
+        if self._search_query:
+            sessions = self._store.search_sessions(self._search_query)
+            self._has_more = False
+        else:
+            sessions = self._store.list_sessions(limit=self._session_limit + 1)
+            self._has_more = len(sessions) > self._session_limit
+            sessions = sessions[:self._session_limit]
+        self._load_sessions(sessions)
+
+    def set_history_enabled(self, enabled: bool) -> None:
+        self._history_enabled = enabled
+        self.refresh()
+
+    def _load_more(self) -> None:
+        self._session_limit += 50
+        self.refresh()
 
     def _load_sessions(self, sessions: list[SessionSummary]) -> None:
+        selected = self._selected_session_ids()
+        pending = {s.session_id for s in self._pending_delete}
+        sessions = [s for s in sessions if s.session_id not in pending]
         self._session_list.clear()
+        self._history_preferences_btn.setVisible(not sessions and not self._search_query and not self._history_enabled)
+        self._more_btn.setVisible(self._has_more and not self._search_query)
         self._sessions_by_id = {s.session_id: s for s in sessions}
         last_day = None
         for session in sessions:
@@ -452,18 +560,31 @@ class HistoryWindow(QWidget):
             last_day = day
             widget = self._build_stream_row(session, day if show_day else "")
             item.setForeground(Qt.GlobalColor.transparent)
-            item.setSizeHint(QSize(0, 86 if show_day else 68))
+            item.setSizeHint(QSize(0, 108 if show_day else 84))
             self._session_list.setItemWidget(item, widget)
         if sessions:
-            self._session_list.setCurrentRow(0)
+            retained = [i for i, s in enumerate(sessions) if s.session_id in selected]
+            if retained:
+                for i in retained:
+                    self._session_list.item(i).setSelected(True)
+            else:
+                self._session_list.setCurrentRow(0)
         else:
             self._set_detail_chips([])
             if self._search_query:
-                empty = "没有匹配的转写。"
+                empty = "没有匹配的转写。试试更短的关键词，或清除搜索。"
+            elif not self._history_enabled:
+                empty = "历史记录未开启。\n可在通用设置中开启，之后的转写文本会保存在本机。"
             else:
                 empty = "还没有会话。完成一次转写后会出现在这里。"
-            self._detail_title.setText(empty)
+            title = "没有搜索结果" if self._search_query else (
+                "历史记录未开启" if not self._history_enabled else "还没有会话")
+            self._detail_title.setText(title)
             self._details.setPlainText(empty)
+        self._list_summary.setText(
+            f"{len(sessions)} 场{'匹配' if self._search_query else '最近会话'}"
+            + (" · Ctrl / Shift 多选" if len(sessions) > 1 else ""))
+        self._clear_all_btn.setEnabled(bool(sessions) or bool(self._search_query))
         self._on_selection_changed()
 
     def _build_stream_row(self, session: SessionSummary, day: str) -> QWidget:
@@ -471,7 +592,7 @@ class HistoryWindow(QWidget):
 
         row = QWidget()
         lay = QVBoxLayout(row)
-        lay.setContentsMargins(4, 8, 4, 8)
+        lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(4)
         if day:
             day_lab = QLabel(day)
@@ -489,31 +610,29 @@ class HistoryWindow(QWidget):
             f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_CAPTION}px; background: transparent;"
         )
         line.addWidget(time_lab)
-        preview = QLabel(session.preview or "(无内容)")
+        source_chip = QLabel(_source_chip_text(session.source))
+        source_chip.setObjectName("streamChip")
+        source_chip.setStyleSheet(_chip_qss())
+        line.addWidget(source_chip)
+        line.addStretch(1)
+        lay.addLayout(line)
+        preview = _ElidedLabel(session.preview or "(无内容)")
         preview.setObjectName("streamPreview")
-        preview.setWordWrap(True)
         preview.setStyleSheet(
             f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; background: transparent;"
         )
-        line.addWidget(preview, 1)
-        lay.addLayout(line)
+        lay.addWidget(preview)
         chips = QHBoxLayout()
-        chips.addSpacing(44)
         chip_css = _chip_qss()
-        source_chip = QLabel(_source_chip_text(session.source))
-        source_chip.setObjectName("streamChip")
-        source_chip.setStyleSheet(chip_css)
-        chips.addWidget(source_chip)
         if session.target_app:
-            app_chip = QLabel(session.target_app)
+            app_chip = _ElidedLabel(session.target_app)
             app_chip.setObjectName("streamChip")
             app_chip.setStyleSheet(chip_css)
-            chips.addWidget(app_chip)
+            chips.addWidget(app_chip, 1)
         count = QLabel(f"{session.segment_count} 段")
         count.setObjectName("streamChip")
         count.setStyleSheet(chip_css)
         chips.addWidget(count)
-        chips.addStretch()
         lay.addLayout(chips)
         row.setMinimumHeight(76 if day else 60)
         return row
@@ -526,10 +645,8 @@ class HistoryWindow(QWidget):
     def _perform_search(self) -> None:
         q = self._search_edit.text().strip()
         self._search_query = q
-        if q:
-            self._load_sessions(self._store.search_sessions(q))
-        else:
-            self.refresh()
+        self._session_limit = 50
+        self.refresh()
 
     def _set_detail_chips(self, texts: list[str]) -> None:
         while self._detail_chips.count():
@@ -542,10 +659,10 @@ class HistoryWindow(QWidget):
         for text in texts:
             if not text:
                 continue
-            lab = QLabel(text)
+            lab = _ElidedLabel(text)
             lab.setStyleSheet(chip_css)
             self._detail_chip_labels.append(lab)
-            self._detail_chips.addWidget(lab)
+            self._detail_chips.addWidget(lab, 1)
         self._detail_chips.addStretch()
         self._detail_chip_bar.setVisible(bool(self._detail_chip_labels))
 
@@ -583,15 +700,18 @@ class HistoryWindow(QWidget):
         selected = self._selected_session_ids()
         count = len(selected)
         self._copy_raw_btn.setEnabled(count == 1)
+        self._copy_raw_btn.setVisible(count > 0)
         has_polished = False
         if count == 1:
             has_polished = _session_has_polished(
                 self._store.get_session_segments(selected[0])
             )
         self._copy_polished_btn.setEnabled(has_polished)
+        self._copy_polished_btn.setVisible(has_polished)
         self._apply_copy_action_styles(has_polished)
         self._export_btn.setEnabled(count > 0)
         self._delete_btn.setEnabled(count > 0)
+        self._delete_btn.setVisible(count > 0)
         if count == 1:
             self._detail_title.setText("会话详情")
             item = self._session_list.selectedItems()[0]
@@ -660,12 +780,12 @@ class HistoryWindow(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        self._pending_delete = self._selected_sessions()
+        self._pending_delete.extend(self._selected_sessions())
         self._load_sessions([
             session for session in self._sessions_by_id.values()
             if session.session_id not in ids
         ])
-        self._undo_label.setText(f"已移除 {len(ids)} 项")
+        self._undo_label.setText(f"已移除 {len(self._pending_delete)} 项 · 8 秒内可撤销")
         self._undo_bar.setVisible(True)
         self._undo_timer.start()
 
@@ -696,6 +816,9 @@ class HistoryWindow(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+        self._undo_timer.stop()
+        self._pending_delete = []
+        self._undo_bar.hide()
         self._store.enqueue_delete_all()
         QTimer.singleShot(250, self.refresh)
 

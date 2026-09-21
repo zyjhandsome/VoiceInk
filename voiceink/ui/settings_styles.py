@@ -92,7 +92,7 @@ def build_window_css() -> str:
         font-size: {t.TYPE_BODY_SM}px;
         min-height: 36px;
         selection-background-color: {t.PRIMARY_CONTAINER};
-        selection-color: white;
+        selection-color: {t.PRIMARY_ON};
     }}
     QLineEdit:focus {{
         border: 2px solid {t.ACCENT_FOCUS};
@@ -229,6 +229,7 @@ def build_btn_ghost_sm() -> str:
     QPushButton:focus {{
         border: 2px solid {t.ACCENT_FOCUS}; padding: 0px {focus_pad_h}px;
     }}
+    QPushButton:disabled {{ color: {t.TEXT_DIM}; background: {t.BAR_OFF}; border-color: {t.BAR_OFF}; }}
 """
 
 
@@ -279,6 +280,7 @@ def build_btn_accent_sm() -> str:
     QPushButton:focus {{
         border: 2px solid {t.ACCENT_FOCUS}; padding: 0px {focus_pad_h}px;
     }}
+    QPushButton:disabled {{ color: {t.TEXT_DIM}; background: {t.BAR_OFF}; border-color: {t.BAR_OFF}; }}
 """
 
 

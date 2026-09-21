@@ -38,6 +38,33 @@ def test_chrome_size_and_nav(qapp, tmp_path, monkeypatch):
         win.close()
         store.close()
 
+
+def test_outer_border_uses_explicit_window_frame(qapp, tmp_path, monkeypatch):
+    from voiceink.ui import design_tokens as tok
+
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        css = win.styleSheet()
+        margins = win.layout().contentsMargins()
+        assert win.objectName() == "mainWindow"
+        assert "QWidget#mainWindow" in css
+        assert f"border: 1px solid {tok.TEXT_DIM}" in css
+        assert f"border-radius: {tok.WINDOW_RADIUS}px" in css
+        assert not win.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        assert f"background: {tok.BG}" in css
+        assert f"background: {tok.BG}" in win._stack.styleSheet()
+        assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (
+            1,
+            1,
+            1,
+            1,
+        )
+        assert "border: 1px solid" not in win._sidebar.styleSheet()
+    finally:
+        win.close()
+        store.close()
+
+
 def test_caption_drag_moves_window(qapp, tmp_path, monkeypatch):
     from PyQt6.QtCore import QEvent, QPoint, QPointF
     from PyQt6.QtGui import QMouseEvent

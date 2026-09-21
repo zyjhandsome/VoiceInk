@@ -74,7 +74,7 @@ class TestTrayMenuStyleAndGrouping:
         assert t.TRAY_MENU_HOVER in css
         assert t.TRAY_MENU_SEPARATOR in css
         assert t.TRAY_MENU_BORDER in css
-        assert "font-size: 13px" in css
+        assert f"font-size: {t.TYPE_BODY_SM}px" in css
         # No Stitch tray look leftovers
         assert "rgba(0, 80, 203" not in css
 

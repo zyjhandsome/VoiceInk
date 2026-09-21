@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 log = logging.getLogger("voiceink")
 
 # Shared non-color tokens. Qt stylesheets accept one family, not a CSS-style
-# fallback list. Prefer Segoe UI Variable when installed; otherwise YaHei for
-# reliable CJK on Windows (product decision 1B).
+# fallback list. Prefer YaHei so common CJK stays visible; Latin-only
+# families such as Segoe UI Variable are skipped when a CJK family exists.
 FONT_STACK = (
-    "Segoe UI Variable",
     "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "Segoe UI Variable",
     "Segoe UI",
 )
+_CJK_SAMPLE = "设置听写"
 _DEFAULT_UI_FONT = "Microsoft YaHei UI"
 UI_FONT_FAMILY = _DEFAULT_UI_FONT
 FONT = f'"{_DEFAULT_UI_FONT}"'
@@ -24,9 +26,9 @@ FONT_MONO = (
 )
 
 # Typography size ladder (px in QSS; same ints passed to QFont where used today).
-TYPE_CAPTION = 11
-TYPE_FOOTNOTE = 12
-TYPE_BODY_SM = 13
+TYPE_CAPTION = 12
+TYPE_FOOTNOTE = 13
+TYPE_BODY_SM = 14
 TYPE_BODY = 14
 TYPE_TITLE_SM = 15
 TYPE_TITLE = 16
@@ -50,21 +52,48 @@ def _probe_system_font_families() -> tuple[str, ...]:
         return ()
 
 
+def _family_covers_cjk(family: str) -> bool:
+    """Return True when family can paint common Simplified Chinese, or if we cannot probe."""
+    try:
+        from PyQt6.QtGui import QFont, QFontDatabase, QFontMetrics
+        from PyQt6.QtWidgets import QApplication
+
+        if QApplication.instance() is None:
+            return True
+        installed = {name.casefold() for name in QFontDatabase.families()}
+        if family.casefold() not in installed:
+            return False
+        names = {str(system) for system in QFontDatabase.writingSystems(family)}
+        if any("Chinese" in name for name in names):
+            return True
+        metrics = QFontMetrics(QFont(family))
+        return all(metrics.inFont(ch) for ch in _CJK_SAMPLE)
+    except Exception as exc:  # noqa: BLE001 — probe must never crash startup
+        log.warning("检测字体中文覆盖失败 %s: %s", family, exc)
+        return True
+
+
 def resolve_ui_font_family(
     *,
     available_families: Optional[Sequence[str]] = None,
     preferred: Optional[Sequence[str]] = None,
+    covers_cjk: Optional[Callable[[str], bool]] = None,
 ) -> str:
-    """Pick the first preferred family present on the host."""
+    """Pick the first preferred family present on the host that can cover CJK."""
     stack = tuple(preferred) if preferred is not None else FONT_STACK
+    probed_system = available_families is None
     if available_families is None:
         available_families = _probe_system_font_families()
+    if covers_cjk is None and probed_system:
+        covers_cjk = _family_covers_cjk
     available = {name.casefold(): name for name in available_families}
     for name in stack:
         hit = available.get(name.casefold())
-        if hit is not None:
-            # Prefer QFontDatabase's canonical spelling when it differs from the stack label.
-            return hit
+        if hit is None:
+            continue
+        if covers_cjk is not None and not covers_cjk(hit):
+            continue
+        return hit
     return _DEFAULT_UI_FONT
 
 
@@ -89,6 +118,7 @@ RADIUS_SM = 6
 RADIUS_MD = 8
 RADIUS_LG = 10
 RADIUS_PILL = 999
+WINDOW_RADIUS = 12
 
 SPACE_XS = 8
 SPACE_SM = 12
@@ -97,8 +127,8 @@ SPACE_LG = 24
 SPACE_XL = 32
 PAGE_MARGIN_H = 20
 PAGE_MARGIN_V = 16
-CONTENT_MAX_WIDTH = 9999
-SIDEBAR_WIDTH = 160
+CONTENT_MAX_WIDTH = 900
+SIDEBAR_WIDTH = 184
 
 # Wide enough for values like「5500 场」plus a 22px flat stepper column.
 CONTROL_NUMERIC_WIDTH = 120
@@ -133,7 +163,7 @@ _LIGHT: dict[str, Any] = {
     "PRIMARY_ON": "#FFFFFF",
     "SECONDARY_CONTAINER": "#E5E7EB",
     "BG": "#FFFFFF",
-    "NAV_BG": "#FFFFFF",
+    "NAV_BG": "#F6F7F8",
     "SURFACE": "#FFFFFF",
     "SURFACE_PEARL": "#F7F7F7",
     "BORDER": "rgba(13,13,13,0.08)",
@@ -205,15 +235,15 @@ _DARK: dict[str, Any] = {
     "PRIMARY_ON": "#0D0D0D",
     "SECONDARY_CONTAINER": "#374151",
     "BG": "#181818",
-    "NAV_BG": "#181818",
+    "NAV_BG": "#141618",
     "SURFACE": "#181818",
-    "SURFACE_PEARL": "#181818",
+    "SURFACE_PEARL": "#222528",
     "BORDER": "rgba(255,255,255,0.08)",
     "HAIRLINE": "rgba(255,255,255,0.08)",
     "OUTLINE_VARIANT": "#4B5563",
     "DIVIDER_SOFT": "#374151",
     "ROW_SELECTED": "rgba(255,255,255,0.06)",
-    "INPUT_BG": "#1F2937",
+    "INPUT_BG": "#202326",
     "BAR_OFF": "#4B5563",
     "SETTINGS_SIDEBAR_BG": "#181818",
     "NAV_SELECTED_BG": "rgba(255,255,255,0.06)",

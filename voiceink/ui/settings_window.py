@@ -17,6 +17,7 @@ log = logging.getLogger("VoiceInk")
 
 from voiceink.config import (
     Config,
+    DEFAULT_HOTKEY,
     format_hotkey,
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
@@ -68,6 +69,7 @@ class SettingsWindow(QWidget):
     theme_changed = pyqtSignal(str)
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
+    runtime_status_changed = pyqtSignal(str)
     closed = pyqtSignal()
     finished = pyqtSignal(int)
 
@@ -202,7 +204,7 @@ class SettingsWindow(QWidget):
         pages_lay = QHBoxLayout(pages_host)
         # Top/bottom inset so section titles (e.g. 偏好) are not flush-clipped
         # against the content column edge when scrolled.
-        pages_lay.setContentsMargins(12, 4, 12, 12)
+        pages_lay.setContentsMargins(12, 8, 12, 12)
         pages_lay.setSpacing(0)
 
         self._pages = QStackedWidget()
@@ -227,6 +229,7 @@ class SettingsWindow(QWidget):
 
     def set_runtime_status(self, hint: str) -> None:
         self._runtime_status_hint = hint.strip() or "就绪"
+        self.runtime_status_changed.emit(self._runtime_status_hint)
 
     def _configure_numeric_spin(self, spin: QSpinBox) -> None:
         """Shared metrics for flat themed QSpinBox steppers."""
@@ -423,6 +426,7 @@ class SettingsWindow(QWidget):
             if is_model_downloaded(m["id"]) and m["id"] != active_id
         ]
         available_models = [m for m in MODEL_REGISTRY if not is_model_downloaded(m["id"])]
+        available_models.sort(key=lambda model: model["id"] != DEFAULT_MODEL_ID)
         if downloaded_models:
             _add_section("其他已下载", downloaded_models, True)
         _add_section("可下载", available_models, False)
@@ -438,10 +442,14 @@ class SettingsWindow(QWidget):
             self._delete_model(model_id)
 
     def _start_download(self, model_id: str):
+        if model_id in self._dl_workers:
+            return
         from voiceink.speech_recognizer import ModelDownloadWorker
         worker = ModelDownloadWorker(model_id)
         self._dl_workers[model_id] = worker
         card = self._model_cards.get(model_id)
+        if card:
+            card.set_download_progress(0)
         worker.progress.connect(lambda pct, c=card: c.set_download_progress(pct) if c else None)
         worker.finished_ok.connect(lambda mid: self._on_dl_done(mid))
         worker.error.connect(lambda msg, c=card: self._on_dl_error(msg, c))
@@ -466,8 +474,10 @@ class SettingsWindow(QWidget):
 
     def _on_dl_error(self, msg: str, card):
         if card:
+            self._dl_workers.pop(card._model_id, None)
             card.set_download_error(msg)
-        QMessageBox.warning(self, "下载失败", msg)
+        else:
+            QMessageBox.warning(self, "下载失败", msg)
 
     def _delete_model(self, model_id: str):
         from voiceink.speech_recognizer import get_model_info, delete_model
@@ -502,9 +512,9 @@ class SettingsWindow(QWidget):
             scroll_before = page.verticalScrollBar().value()
 
         self._llm_container.setVisible(enabled)
-        self._llm_preview_card.setVisible(True)
+        self._llm_preview_card.setVisible(enabled)
         if hasattr(self, "_llm_preview_divider"):
-            self._llm_preview_divider.setVisible(True)
+            self._llm_preview_divider.setVisible(enabled)
 
         if page is not None and page.widget() is not None:
             def _restore() -> None:
@@ -589,7 +599,7 @@ class SettingsWindow(QWidget):
 
         runtime_items = [
             ("当前模型", active_name),
-            ("快捷键", format_hotkey(self._config.get("hotkey", "ctrl+space"))),
+            ("快捷键", format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))),
             (
                 "润色",
                 "已开启"
@@ -635,11 +645,11 @@ class SettingsWindow(QWidget):
     def _refresh_about_hero_status(self) -> None:
         if not hasattr(self, "_about_usage_tip"):
             return
-        hotkey = format_hotkey(self._config.get("hotkey", "ctrl+space"))
+        hotkey = format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))
         if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
             tip = (
-                f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；"
-                f"Esc 或听写条「结束」结束"
+                f"持续转写：按住 {hotkey} 开始监听，说话停顿约 1 秒后自动输入，不用点结束；"
+                f"Esc 或听写条「结束」停止整场"
             )
         else:
             tip = f"按住 {hotkey} 说话，松开后识别并粘贴"
@@ -702,7 +712,7 @@ class SettingsWindow(QWidget):
 
     def _load_settings(self):
         self._loading = True
-        self._hotkey_edit.set_value(self._config.get("hotkey", "ctrl+space"))
+        self._hotkey_edit.set_value(self._config.get("hotkey", DEFAULT_HOTKEY))
         self._auto_start_row.setChecked(self._config.get("auto_start", False))
         self._sound_row.setChecked(self._config.get("sound_enabled", True))
         self._restore_clipboard_row.setChecked(
@@ -751,9 +761,9 @@ class SettingsWindow(QWidget):
         llm_on = self._config.get("llm.enabled", False)
         self._llm_enable_row.setChecked(llm_on)
         self._llm_container.setVisible(llm_on)
-        self._llm_preview_card.setVisible(True)
+        self._llm_preview_card.setVisible(llm_on)
         if hasattr(self, "_llm_preview_divider"):
-            self._llm_preview_divider.setVisible(True)
+            self._llm_preview_divider.setVisible(llm_on)
         self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
         self._llm_key_edit.setText(self._config.get("llm.api_key", ""))
         self._llm_model_edit.setText(self._config.get("llm.model_name", ""))
@@ -853,7 +863,12 @@ class SettingsWindow(QWidget):
         self._mic_probe_active = True
         self._mic_probe_max = 0.0
         self._mic_test_btn.setEnabled(False)
-        self._set_mic_test_status("监听中…请说话并播放一段电脑声音")
+        instruction = {
+            INPUT_SOURCE_MICROPHONE: "请对麦克风说话",
+            INPUT_SOURCE_SYSTEM: "请播放一段电脑声音",
+            INPUT_SOURCE_MIXED: "请说话并播放一段电脑声音",
+        }.get(src, "请对麦克风说话")
+        self._set_mic_test_status(f"正在测试…{instruction}")
         self._mic_test_recorder.volume_changed.connect(self._on_mic_probe_volume)
         self._mic_test_recorder.error.connect(self._on_mic_probe_error)
         self._mic_test_recorder.warning.connect(self._on_mic_probe_warning)
@@ -871,8 +886,7 @@ class SettingsWindow(QWidget):
         if self._mic_test_recorder.is_recording:
             self._mic_test_recorder.cancel()
         self._mic_test_btn.setEnabled(True)
-        self._set_mic_test_status("")
-        QMessageBox.warning(self, "音频设备", msg)
+        self._set_mic_test_status(f"测试失败：{msg}。可展开「手动选择音频设备」后重试。")
 
     def _on_mic_probe_warning(self, msg: str):
         if not self._mic_probe_active:
@@ -960,7 +974,10 @@ class SettingsWindow(QWidget):
         if not hasattr(self, "_hotkey_hint"):
             return
         self._hotkey_hint.setText(
-            "持续模式按住约 0.30 秒开始，松开不结束；Esc 或结束可结束整场。"
+            "按住约 0.30 秒开始，松开后继续听；说话停顿约 1 秒后自动输入，不用点结束。"
+            "Esc 或听写条「结束」停止整场。"
+            if self._selected_trigger_mode() == TRIGGER_MODE_CONTINUOUS else
+            "按住约 0.18 秒开始录音，松开后识别并输入；录音中按 Esc 取消。"
         )
 
     def _on_theme_mode_changed(self, _index: int = 0):
@@ -1010,7 +1027,7 @@ class SettingsWindow(QWidget):
         if not has_modifier:
             QMessageBox.warning(self, "提示", "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。")
             self._loading = True
-            self._hotkey_edit.set_value(self._config.get("hotkey", "ctrl+space"))
+            self._hotkey_edit.set_value(self._config.get("hotkey", DEFAULT_HOTKEY))
             self._loading = False
             return
         old = self._config.get("hotkey")
