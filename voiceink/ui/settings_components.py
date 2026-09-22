@@ -455,10 +455,8 @@ def empty_state(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setWordWrap(True)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    lbl.setStyleSheet(
-        f"color: {TEXT_DIM}; font-size: {tok.TYPE_BODY_SM}px; padding: 20px 12px;"
-        f" background: transparent;"
-    )
+    lbl.setProperty("viRole", "emptyState")
+    lbl.setStyleSheet(stylesheet_for_role("emptyState"))
     return lbl
 
 
@@ -554,6 +552,11 @@ def stylesheet_for_role(role: object) -> str | None:
         return (
             f"color: {live.TEXT_SEC}; font-size: {live.TYPE_FOOTNOTE}px; line-height: 1.35;"
             f" background: transparent;"
+        )
+    if role == "emptyState":
+        return (
+            f"color: {live.TEXT_DIM}; font-size: {live.TYPE_BODY_SM}px;"
+            f" padding: 20px 12px; background: transparent;"
         )
     return None
 
@@ -874,10 +877,15 @@ class _SourceIcon(QWidget):
         self._active = active
         self.update()
 
+    def reapply_styles(self) -> None:
+        self.update()
+
     def paintEvent(self, event):
+        from voiceink.ui import design_tokens as tok
+
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(TEXT if self._active else TEXT_SEC)
+        color = QColor(tok.TEXT if self._active else tok.TEXT_SEC)
         pen = QPen(color, 1.8)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)

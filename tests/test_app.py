@@ -257,6 +257,51 @@ class TestSegmentReadyQueueing:
             app._on_segment_ready(np.zeros(1600, dtype=np.float32))
             assert len(app._segment_queue) == 1
 
+    def test_segment_kept_when_model_not_ready(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._on_segment_ready(audio)
+            assert len(app._segment_queue) == 1
+            assert app._segment_queue[0] is audio
+            h["recognizer"].transcribe_final.assert_not_called()
+            h["floating"].show_error.assert_called()
+
+    def test_pump_keeps_queue_when_model_not_ready(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._segment_queue = [audio]
+            app._pump_segment_queue()
+            assert app._segment_queue == [audio]
+            h["recognizer"].transcribe_final.assert_not_called()
+
+    def test_recognizer_error_while_loading_keeps_hud_lock(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_loading = True
+            app._is_transcribing = True
+            app._on_recognizer_error("识别失败: boom")
+            assert app._is_transcribing is False
+            h["floating"].clear_model_loading_lock.assert_not_called()
+            h["floating"].show_error.assert_not_called()
+
+    def test_load_failure_error_does_not_drop_queue(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._segment_queue = [audio]
+            app._on_recognizer_error("模型加载失败: boom")
+            assert app._segment_queue == [audio]
+            h["recognizer"].transcribe_final.assert_not_called()
+            h["floating"].show_error.assert_not_called()
+
 
 class TestFinalResultFlow:
     def test_empty_result_non_continuous_shows_error(self):
@@ -310,3 +355,15 @@ class TestBeginTranscription:
             app._begin_transcription(audio)
             assert app._is_transcribing is False
             assert len(app._segment_queue) == 1
+
+    def test_begin_transcription_requeues_when_not_ready(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._begin_transcription(audio)
+            assert app._is_transcribing is False
+            assert app._segment_queue == [audio]
+            h["recognizer"].transcribe_final.assert_not_called()
+            h["floating"].show_error.assert_called()

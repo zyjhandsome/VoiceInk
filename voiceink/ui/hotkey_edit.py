@@ -6,7 +6,6 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QLineEdit
 
 from voiceink.config import format_hotkey
-from voiceink.ui.design_tokens import ACCENT_FOCUS, SURFACE_PEARL, TEXT
 
 _MODIFIER_KEYS: set[int] = set()
 
@@ -67,13 +66,15 @@ class HotkeyEdit(QLineEdit):
         super().mousePressEvent(event)
 
     def _begin_capture(self) -> None:
+        from voiceink.ui import design_tokens as tok
+
         if self._capturing:
             self.capture_ended.emit()
         self._capturing = True
         self.setText("请按下组合键...")
         self.setStyleSheet(
-            f"border: 2px solid {ACCENT_FOCUS};"
-            f" background: {SURFACE_PEARL}; color: {TEXT};"
+            f"border: 2px solid {tok.ACCENT_FOCUS};"
+            f" background: {tok.SURFACE_PEARL}; color: {tok.TEXT};"
         )
         self.capture_started.emit()
 

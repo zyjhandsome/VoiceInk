@@ -528,16 +528,26 @@ class App(QObject):
         self._tray.set_activity_tooltip(None)
         self._floating.dismiss_if_idle()
 
+    def _hold_audio_until_ready(self, audio: np.ndarray, *, front: bool) -> None:
+        """Keep captured audio until the model can transcribe it."""
+        if front:
+            self._segment_queue.insert(0, audio)
+        else:
+            self._segment_queue.append(audio)
+        if self._recognizer.is_loading:
+            log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
+            self._floating.show_model_loading(
+                "模型载入中，已录制的语音将排队等待识别…"
+            )
+            return
+        log.warning("模型未就绪，语音段已保留（队列 %d）", len(self._segment_queue))
+        self._show_model_not_ready()
+
     def _on_segment_ready(self, audio: np.ndarray):
         if audio.size < MIN_AUDIO_SAMPLES:
             return
         if not self._recognizer.is_ready:
-            if self._recognizer.is_loading:
-                self._segment_queue.append(audio)
-                log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
-                self._floating.show_model_loading(
-                    "模型载入中，已录制的语音将排队等待识别…"
-                )
+            self._hold_audio_until_ready(audio, front=False)
             return
         if self._is_transcribing:
             self._segment_queue.append(audio)
@@ -557,9 +567,7 @@ class App(QObject):
 
     def _begin_transcription(self, audio: np.ndarray):
         if not self._recognizer.is_ready:
-            if self._recognizer.is_loading:
-                self._segment_queue.insert(0, audio)
-                self._floating.show_model_loading("模型载入中，识别已暂停…")
+            self._hold_audio_until_ready(audio, front=True)
             return
         self._pending_record = self._build_pending_history_record(audio)
         self._is_transcribing = True
@@ -650,6 +658,12 @@ class App(QObject):
 
     def _on_recognizer_error(self, error_msg: str):
         self._is_transcribing = False
+        if self._recognizer.is_loading:
+            return
+        if "加载失败" in error_msg:
+            # Load progress already showed this failure. Pump must not drop audio.
+            self._pump_segment_queue()
+            return
         self._floating.clear_model_loading_lock()
         self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
         self._sound.play_error()
@@ -662,6 +676,8 @@ class App(QObject):
         if self._is_transcribing or not self._segment_queue:
             if self._continuous_session_active() and not self._is_transcribing:
                 self._floating.show_listening()
+            return
+        if not self._recognizer.is_ready:
             return
         next_audio = self._segment_queue.pop(0)
         self._begin_transcription(next_audio)
