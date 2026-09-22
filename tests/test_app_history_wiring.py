@@ -209,6 +209,97 @@ def test_history_commit_refreshes_open_main_window() -> None:
         history_ui.refresh.assert_called()
 
 
+def test_hold_records_one_history_row_for_the_whole_utterance() -> None:
+    with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+        app = h["app"]
+        h["recorder"].is_recording = True
+        app._begin_transcription(_audio(0.2))
+        app._on_final_result("前一段")
+        app._begin_transcription(_audio(0.3))
+        app._on_final_result("后一段")
+        h["paster"].paste_async.assert_not_called()
+        h["history"].enqueue.assert_not_called()
+
+        h["recorder"].is_recording = False
+        app._is_transcribing = False
+        app._on_recording_finished(np.zeros(1, dtype=np.float32))
+        h["paster"].paste_async.call_args[0][1]("pasted")
+
+        records = _enqueued_records(h["history"])
+        assert h["paster"].paste_async.call_args[0][0] == "前一段后一段"
+        assert len(records) == 1
+        assert records[0].raw_text == "前一段后一段"
+        assert records[0].polished_text == ""
+        assert records[0].trigger_mode == "hotkey"
+        assert records[0].seq == 0
+        assert records[0].duration_ms == 500
+
+
+def test_hold_tail_and_polish_save_the_full_utterance() -> None:
+    overrides = {
+        "audio.trigger_mode": "hotkey",
+        "llm.enabled": True,
+        "llm.api_url": "https://api.example.test/v1",
+        "llm.api_key": "key",
+        "llm.model_name": "gpt-test",
+    }
+    with app_harness(overrides) as h:
+        app = h["app"]
+        h["recorder"].is_recording = True
+        app._begin_transcription(_audio(0.2))
+        app._on_final_result("前一段")
+        h["polisher"].polish.assert_not_called()
+
+        h["recorder"].is_recording = False
+        app._begin_transcription(_audio(0.2))
+        app._on_final_result("尾巴")
+        h["polisher"].polish.assert_called_once()
+        assert h["polisher"].polish.call_args[0][0] == "前一段尾巴"
+
+        app._on_polish_complete("润色后的全文")
+        h["paster"].paste_async.call_args[0][1]("pasted")
+
+        records = _enqueued_records(h["history"])
+        assert h["paster"].paste_async.call_args[0][0] == "润色后的全文"
+        assert len(records) == 1
+        assert records[0].raw_text == "前一段尾巴"
+        assert records[0].polished_text == "润色后的全文"
+        assert records[0].duration_ms == 400
+        assert records[0].trigger_mode == "hotkey"
+
+
+def test_hold_error_after_release_still_pastes_and_records_earlier_text() -> None:
+    with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+        app = h["app"]
+        h["recorder"].is_recording = True
+        app._begin_transcription(_audio(0.2))
+        app._on_final_result("已经说了")
+
+        h["recorder"].is_recording = False
+        app._begin_transcription(_audio(0.2))
+        app._on_recognizer_error("ASR crashed")
+        h["paster"].paste_async.call_args[0][1]("pasted")
+
+        records = _enqueued_records(h["history"])
+        assert h["paster"].paste_async.call_args[0][0] == "已经说了"
+        assert [record.raw_text for record in records] == ["已经说了"]
+        assert records[0].duration_ms == 400
+        h["floating"].show_error.assert_not_called()
+
+
+def test_hold_cancel_does_not_paste_or_record() -> None:
+    with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+        app = h["app"]
+        h["recorder"].is_recording = True
+        app._begin_transcription(_audio(0.2))
+        app._on_final_result("不要了")
+        app._on_recording_cancel()
+        app._on_final_result("迟到的结果")
+
+        h["paster"].paste_async.assert_not_called()
+        h["history"].enqueue.assert_not_called()
+
+
 def test_clipboard_and_error_paste_results_enqueue_history() -> None:
     with app_harness() as h:
         _drive_segment(h["app"], h["paster"], "copied text", result="clipboard")

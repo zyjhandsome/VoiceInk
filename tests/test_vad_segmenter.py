@@ -40,6 +40,12 @@ class TestSpeechSegmenterBasics:
         seg.feed(_tone(0.1))
         assert seg.feed(_silence(0.2)) is None
 
+    def test_default_max_cuts_a_long_utterance_into_a_live_slice(self):
+        seg = SpeechSegmenter(speech_threshold=0.002, min_speech_sec=0.1)
+        out = seg.feed(_tone(16))
+        assert out is not None
+        assert out.size <= int(16000 * 15) + 100
+
     def test_max_length_forces_cut(self):
         seg = SpeechSegmenter(
             speech_threshold=0.002,

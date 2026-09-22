@@ -181,6 +181,7 @@ class TestFloatingWindowClassicColors:
         rec_ss = win._status_label.styleSheet().lower()
         assert STATE_RECORD.lower() in rec_ss
 
+        win.dismiss_if_idle()
         win.show_recognizing("hi")
         assert STATE_RECORD.lower() not in win._status_label.styleSheet().lower()
 
@@ -193,6 +194,62 @@ def test_listen_bar_is_thin_without_extra_actions(win):
     assert win._end_btn.text() == "结束"
     assert not hasattr(win, "_history_btn")
     assert not hasattr(win, "_settings_btn")
+
+
+def test_hold_bar_stays_put_until_the_key_is_released(win):
+    from voiceink.ui.design_tokens import STATE_RECORD
+
+    win.show_recording()
+    held_height = win.height()
+    assert "松开结束" in win._text_label.text()
+
+    win.show_recognizing()
+    assert win.height() == held_height
+    assert win._status_label.text() == "录音中"
+    assert "松开结束" in win._text_label.text()
+    assert STATE_RECORD.lower() in win._status_label.styleSheet().lower()
+
+    win.show_live_transcript("开头" + "啊" * 40 + "这句还在")
+    shown = win._text_label.text()
+    shown_height = win.height()
+    assert "这句还在" in shown
+    assert win._status_label.text() == "录音中"
+    assert win._dot._timer.isActive()
+
+    win.show_recognizing()
+    win.show_recording()
+    assert win._text_label.text() == shown
+    assert win.height() == shown_height
+    assert win._status_label.text() == "录音中"
+    assert STATE_RECORD.lower() in win._status_label.styleSheet().lower()
+    assert win._dot._timer.isActive()
+
+
+def test_hold_recording_shows_live_transcript(win):
+    win.show_recording()
+    win.show_live_transcript("开头" + "啊" * 80 + "这句还在")
+    assert "这句还在" in win._text_label.text()
+    assert "松开结束" not in win._text_label.text()
+    assert win._waveform.isVisible()
+    assert win._waveform.width() <= 40
+
+    win.show_recognizing()
+    win.show_success("已输入", "可按 Ctrl+V 粘贴")
+    assert "这句还在" in win._text_label.text()
+
+
+def test_live_transcript_keeps_the_tail_while_listening(win):
+    win.show_listening()
+    win.show_live_transcript("开头" + "啊" * 80 + "结尾还在")
+    assert "结尾还在" in win._text_label.text()
+    assert win._waveform.isVisible()
+    assert win._waveform.width() <= 40
+
+    win.show_listening()
+    win.show_recognizing()
+    win.show_success("已发送", "发送到 notepad")
+    assert "结尾还在" in win._text_label.text()
+    assert "正在听" in win._status_label.text()
 
 
 def test_partial_text_grows_excerpt_only(win):

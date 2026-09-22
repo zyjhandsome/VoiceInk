@@ -33,6 +33,7 @@ from voiceink.speech_recognizer import (
     set_models_dir,
     normalize_asr_output,
     get_model_info,
+    merge_slice_texts,
 )
 from voiceink.history_store import HistoryStore, SegmentRecord
 from voiceink.text_polisher import (
@@ -93,6 +94,10 @@ class App(QObject):
 
         self._config = Config()
         self._current_transcription = ""
+        self._live_committed = ""
+        self._live_inflight = ""
+        self._hold_paste_sent = False
+        self._hold_duration_ms = 0
         self._is_transcribing = False
         self._segment_queue: list[np.ndarray] = []
         self._continuous_user_stopped = False
@@ -132,6 +137,7 @@ class App(QObject):
         self._floating = FloatingWindow()
         self._tray = TrayIcon()
         self._main: MainWindow | None = None
+        self._restore_main_after_menu = False
         self._settings_win = None
         self._history_win = None
 
@@ -185,6 +191,7 @@ class App(QObject):
         self._recorder.no_speech_warning.connect(self._on_no_speech_warning)
 
         self._recognizer.final_result.connect(self._on_final_result)
+        self._recognizer.partial_result.connect(self._on_partial_result)
         self._recognizer.error.connect(self._on_recognizer_error)
         self._recognizer.ready.connect(self._on_stt_ready)
         self._recognizer.model_load_progress.connect(self._on_model_load_progress)
@@ -202,6 +209,8 @@ class App(QObject):
         self._tray.quit_app.connect(self._quit)
         self._tray.auto_start_toggled.connect(self._on_auto_start_toggled)
         self._tray.model_switched.connect(self._on_tray_model_switch)
+        self._tray.menu_about_to_show.connect(self._note_main_before_tray_menu)
+        self._tray.menu_closed.connect(self._restore_main_after_tray_menu)
 
     def _apply_audio_config(self):
         from voiceink.audio_devices import (
@@ -370,6 +379,9 @@ class App(QObject):
 
         log.info("开始录音（来源: %s）...", self._recorder.input_source_display)
         self._current_transcription = ""
+        self._hold_paste_sent = False
+        self._hold_duration_ms = 0
+        self._clear_live_transcript()
         self._sound.play_start()
         self._tray.set_recording(True)
         self._tray.set_activity_tooltip("recording")
@@ -399,6 +411,10 @@ class App(QObject):
     def _on_recording_cancel(self):
         if self._is_continuous_mode():
             return
+        self._hold_paste_sent = True
+        self._hold_duration_ms = 0
+        self._segment_queue.clear()
+        self._clear_live_transcript()
         self._reset_recording_ui_after_abort()
         self._recorder.cancel()
         self._floating.show_cancelled()
@@ -424,6 +440,7 @@ class App(QObject):
         self._continuous_user_stopped = False
         self._current_session_id = None
         self._current_seq = 0
+        self._clear_live_transcript()
         self._start_continuous_listening()
 
     def _on_hotkey_tap_too_short(self):
@@ -568,6 +585,13 @@ class App(QObject):
 
     def _on_recording_finished(self, full_audio: np.ndarray):
         if full_audio.size < MIN_AUDIO_SAMPLES:
+            if self._emit_hold_output_if_ready():
+                return
+            if (
+                not self._is_continuous_mode()
+                and (self._is_transcribing or self._segment_queue or self._live_committed.strip())
+            ):
+                return
             log.warning("录音过短 (%d 采样点)，忽略", full_audio.size)
             self._reset_recording_ui_after_abort()
             self._floating.show_error(self._friendly_error("录音过短"))
@@ -579,6 +603,8 @@ class App(QObject):
             self._hold_audio_until_ready(audio, front=True)
             return
         self._pending_record = self._build_pending_history_record(audio)
+        if not self._is_continuous_mode():
+            self._hold_duration_ms += self._pending_record.duration_ms
         self._is_transcribing = True
         self._tray.set_activity_tooltip("recognizing")
         if self._continuous_user_stopped:
@@ -620,33 +646,117 @@ class App(QObject):
             model=self._config.get("stt.model_id", DEFAULT_MODEL_ID),
         )
 
-    def _on_final_result(self, text: str):
-        text = normalize_asr_output(text)
-        if not text.strip():
-            log.warning("未识别到语音内容")
-            self._is_transcribing = False
-            if self._recognizer.is_loading:
-                self._floating.show_model_loading("模型载入中，请稍候…")
-                self._tray.set_activity_tooltip("loading")
-                self._pump_segment_queue()
-                return
-            self._tray.set_activity_tooltip(
-                "listening" if self._continuous_session_active() else None
-            )
-            if self._continuous_session_active():
-                self._floating.show_listening()
-            elif self._is_continuous_mode():
-                self._refresh_continuous_ui_after_output()
-            else:
-                self._floating.show_error(self._friendly_error("未识别"))
-            self._pump_segment_queue()
-            return
+    def _clear_live_transcript(self) -> None:
+        self._live_committed = ""
+        self._live_inflight = ""
+        self._floating.clear_live_transcript()
 
-        log.debug("识别结果长度: %d 字符", len(text))
+    def _show_live_transcript(self) -> None:
+        parts = [self._live_committed, self._live_inflight]
+        text = merge_slice_texts([part for part in parts if part])
+        if text:
+            self._floating.show_live_transcript(text)
+
+    def _on_partial_result(self, text: str) -> None:
+        piece = (text or "").strip()
+        if not piece:
+            return
+        self._live_inflight = piece
+        self._show_live_transcript()
+
+    def _commit_live_transcript(self, text: str) -> None:
+        piece = (text or "").strip()
+        if not piece:
+            return
+        if self._live_committed:
+            self._live_committed = merge_slice_texts([self._live_committed, piece])
+        else:
+            self._live_committed = piece
+        self._live_inflight = ""
+        self._show_live_transcript()
+
+    def _defer_hold_output(self) -> bool:
+        """Hold-to-talk keeps slices on the bar and pastes once the key is up."""
+        if self._is_continuous_mode() or self._hold_paste_sent:
+            return False
+        return bool(self._recorder.is_recording or self._segment_queue)
+
+    def _emit_hold_output_if_ready(self) -> bool:
+        """Paste the whole hold utterance once nothing is left to recognize."""
+        if self._is_continuous_mode() or self._hold_paste_sent:
+            return False
+        if self._recorder.is_recording or self._is_transcribing or self._segment_queue:
+            return False
+        text = (self._live_committed or "").strip()
+        if not text:
+            return False
+        self._hold_paste_sent = True
         self._current_transcription = text
         if self._pending_record is not None:
             self._pending_record.raw_text = text
+            if self._hold_duration_ms:
+                self._pending_record.duration_ms = self._hold_duration_ms
+        self._deliver_recognized_text(text)
+        return True
 
+    def _on_final_result(self, text: str):
+        text = normalize_asr_output(text)
+        if self._hold_paste_sent and not self._is_continuous_mode():
+            self._is_transcribing = False
+            self._pump_segment_queue()
+            return
+        if text.strip():
+            log.debug("识别结果长度: %d 字符", len(text))
+            self._current_transcription = text
+            self._commit_live_transcript(text)
+            if self._pending_record is not None:
+                self._pending_record.raw_text = text
+        else:
+            log.warning("未识别到语音内容")
+
+        self._is_transcribing = False
+        if self._defer_hold_output():
+            if self._recognizer.is_loading:
+                self._floating.show_model_loading("模型载入中，请稍候…")
+                self._tray.set_activity_tooltip("loading")
+            elif self._recorder.is_recording:
+                self._tray.set_activity_tooltip("recording")
+                self._floating.show_recording()
+            self._pump_segment_queue()
+            return
+
+        if not self._is_continuous_mode():
+            if self._emit_hold_output_if_ready():
+                return
+            if not text.strip():
+                self._finish_empty_recognition()
+            return
+
+        if not text.strip():
+            self._finish_empty_recognition()
+            return
+        self._deliver_recognized_text(text)
+
+    def _finish_empty_recognition(self) -> None:
+        if self._recognizer.is_loading:
+            self._floating.show_model_loading("模型载入中，请稍候…")
+            self._tray.set_activity_tooltip("loading")
+            self._pump_segment_queue()
+            return
+        self._tray.set_activity_tooltip(
+            "listening" if self._continuous_session_active() else None
+        )
+        if self._continuous_session_active():
+            self._floating.show_listening()
+        elif self._is_continuous_mode():
+            self._refresh_continuous_ui_after_output()
+        elif self._recorder.is_recording:
+            self._floating.show_recording()
+        else:
+            self._floating.show_error(self._friendly_error("未识别"))
+        self._pump_segment_queue()
+
+    def _deliver_recognized_text(self, text: str) -> None:
         llm_enabled = self._config.get("llm.enabled", False)
         api_url = self._config.get("llm.api_url", "")
         api_key = self._config.get("llm.api_key", "")
@@ -682,6 +792,15 @@ class App(QObject):
             # Load progress already showed this failure. Pump must not drop audio.
             self._pump_segment_queue()
             return
+        if not self._is_continuous_mode():
+            if self._emit_hold_output_if_ready():
+                return
+            if self._defer_hold_output():
+                if self._recorder.is_recording:
+                    self._tray.set_activity_tooltip("recording")
+                    self._floating.show_recording()
+                self._pump_segment_queue()
+                return
         self._floating.clear_model_loading_lock()
         self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
         self._sound.play_error()
@@ -752,6 +871,8 @@ class App(QObject):
                 self._floating.show_listening()
             elif self._is_continuous_mode():
                 self._refresh_continuous_ui_after_output()
+            elif self._recorder.is_recording:
+                self._floating.show_recording()
             else:
                 self._floating.show_error(self._friendly_error("未识别"))
             self._pump_segment_queue()
@@ -829,8 +950,9 @@ class App(QObject):
                     f"剩余内容：{success_msg} · {target_hint}"
                 )
                 QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
+            elif self._recorder.is_recording:
+                self._floating.show_recording()
             else:
-                self._floating.dismiss_if_idle()
                 if degraded_from_polish:
                     self._floating.show_info(success_msg, target_hint)
                 else:
@@ -846,8 +968,9 @@ class App(QObject):
             elif self._continuous_user_stopped:
                 self._floating.show_continuous_stopped(f"剩余内容：已复制 · {paste_hint}")
                 QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
+            elif self._recorder.is_recording:
+                self._floating.show_recording()
             else:
-                self._floating.dismiss_if_idle()
                 self._floating.show_success("已复制到剪贴板", paste_hint)
         else:
             log.error("输出失败: %s", error_detail)
@@ -964,6 +1087,29 @@ class App(QObject):
         self._main.show()
         self._main.raise_()
         self._main.activateWindow()
+
+    def _note_main_before_tray_menu(self) -> None:
+        main = self._main
+        active = QApplication.activeWindow()
+        self._restore_main_after_menu = bool(
+            main is not None and main.isVisible() and active is main
+        )
+
+    def _restore_main_after_tray_menu(self) -> None:
+        if not self._restore_main_after_menu:
+            return
+        self._restore_main_after_menu = False
+        QTimer.singleShot(0, self._reactivate_main_window)
+
+    def _reactivate_main_window(self) -> None:
+        main = self._main
+        if main is None or not main.isVisible():
+            return
+        main.raise_()
+        main.activateWindow()
+        app = QApplication.instance()
+        if app is not None and app.overrideCursor() is not None:
+            app.restoreOverrideCursor()
 
     def _show_settings(self):
         self._show_main_window(None)

@@ -1,5 +1,9 @@
+import sys
+
 import pytest
 import numpy as np
+from PyQt6.QtWidgets import QApplication
+from unittest.mock import MagicMock
 
 from voiceink.app import App, MIN_AUDIO_SAMPLES
 from voiceink.runtime_status import RuntimeState
@@ -135,6 +139,41 @@ class TestAppSignals:
             h["floating"].history_requested.connect.assert_called_with(
                 app._show_history_window
             )
+
+
+class TestTrayMenuDoesNotLeaveMainWindowStuck:
+    def test_closing_the_tray_menu_reactivates_the_main_window(self, monkeypatch):
+        QApplication.instance() or QApplication(sys.argv)
+        app = App.__new__(App)
+        main = MagicMock()
+        main.isVisible.return_value = True
+        app._main = main
+        app._restore_main_after_menu = False
+        monkeypatch.setattr(QApplication, "activeWindow", staticmethod(lambda: main))
+        monkeypatch.setattr(
+            "voiceink.app.QTimer.singleShot",
+            lambda _delay, callback: callback(),
+        )
+
+        app._note_main_before_tray_menu()
+        app._restore_main_after_tray_menu()
+
+        main.raise_.assert_called_once()
+        main.activateWindow.assert_called_once()
+
+    def test_menu_close_does_not_steal_focus_from_another_window(self):
+        QApplication.instance() or QApplication(sys.argv)
+        app = App.__new__(App)
+        main = MagicMock()
+        main.isVisible.return_value = True
+        app._main = main
+        app._restore_main_after_menu = False
+
+        app._note_main_before_tray_menu()
+        app._restore_main_after_tray_menu()
+
+        main.raise_.assert_not_called()
+        main.activateWindow.assert_not_called()
 
 
 class TestAppState:
@@ -339,6 +378,52 @@ class TestFinalResultFlow:
             app._on_final_result("   ")
             assert h["floating"].show_error.called
             assert app._is_transcribing is False
+
+    def test_hold_pastes_the_whole_utterance_once_on_release(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            app = h["app"]
+            h["recorder"].is_recording = True
+            app._on_final_result("前十五秒")
+            app._on_final_result("后十五秒")
+            h["paster"].paste_async.assert_not_called()
+
+            h["recorder"].is_recording = False
+            app._is_transcribing = False
+            app._on_recording_finished(np.array([], dtype=np.float32))
+
+            h["paster"].paste_async.assert_called_once()
+            assert h["paster"].paste_async.call_args[0][0] == "前十五秒后十五秒"
+            h["floating"].show_error.assert_not_called()
+
+    def test_hold_release_tail_pastes_every_slice(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            app = h["app"]
+            h["recorder"].is_recording = True
+            app._on_final_result("前十五秒")
+            h["paster"].paste_async.assert_not_called()
+
+            h["recorder"].is_recording = False
+            app._on_final_result("松开后的尾巴")
+
+            h["paster"].paste_async.assert_called_once()
+            assert h["paster"].paste_async.call_args[0][0] == "前十五秒松开后的尾巴"
+
+    def test_hold_waits_until_the_queued_tail_is_recognized(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            app = h["app"]
+            h["recorder"].is_recording = False
+            app._segment_queue = [np.ones(1600, dtype=np.float32)]
+            app._on_final_result("前十五秒")
+            h["paster"].paste_async.assert_not_called()
+            assert app._live_committed == "前十五秒"
+
+    def test_continuous_still_pastes_each_segment(self):
+        with app_harness({"audio.trigger_mode": "continuous", "llm.enabled": False}) as h:
+            app = h["app"]
+            app._on_final_result("第一段")
+            app._on_final_result("第二段")
+            pasted = [call.args[0] for call in h["paster"].paste_async.call_args_list]
+            assert pasted == ["第一段", "第二段"]
 
     def test_result_outputs_directly_when_llm_disabled(self):
         with app_harness() as h:

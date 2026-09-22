@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import sys
 
-from PyQt6.QtCore import QEvent, QRectF, Qt
-from PyQt6.QtGui import QCursor, QKeySequence, QPainterPath, QRegion, QShortcut
+from PyQt6.QtCore import QEvent, QLineF, QRectF, Qt
+from PyQt6.QtGui import (
+    QColor,
+    QCursor,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRegion,
+    QShortcut,
+)
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -40,10 +49,78 @@ _RESIZE_BORDER_PX = 6
 _WINDOW_W = 960
 _WINDOW_H = 640
 
-# Win32 WM_NCHITTEST results used for native edge resizing of the frameless window.
+# Win32 messages used for native edge resizing and a stable maximize rect.
 _WM_NCHITTEST = 0x0084
+_WM_GETMINMAXINFO = 0x0024
+_MONITOR_DEFAULTTONEAREST = 2
 _HTLEFT, _HTRIGHT, _HTTOP, _HTTOPLEFT, _HTTOPRIGHT = 10, 11, 12, 13, 14
 _HTBOTTOM, _HTBOTTOMLEFT, _HTBOTTOMRIGHT = 15, 16, 17
+
+
+_CAPTION_GLYPH = 10.0
+_CAPTION_STROKE = 1.15
+
+
+class _CaptionIconButton(QPushButton):
+    """Minimize, maximize, restore, and close, drawn in one optical box."""
+
+    def __init__(self, kind: str, parent=None) -> None:
+        super().__init__(parent)
+        self._kind = kind
+        self.setText("")
+
+    @property
+    def shows_restore(self) -> bool:
+        return self._kind == "restore"
+
+    def set_restore_glyph(self, restore: bool) -> None:
+        self._kind = "restore" if restore else "max"
+        label = "还原" if restore else "最大化"
+        self.setAccessibleName(label)
+        self.setToolTip(label)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        from voiceink.ui import design_tokens as live
+
+        color = QColor(live.TEXT if self.underMouse() else live.TEXT_SEC)
+        pen = QPen(color)
+        pen.setWidthF(_CAPTION_STROKE)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        half = _CAPTION_STROKE / 2
+        side = _CAPTION_GLYPH - _CAPTION_STROKE
+        left = (self.width() - _CAPTION_GLYPH) / 2 + half
+        top = (self.height() - _CAPTION_GLYPH) / 2 + half
+        radius = 1.2
+        if self._kind == "min":
+            y = self.height() / 2
+            painter.drawLine(QLineF(left, y, left + side, y))
+        elif self._kind == "close":
+            painter.drawLine(QLineF(left, top, left + side, top + side))
+            painter.drawLine(QLineF(left + side, top, left, top + side))
+        elif self._kind == "max":
+            painter.drawRoundedRect(QRectF(left, top, side, side), radius, radius)
+        else:
+            overlap = 2.4
+            inner = side - overlap
+            back = QRectF(left, top, inner, inner)
+            front = QRectF(left + overlap, top + overlap, inner, inner)
+            cover = QPainterPath()
+            cover.addRoundedRect(front.adjusted(-0.7, -0.7, 0.7, 0.7), radius, radius)
+            clip = QPainterPath()
+            clip.addRect(QRectF(self.rect()))
+            painter.save()
+            painter.setClipPath(clip.subtracted(cover))
+            painter.drawRoundedRect(back, radius, radius)
+            painter.restore()
+            painter.drawRoundedRect(front, radius, radius)
+        painter.end()
 
 
 class MainWindow(QWidget):
@@ -89,9 +166,9 @@ class MainWindow(QWidget):
         self._ink_dot.setFixedSize(_INK_DOT_PX, _INK_DOT_PX)
         self._title = QLabel("VoiceInk")
 
-        self._min_btn = QPushButton("–")
-        self._max_btn = QPushButton("□")
-        self._close_btn = QPushButton("×")
+        self._min_btn = _CaptionIconButton("min")
+        self._max_btn = _CaptionIconButton("max")
+        self._close_btn = _CaptionIconButton("close")
         for btn in (self._min_btn, self._max_btn, self._close_btn):
             # Match the Windows caption-button hit target (46×32).
             btn.setFixedSize(_CAPTION_BTN_W, 32)
@@ -99,7 +176,7 @@ class MainWindow(QWidget):
             # Like native caption buttons: mouse targets, not tab stops.
             # Alt+F4 / Ctrl+W remain the keyboard path.
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for btn, text in ((self._min_btn, "最小化"), (self._max_btn, "最大化 / 还原"),
+        for btn, text in ((self._min_btn, "最小化"),
                           (self._close_btn, "关闭窗口，保留托盘运行")):
             btn.setAccessibleName(text)
             btn.setToolTip(text)
@@ -114,6 +191,7 @@ class MainWindow(QWidget):
         cap.addWidget(self._min_btn)
         cap.addWidget(self._max_btn)
         cap.addWidget(self._close_btn)
+        self._sync_max_glyph()
         for handle in (self._caption, self._title, self._ink_dot):
             handle.installEventFilter(self)
         root.addWidget(self._caption)
@@ -265,6 +343,9 @@ class MainWindow(QWidget):
             inset = 6 if self.isMaximized() else 10
             self._size_grip.move(self.width() - 16 - inset, self.height() - 16 - inset)
             self._size_grip.setVisible(not self.isMaximized())
+        if self.isMaximized():
+            self._clear_round_mask()
+            return
         self._apply_window_shape()
 
     def showEvent(self, event) -> None:
@@ -277,12 +358,28 @@ class MainWindow(QWidget):
         if fw is None or fw in self._nav_buttons:
             self.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _sync_max_glyph(self) -> None:
+        self._max_btn.set_restore_glyph(self.isMaximized())
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() != QEvent.Type.WindowStateChange:
+            return
+        if hasattr(self, "_max_btn"):
+            self._sync_max_glyph()
+        if hasattr(self, "_caption"):
+            self._apply_chrome_radius()
+
     def _toggle_maximized(self) -> None:
         if self.isMaximized():
             self.showNormal()
         else:
+            # Drop the rounded clip before the window grows, so intermediate
+            # sizes are not masked and then snapped square.
+            self._clear_round_mask()
             self.showMaximized()
-        self.reapply_theme()
+        self._apply_chrome_radius()
+        self._sync_max_glyph()
 
     def _chrome_radius(self) -> int:
         return 0 if self.isMaximized() else tok.WINDOW_RADIUS
@@ -303,12 +400,52 @@ class MainWindow(QWidget):
         except Exception:
             pass
 
+    def _clear_round_mask(self) -> None:
+        self._mask_key = None
+        if not self.mask().isEmpty():
+            self.clearMask()
+
+    def _apply_chrome_radius(self) -> None:
+        """Update only the corner chrome. A full theme pass flashes on maximize."""
+        from voiceink.ui import design_tokens as live
+
+        radius = self._chrome_radius()
+        border = "none" if radius <= 0 else f"1px solid {live.TEXT_DIM}"
+        self.setStyleSheet(
+            f"QWidget#mainWindow {{ background: {live.BG};"
+            f" border: {border};"
+            f" border-radius: {radius}px; }}"
+        )
+        self._caption.setStyleSheet(
+            f"QWidget#mainCaption {{"
+            f" background: {live.BG};"
+            f" border: none;"
+            f" border-bottom: 1px solid {live.CONTROL_BORDER};"
+            f" border-top-left-radius: {radius}px;"
+            f" border-top-right-radius: {radius}px;"
+            f"}}"
+        )
+        self._sidebar.setStyleSheet(
+            f"QWidget#mainSidebar {{ background: {live.NAV_BG};"
+            f" border-right: 1px solid {live.HAIRLINE};"
+            f" border-bottom-left-radius: {radius}px; }}"
+        )
+        inset = 0 if radius <= 0 else 1
+        lay = self.layout()
+        if lay is not None:
+            lay.setContentsMargins(inset, inset, inset, inset)
+        self._apply_window_shape()
+
     def _apply_window_shape(self) -> None:
         radius = self._chrome_radius()
         self._apply_native_round_corners(radius)
-        if radius <= 0:
-            self.clearMask()
+        if radius <= 0 or self.isMaximized():
+            self._clear_round_mask()
             return
+        key = (self.width(), self.height(), radius)
+        if key == getattr(self, "_mask_key", None):
+            return
+        self._mask_key = key
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()), float(radius), float(radius))
         self.setMask(QRegion(path.toFillPolygon().toPolygon()))
@@ -378,21 +515,7 @@ class MainWindow(QWidget):
     def reapply_theme(self) -> None:
         from voiceink.ui import design_tokens as live
 
-        radius = self._chrome_radius()
-        self.setStyleSheet(
-            f"QWidget#mainWindow {{ background: {live.BG};"
-            f" border: 1px solid {live.TEXT_DIM};"
-            f" border-radius: {radius}px; }}"
-        )
-        self._caption.setStyleSheet(
-            f"QWidget#mainCaption {{"
-            f" background: {live.BG};"
-            f" border: none;"
-            f" border-bottom: 1px solid {live.CONTROL_BORDER};"
-            f" border-top-left-radius: {radius}px;"
-            f" border-top-right-radius: {radius}px;"
-            f"}}"
-        )
+        self._apply_chrome_radius()
         self._title.setStyleSheet(
             f"color: {live.TEXT}; font-size: {live.TYPE_BODY_SM}px;"
             f" font-weight: 700; background: transparent;"
@@ -409,11 +532,6 @@ class MainWindow(QWidget):
         )
         for btn in (self._min_btn, self._max_btn, self._close_btn):
             btn.setStyleSheet(cap_btn)
-        self._sidebar.setStyleSheet(
-            f"QWidget#mainSidebar {{ background: {live.NAV_BG};"
-            f" border-right: 1px solid {live.HAIRLINE};"
-            f" border-bottom-left-radius: {radius}px; }}"
-        )
         nav_css = (
             f"QPushButton {{ background: transparent; color: {live.TEXT_SEC};"
             f" border: 2px solid transparent; border-radius: {live.RADIUS_MD}px;"
@@ -434,7 +552,6 @@ class MainWindow(QWidget):
             f" background: transparent; padding: 0;")
         self._paint_status_dot()
         self._stack.setStyleSheet(f"background: {live.BG};")
-        self._apply_window_shape()
 
     # ── native edge resize (Windows) ─────────────────────────────
 
@@ -464,6 +581,51 @@ class MainWindow(QWidget):
             return _HTBOTTOM
         return None
 
+    def _fit_maximized_to_work_area(self, msg) -> bool:
+        """Pin the maximized frame to the monitor work area, without the frame offset."""
+        from ctypes import POINTER, Structure, byref, c_long, c_ulong, cast, sizeof, windll
+
+        class POINT(Structure):
+            _fields_ = [("x", c_long), ("y", c_long)]
+
+        class MINMAXINFO(Structure):
+            _fields_ = [
+                ("ptReserved", POINT),
+                ("ptMaxSize", POINT),
+                ("ptMaxPosition", POINT),
+                ("ptMinTrackSize", POINT),
+                ("ptMaxTrackSize", POINT),
+            ]
+
+        class RECT(Structure):
+            _fields_ = [
+                ("left", c_long),
+                ("top", c_long),
+                ("right", c_long),
+                ("bottom", c_long),
+            ]
+
+        class MONITORINFO(Structure):
+            _fields_ = [
+                ("cbSize", c_ulong),
+                ("rcMonitor", RECT),
+                ("rcWork", RECT),
+                ("dwFlags", c_ulong),
+            ]
+
+        info = MONITORINFO()
+        info.cbSize = sizeof(MONITORINFO)
+        monitor = windll.user32.MonitorFromWindow(msg.hWnd, _MONITOR_DEFAULTTONEAREST)
+        if not monitor or not windll.user32.GetMonitorInfoW(monitor, byref(info)):
+            return False
+        fitted = cast(msg.lParam, POINTER(MINMAXINFO)).contents
+        work, mon = info.rcWork, info.rcMonitor
+        fitted.ptMaxPosition.x = work.left - mon.left
+        fitted.ptMaxPosition.y = work.top - mon.top
+        fitted.ptMaxSize.x = work.right - work.left
+        fitted.ptMaxSize.y = work.bottom - work.top
+        return True
+
     def nativeEvent(self, event_type, message):
         # Note: deliberately never delegates to super().nativeEvent(); the
         # PyQt6 base implementation faults when re-entered with the voidptr.
@@ -473,6 +635,9 @@ class MainWindow(QWidget):
                 from ctypes import wintypes
 
                 msg = wintypes.MSG.from_address(int(message))
+                if msg.message == _WM_GETMINMAXINFO:
+                    if self._fit_maximized_to_work_area(msg):
+                        return True, 0
                 if msg.message == _WM_NCHITTEST and self.windowHandle() is not None:
                     # QCursor.pos() is already in logical coordinates, which
                     # keeps the hit test correct on mixed-DPI monitor setups.

@@ -78,6 +78,31 @@ class TestNormalizeAsrOutput:
         assert "<" not in result
         assert result == "你好hello"
 
+    def test_keeps_colloquial_repeats_and_fillers(self):
+        spoken = "说前面啊往前挪啊。往前挪啊。没问题没问题。嗯。嗯。嗯。嗯。嗯。"
+        assert normalize_asr_output(spoken) == spoken
+
+    def test_keeps_chinese_english_mix(self):
+        text = "这个 API 怎么调用"
+        assert normalize_asr_output(text) == text
+
+    def test_drops_stuck_token_loop(self):
+        text = "あ、いやいやいや、一人で。なんか、天の、" + "神の" * 30
+        assert normalize_asr_output(text) == ""
+
+    def test_keeps_chinese_when_a_loop_is_appended(self):
+        text = "我们出发吧" + "神の" * 20
+        assert normalize_asr_output(text) == "我们出发吧"
+
+    def test_drops_unrelated_japanese_sentence_and_keeps_chinese(self):
+        text = (
+            "我觉得你有点矛盾。"
+            "これ、睡眠の描写が入るしかない。そう、夜は。"
+            "是不是下雨了呢？"
+        )
+        result = normalize_asr_output(text)
+        assert result == "我觉得你有点矛盾。是不是下雨了呢？"
+
 
 class TestModelRegistry:
     def test_registry_not_empty(self):
@@ -408,6 +433,110 @@ class TestTranscribeWorkerRun:
         assert errors and "识别失败" in errors[0]
 
 
+class _SliceRecognizer:
+    """Records each decoded slice and labels it by sample count."""
+
+    def __init__(self):
+        self.seen: list[int] = []
+
+    def create_stream(self):
+        return _FakeStream("")
+
+    def decode_stream(self, stream):
+        n = int(len(stream._audio))
+        self.seen.append(n)
+        stream.result.text = f"[{n}]"
+
+
+def _slice_start(audio: np.ndarray, piece: np.ndarray) -> int:
+    start = int(piece[0])
+    assert np.array_equal(audio[start : start + piece.size], piece)
+    return start
+
+
+class TestLongUtteranceSlicing:
+    def test_over_one_minute_under_ninety_seconds_is_fully_covered(self):
+        from voiceink.speech_recognizer import SAMPLE_RATE, plan_audio_slices
+
+        seconds = 70
+        audio = np.arange(int(seconds * SAMPLE_RATE), dtype=np.float32)
+        slices = plan_audio_slices(audio, SAMPLE_RATE, slice_sec=15.0, overlap_sec=0.4)
+        assert len(slices) >= 5
+        assert all(s.size <= int(15 * SAMPLE_RATE) for s in slices)
+        starts = [_slice_start(audio, piece) for piece in slices]
+        assert starts[0] == 0
+        assert starts[-1] + slices[-1].size == audio.size
+        for earlier, later in zip(starts, starts[1:]):
+            assert later > earlier
+            assert later < earlier + slices[0].size
+
+    def test_short_audio_stays_one_slice(self):
+        from voiceink.speech_recognizer import SAMPLE_RATE, plan_audio_slices
+
+        audio = np.ones(int(8 * SAMPLE_RATE), dtype=np.float32)
+        slices = plan_audio_slices(audio, SAMPLE_RATE, slice_sec=15.0, overlap_sec=0.4)
+        assert len(slices) == 1
+        assert slices[0].size == audio.size
+
+    def test_merge_drops_duplicated_boundary(self):
+        from voiceink.speech_recognizer import merge_slice_texts
+
+        assert merge_slice_texts(["今天天气不错", "气不错我们出发"]) == "今天天气不错我们出发"
+        assert merge_slice_texts(["你好", "世界"]) == "你好世界"
+
+    def test_context_limited_models_use_slice_window(self):
+        from voiceink.speech_recognizer import slice_window_for_loader
+
+        assert slice_window_for_loader("funasr_nano") == (15.0, 0.4)
+        assert slice_window_for_loader("qwen3_asr") == (15.0, 0.4)
+        assert slice_window_for_loader("sense_voice") is None
+        assert slice_window_for_loader("paraformer") is None
+
+    def test_worker_decodes_every_slice_of_a_seventy_second_utterance(self):
+        from voiceink.speech_recognizer import SAMPLE_RATE, TranscribeWorker
+
+        rec = _SliceRecognizer()
+        audio = np.ones(int(70 * SAMPLE_RATE), dtype=np.float32)
+        worker = TranscribeWorker(
+            rec, audio, max_slice_sec=15.0, overlap_sec=0.4
+        )
+        results, errors = TestTranscribeWorkerRun()._run(worker)
+        assert errors == []
+        assert len(rec.seen) >= 5
+        assert all(n <= int(15 * SAMPLE_RATE) for n in rec.seen)
+        assert sum(rec.seen) > audio.size
+        assert results and results[0].startswith(f"[{rec.seen[0]}]")
+        assert results[0].endswith(f"[{rec.seen[-1]}]")
+
+    def test_worker_emits_the_slice_text_as_soon_as_one_piece_is_decoded(self):
+        from voiceink.speech_recognizer import SAMPLE_RATE, TranscribeWorker
+
+        rec = _FakeRecognizer("前十五秒")
+        audio = np.ones(int(15 * SAMPLE_RATE), dtype=np.float32)
+        worker = TranscribeWorker(rec, audio, max_slice_sec=15.0, overlap_sec=0.4)
+        partials: list[str] = []
+        worker.partial_ready.connect(partials.append)
+        results, errors = TestTranscribeWorkerRun()._run(worker)
+        assert errors == []
+        assert partials == ["前十五秒"]
+        assert results == ["前十五秒"]
+
+    def test_worker_shows_growing_text_before_the_final_result(self):
+        from voiceink.speech_recognizer import SAMPLE_RATE, TranscribeWorker
+
+        rec = _SliceRecognizer()
+        audio = np.ones(int(70 * SAMPLE_RATE), dtype=np.float32)
+        worker = TranscribeWorker(rec, audio, max_slice_sec=15.0, overlap_sec=0.4)
+        partials: list[str] = []
+        worker.partial_ready.connect(partials.append)
+        results, errors = TestTranscribeWorkerRun()._run(worker)
+        assert errors == []
+        assert len(partials) >= 2
+        assert len(partials[-1]) >= len(partials[0])
+        assert partials[0].startswith(f"[{rec.seen[0]}]")
+        assert results and results[0].endswith(f"[{rec.seen[-1]}]")
+
+
 class TestCreateRecognizer:
     def _install_sherpa(self, monkeypatch, **methods):
         import sys
@@ -541,6 +670,29 @@ class TestSpeechRecognizerBehavior:
         rec.transcribe_final(np.ones(1600, dtype=np.float32))
         assert rec._active_seq == 2
         assert first._cancelled is True  # old worker cancelled, not terminated
+
+    def test_funasr_long_utterance_is_sliced(self, monkeypatch):
+        from voiceink import speech_recognizer as sr
+
+        monkeypatch.setattr(sr.TranscribeWorker, "start", lambda self: None)
+        rec = sr.SpeechRecognizer()
+        rec._is_ready = True
+        rec._recognizer = _FakeRecognizer()
+        rec._model_id = "funasr-nano"
+        rec.transcribe_final(np.ones(1600, dtype=np.float32))
+        assert rec._current_worker._max_slice_sec == 15.0
+        assert rec._current_worker._overlap_sec == 0.4
+
+    def test_sensevoice_long_utterance_is_not_sliced(self, monkeypatch):
+        from voiceink import speech_recognizer as sr
+
+        monkeypatch.setattr(sr.TranscribeWorker, "start", lambda self: None)
+        rec = sr.SpeechRecognizer()
+        rec._is_ready = True
+        rec._recognizer = _FakeRecognizer()
+        rec._model_id = "sensevoice"
+        rec.transcribe_final(np.ones(1600, dtype=np.float32))
+        assert rec._current_worker._max_slice_sec is None
 
     def test_configure_skips_when_model_not_downloaded(self, monkeypatch):
         from voiceink import speech_recognizer as sr

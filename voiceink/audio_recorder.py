@@ -65,6 +65,7 @@ class AudioRecorder(QObject):
         self._last_start_warning: str = ""
         self._pawp: object | None = None
         self._continuous_mode = False
+        self._segment_live = False
         self._segmenter = SpeechSegmenter()
         self._continuous_timer = QTimer(self)
         self._continuous_timer.setInterval(100)
@@ -323,7 +324,9 @@ class AudioRecorder(QObject):
         self._no_speech_warned = False
 
     def _on_continuous_tick(self):
-        if not self._is_recording or self._is_cancelled or not self._continuous_mode:
+        if not self._is_recording or self._is_cancelled:
+            return
+        if not self._continuous_mode and not self._segment_live:
             return
         block = self._drain_mixed_mono()
         if block is None or block.size == 0:
@@ -349,7 +352,8 @@ class AudioRecorder(QObject):
             return
 
         self._continuous_mode = continuous
-        if continuous:
+        self._segment_live = not continuous
+        if continuous or self._segment_live:
             self._segmenter.reset()
             self._reset_continuous_speech_watch()
         self._is_cancelled = False
@@ -402,14 +406,17 @@ class AudioRecorder(QObject):
             if not opened:
                 raise RuntimeError("未打开任何音频采集通道")
             self._lanes = opened
+            for lane in self._lanes:
+                lane.drain_idx = 0
+            self._continuous_timer.start()
             if continuous:
-                for lane in self._lanes:
-                    lane.drain_idx = 0
-                self._continuous_timer.start()
                 log.info("持续监听已开启（来源: %s）", self.input_source_display)
+            else:
+                log.info("按住录音已开启，识别结果会随分段出现（来源: %s）", self.input_source_display)
         except Exception as e:
             self._is_recording = False
             self._continuous_mode = False
+            self._segment_live = False
             self._continuous_timer.stop()
             for lane in opened:
                 self._close_lane(lane)
@@ -419,18 +426,22 @@ class AudioRecorder(QObject):
     def start_continuous(self):
         self.start(continuous=True)
 
-    def _flush_continuous_segments(self) -> None:
+    def _flush_continuous_segments(self) -> int:
         """Drain VAD buffer so trailing speech is not lost on stop."""
+        emitted = 0
         block = self._drain_mixed_mono()
         if block is not None and block.size > 0:
             segment = self._segmenter.feed(block)
             if segment is not None and segment.size > 0:
                 log.debug("持续监听收尾片段: %d 采样点", segment.size)
                 self.segment_ready.emit(segment)
+                emitted += 1
         flushed = self._segmenter.flush()
         if flushed is not None and flushed.size > 0:
             log.debug("持续监听 flush 片段: %d 采样点", flushed.size)
             self.segment_ready.emit(flushed)
+            emitted += 1
+        return emitted
 
     def stop_continuous(self):
         if not self._continuous_mode and not self._is_recording:
@@ -509,7 +520,24 @@ class AudioRecorder(QObject):
         if self._continuous_mode:
             self.stop_continuous()
             return
+        segment_live = self._segment_live
+        self._segment_live = False
+        self._continuous_timer.stop()
         if not self._is_recording:
+            return
+        if segment_live:
+            cancelled = self._is_cancelled
+            self._is_cancelled = False
+            emitted = 0 if cancelled else self._flush_continuous_segments()
+            self._is_recording = False
+            lanes = self._lanes
+            self._lanes = []
+            for lane in lanes:
+                self._close_lane(lane)
+            self._terminate_pawp()
+            self._segmenter.reset()
+            if not cancelled and emitted == 0:
+                self.recording_finished.emit(np.array([], dtype=np.float32))
             return
 
         self._is_recording = False

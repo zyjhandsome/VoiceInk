@@ -65,6 +65,52 @@ def test_outer_border_uses_explicit_window_frame(qapp, tmp_path, monkeypatch):
         store.close()
 
 
+def test_maximize_toggle_does_not_restyle_the_whole_window(qapp, tmp_path, monkeypatch):
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        calls: list[str] = []
+        win.reapply_theme = lambda: calls.append("theme")
+        monkeypatch.setattr(win, "isMaximized", lambda: False)
+        monkeypatch.setattr(win, "showMaximized", lambda: None)
+        monkeypatch.setattr(win, "showNormal", lambda: None)
+        win._toggle_maximized()
+        assert calls == []
+    finally:
+        win.close()
+        store.close()
+
+
+def test_maximized_chrome_drops_the_round_mask(qapp, tmp_path, monkeypatch):
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        monkeypatch.setattr(win, "isMaximized", lambda: True)
+        win._apply_chrome_radius()
+        assert "border-radius: 0px" in win.styleSheet()
+        assert "border: none" in win.styleSheet()
+        assert win.layout().contentsMargins().left() == 0
+        assert win.mask().isEmpty()
+    finally:
+        win.close()
+        store.close()
+
+
+def test_maximized_caption_uses_stacked_restore_glyph(qapp, tmp_path, monkeypatch):
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        assert win._max_btn.shows_restore is False
+        monkeypatch.setattr(win, "isMaximized", lambda: True)
+        win._sync_max_glyph()
+        assert win._max_btn.shows_restore is True
+        assert win._max_btn.toolTip() == "还原"
+        monkeypatch.setattr(win, "isMaximized", lambda: False)
+        win._sync_max_glyph()
+        assert win._max_btn.shows_restore is False
+        assert win._max_btn.toolTip() == "最大化"
+    finally:
+        win.close()
+        store.close()
+
+
 def test_caption_chrome_is_distinct_from_content(qapp, tmp_path, monkeypatch):
     from voiceink.ui import design_tokens as tok
 

@@ -145,6 +145,24 @@ class TestContinuousTick:
         assert rec._no_speech_warned is True
 
 
+class TestHoldLiveSegments:
+    def test_stop_flushes_the_tail_instead_of_the_whole_buffer(self):
+        rec = AudioRecorder()
+        rec._is_recording = True
+        rec._continuous_mode = False
+        rec._segment_live = True
+        rec._segmenter.feed(np.full(16000, 0.5, dtype=np.float32))
+        rec._lanes = [_make_lane(chunks=[])]
+        segments = []
+        finished = []
+        rec.segment_ready.connect(segments.append)
+        rec.recording_finished.connect(finished.append)
+        rec.stop()
+        assert finished == []
+        assert segments and segments[0].size >= 16000
+        assert rec.is_recording is False
+
+
 class TestStopOutput:
     def test_stop_emits_recording_finished_with_audio(self):
         rec = AudioRecorder()

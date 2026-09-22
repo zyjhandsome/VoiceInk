@@ -5,9 +5,10 @@ from __future__ import annotations
 import sys
 
 import pytest
+from PyQt6.QtCore import QPoint, QRect, QSize
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon
 
-from voiceink.ui.tray_icon import TrayIcon
+from voiceink.ui.tray_icon import TrayIcon, tray_menu_top_left
 
 
 @pytest.fixture(scope="module")
@@ -20,6 +21,34 @@ def qapp():
 def tray(qapp):
     icon = TrayIcon()
     yield icon
+
+
+class TestTrayMenuOpensAboveTheIcon:
+    def test_bottom_tray_menu_sits_above_the_icon(self):
+        menu = QSize(180, 220)
+        anchor = QRect(1700, 1040, 24, 40)
+        available = QRect(0, 0, 1920, 1040)
+
+        pos = tray_menu_top_left(menu, anchor, available)
+
+        assert pos.y() + menu.height() <= anchor.y()
+        assert pos.y() >= available.top()
+        assert pos.x() + menu.width() <= available.right() + 1
+
+    def test_top_tray_menu_opens_downward(self):
+        menu = QSize(180, 220)
+        anchor = QRect(1700, 0, 24, 40)
+        available = QRect(0, 48, 1920, 1032)
+
+        pos = tray_menu_top_left(menu, anchor, available)
+
+        assert pos.y() >= available.top()
+        assert pos.y() + menu.height() <= available.top() + available.height()
+
+    def test_context_menu_uses_the_upward_popup(self, tray):
+        from voiceink.ui.tray_icon import _UpwardContextMenu
+
+        assert isinstance(tray.contextMenu(), _UpwardContextMenu)
 
 
 class TestTrayActivation:
@@ -46,6 +75,28 @@ class TestTrayActivation:
         tray._single_click_timer.timeout.emit()
 
         assert len(emitted) == 1
+
+    def test_right_click_cancels_the_pending_single_click(self, tray, monkeypatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+        tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        assert tray._single_click_timer.isActive()
+
+        tray._on_activated(QSystemTrayIcon.ActivationReason.Context)
+
+        assert not tray._single_click_timer.isActive()
+
+    def test_double_click_waits_until_the_context_menu_closes(self, tray, qapp, monkeypatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+        emitted: list[object] = []
+        tray.wake_island.connect(lambda: emitted.append(True))
+        tray._on_menu_about_to_show()
+
+        tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
+
+        assert emitted == []
+        tray._on_menu_about_to_hide()
+        qapp.processEvents()
+        assert emitted == [True]
 
     def test_non_windows_uses_single_trigger(self, tray, monkeypatch):
         monkeypatch.setattr(sys, "platform", "darwin")

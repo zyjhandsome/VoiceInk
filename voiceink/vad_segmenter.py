@@ -9,7 +9,9 @@ from voiceink.audio_utils import TARGET_SAMPLE_RATE, rms_volume
 SPEECH_RMS_THRESHOLD = 0.002
 SILENCE_HOLD_SEC = 0.85
 MIN_SPEECH_SEC = 0.25
-MAX_SPEECH_SEC = 90.0
+# Stay inside the Fun-ASR-Nano / Qwen3-ASR context window so a long
+# monologue emits a slice while the user is still talking.
+MAX_SPEECH_SEC = 15.0
 
 
 class SpeechSegmenter:
@@ -52,7 +54,7 @@ class SpeechSegmenter:
             self._buffer.append(block)
             self._total_samples += block.size
             if self._total_samples >= self._max_samples:
-                return self._take_segment()
+                return self._take_segment(limit=self._max_samples)
             return None
 
         if not self._in_speech:
@@ -61,6 +63,8 @@ class SpeechSegmenter:
         self._buffer.append(block)
         self._total_samples += block.size
         self._silence_run += block.size
+        if self._total_samples >= self._max_samples:
+            return self._take_segment(limit=self._max_samples)
         if self._silence_run >= self._silence_hold_samples:
             return self._take_segment()
         return None
@@ -77,13 +81,22 @@ class SpeechSegmenter:
         self.reset()
         return out
 
-    def _take_segment(self) -> np.ndarray | None:
+    def _take_segment(self, limit: int | None = None) -> np.ndarray | None:
         if self._total_samples < self._min_samples:
             self.reset()
             return None
         if not self._buffer:
             self.reset()
             return None
-        out = np.concatenate(self._buffer).astype(np.float32, copy=False)
+        audio = np.concatenate(self._buffer).astype(np.float32, copy=False)
+        if limit is not None and audio.size > limit:
+            head = audio[:limit]
+            tail = audio[limit:]
+            self.reset()
+            if tail.size:
+                self._in_speech = True
+                self._buffer = [tail]
+                self._total_samples = int(tail.size)
+            return head
         self.reset()
-        return out
+        return audio

@@ -100,6 +100,29 @@ class TestReadmeHoldHotkeyFlow:
             h["floating"].show_recognizing.assert_called_once()
             assert h["app"]._is_transcribing is True
 
+    def test_confirmed_text_accumulates_on_the_listening_bar(self):
+        with app_harness({"audio.trigger_mode": "continuous", "llm.enabled": False}) as h:
+            h["app"]._on_final_result("今天天气不错")
+            h["app"]._on_final_result("我们出发吧")
+            shown = [
+                call.args[0]
+                for call in h["floating"].show_live_transcript.call_args_list
+            ]
+            assert shown[-1] == "今天天气不错我们出发吧"
+
+    def test_hold_slice_text_shows_while_the_key_is_still_down(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            h["recorder"].is_recording = True
+            h["app"]._on_partial_result("前十五秒")
+            h["app"]._on_final_result("前十五秒还在说")
+            shown = [
+                call.args[0]
+                for call in h["floating"].show_live_transcript.call_args_list
+            ]
+            assert shown[0] == "前十五秒"
+            assert shown[-1] == "前十五秒还在说"
+            h["floating"].dismiss_if_idle.assert_not_called()
+
 
 class TestReadmeHotkeyManagerToApp:
     """README: 按住说话约 0.18 秒、持续转写约 0.30 秒；短按不进入。"""

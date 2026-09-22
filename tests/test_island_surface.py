@@ -50,11 +50,15 @@ class TestIslandMorph:
         win._end_btn.click()
         assert stops == [True]
 
-    def test_success_returns_to_thin_bar(self, win):
+    def test_success_keeps_live_transcript_while_listening(self, win):
+        from voiceink.ui.floating_window import BAR_EXCERPT_HEIGHT
+
         win.show_listening()
         win.update_partial_text("done")
         win.show_success("已输入")
-        assert win.height() <= COMPACT_HEIGHT + 8
+        assert "done" in win._text_label.text()
+        assert win.height() <= BAR_EXCERPT_HEIGHT + 8
+        assert win.height() > COMPACT_HEIGHT
 
     def test_container_uses_island_object_name(self, win):
         assert win._container.objectName() == "islandContainer"

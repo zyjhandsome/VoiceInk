@@ -5,7 +5,7 @@ from PyQt6.QtGui import (
     QIcon, QIconEngine, QPixmap, QPainter, QColor, QBrush, QPen,
     QRadialGradient, QPainterPath, QActionGroup
 )
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF, QPointF
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRect, QRectF, QPoint, QPointF
 
 def _menu_font():
     from PyQt6.QtGui import QFont
@@ -280,6 +280,59 @@ def _fresh_microphone_icon(kind: str) -> QIcon:
     return QIcon(_TrayMicrophoneEngine())
 
 
+def tray_menu_top_left(menu_size: QSize, anchor: QRect, available: QRect) -> QPoint:
+    """Place a tray menu above the icon, or below it when the icon is at the top."""
+    width = max(1, int(menu_size.width()))
+    height = max(1, int(menu_size.height()))
+    icon_top = int(anchor.y())
+    icon_right = int(anchor.x() + max(1, anchor.width()))
+    icon_bottom = int(anchor.y() + max(1, anchor.height()))
+
+    x = icon_right - width
+    y = icon_top - height
+    if y < int(available.top()):
+        y = icon_bottom
+
+    left = int(available.left())
+    top = int(available.top())
+    right = left + int(available.width())
+    bottom = top + int(available.height())
+    if x + width > right:
+        x = right - width
+    if x < left:
+        x = left
+    if y + height > bottom:
+        y = bottom - height
+    if y < top:
+        y = top
+    return QPoint(x, y)
+
+
+class _UpwardContextMenu(QMenu):
+    """Tray menu that opens above the icon instead of dropping below the cursor."""
+
+    def __init__(self, tray: QSystemTrayIcon):
+        super().__init__()
+        self._tray = tray
+
+    def popup(self, pos, at=None):
+        from PyQt6.QtWidgets import QApplication
+
+        self.ensurePolished()
+        self.adjustSize()
+        size = self.sizeHint()
+        anchor = self._tray.geometry()
+        if anchor.isNull() or anchor.width() <= 0 or anchor.height() <= 0:
+            anchor = QRect(int(pos.x()), int(pos.y()), 1, 1)
+        screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen is not None else QRect(0, 0, 1920, 1080)
+        target = tray_menu_top_left(size, anchor, available)
+        if at is None:
+            super().popup(target)
+        else:
+            super().popup(target, at)
+
+
 class TrayIcon(QSystemTrayIcon):
     open_settings = pyqtSignal()
     wake_island = pyqtSignal()
@@ -287,6 +340,8 @@ class TrayIcon(QSystemTrayIcon):
     quit_app = pyqtSignal()
     auto_start_toggled = pyqtSignal(bool)
     model_switched = pyqtSignal(str)
+    menu_about_to_show = pyqtSignal()
+    menu_closed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -303,6 +358,8 @@ class TrayIcon(QSystemTrayIcon):
         self._model_menu = None
         self._model_group = None
         self._menu = None
+        self._menu_is_open = False
+        self._wake_after_menu = False
         self._setup_menu()
         self.activated.connect(self._on_activated)
 
@@ -364,7 +421,7 @@ class TrayIcon(QSystemTrayIcon):
                 continue
 
     def _setup_menu(self):
-        menu = QMenu()
+        menu = _UpwardContextMenu(self)
         self._menu = menu
         _paint_menu(menu)
 
@@ -392,6 +449,8 @@ class TrayIcon(QSystemTrayIcon):
         quit_action = menu.addAction("退出")
         quit_action.triggered.connect(self.quit_app.emit)
 
+        menu.aboutToShow.connect(self._on_menu_about_to_show)
+        menu.aboutToHide.connect(self._on_menu_about_to_hide)
         self.setContextMenu(menu)
 
     def update_models(self, downloaded_models: list[dict], active_id: str):
@@ -436,14 +495,49 @@ class TrayIcon(QSystemTrayIcon):
         # single click too — but defer it by the double-click interval so a
         # double-click still opens the window exactly once.
         if sys.platform == "win32":
+            if reason == QSystemTrayIcon.ActivationReason.Context:
+                # Right-click owns the modal menu. Don't also open the window
+                # from the left click that arrived in the same gesture.
+                self._disarm_single_click()
+                return
             if reason == QSystemTrayIcon.ActivationReason.Trigger:
                 self._arm_single_click()
             elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
                 self._disarm_single_click()
-                self.wake_island.emit()
+                self._request_wake()
             return
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.wake_island.emit()
+            self._request_wake()
+
+    def _request_wake(self) -> None:
+        """Open the main window after the tray menu releases the UI thread.
+
+        A visible tray menu runs a modal loop on Windows. Showing or activating
+        the main window inside that loop leaves the window under a spinning
+        cursor until the menu closes.
+        """
+        if self._menu_is_open:
+            self._wake_after_menu = True
+            menu = self._menu
+            if menu is not None and menu.isVisible():
+                menu.close()
+            return
+        self.wake_island.emit()
+
+    def _on_menu_about_to_show(self) -> None:
+        self._menu_is_open = True
+        self._disarm_single_click()
+        self.menu_about_to_show.emit()
+
+    def _on_menu_about_to_hide(self) -> None:
+        self._menu_is_open = False
+        self.menu_closed.emit()
+        if not self._wake_after_menu:
+            return
+        self._wake_after_menu = False
+        from PyQt6.QtCore import QTimer
+
+        QTimer.singleShot(0, self.wake_island.emit)
 
     def _arm_single_click(self) -> None:
         from PyQt6.QtCore import QTimer
@@ -453,7 +547,7 @@ class TrayIcon(QSystemTrayIcon):
         if timer is None:
             timer = QTimer(self)
             timer.setSingleShot(True)
-            timer.timeout.connect(self.wake_island.emit)
+            timer.timeout.connect(self._request_wake)
             self._single_click_timer = timer
         app = QApplication.instance()
         interval = app.doubleClickInterval() if app is not None else 400

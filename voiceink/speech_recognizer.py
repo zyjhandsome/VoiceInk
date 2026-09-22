@@ -25,6 +25,86 @@ _ASR_TAG_PATTERNS = (
 )
 # FireRedASR2 / sherpa meta tokens in tokens.txt: <sil>, <zh>, <en>, dialect tags, …
 _ASR_META_TOKEN_PATTERN = re.compile(r"<\s*/?\s*[^>]+>")
+_SENTENCE_PATTERN = re.compile(r"[^。！？!?]+[。！？!?]?")
+# A 2–8 character unit repeated this many times is a decoder loop, not speech.
+_LOOP_MIN_REPEATS = 8
+_LOOP_MIN_UNIT = 2
+_LOOP_MAX_UNIT = 8
+
+
+def _script_counts(text: str) -> tuple[int, int, int]:
+    kana = hangul = cjk = 0
+    for ch in text:
+        code = ord(ch)
+        if 0x3040 <= code <= 0x30FF or 0x31F0 <= code <= 0x31FF or 0xFF66 <= code <= 0xFF9D:
+            kana += 1
+        elif 0xAC00 <= code <= 0xD7AF:
+            hangul += 1
+        elif 0x4E00 <= code <= 0x9FFF:
+            cjk += 1
+    return kana, hangul, cjk
+
+
+def _is_speech_char(ch: str) -> bool:
+    code = ord(ch)
+    if ch.isascii() and ch.isalnum():
+        return True
+    return (
+        0x3040 <= code <= 0x30FF
+        or 0x31F0 <= code <= 0x31FF
+        or 0xFF66 <= code <= 0xFF9D
+        or 0xAC00 <= code <= 0xD7AF
+        or 0x4E00 <= code <= 0x9FFF
+    )
+
+
+def _excise_repetition_loops(text: str) -> str:
+    """Drop a short token that the decoder emitted over and over."""
+    if len(text) < _LOOP_MIN_UNIT * _LOOP_MIN_REPEATS:
+        return text
+    kept: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        cut_at = None
+        for unit_len in range(_LOOP_MIN_UNIT, _LOOP_MAX_UNIT + 1):
+            end = index + unit_len * _LOOP_MIN_REPEATS
+            if end > length:
+                continue
+            unit = text[index:index + unit_len]
+            if not any(_is_speech_char(ch) for ch in unit):
+                continue
+            repeats = 1
+            cursor = index + unit_len
+            while cursor + unit_len <= length and text[cursor:cursor + unit_len] == unit:
+                repeats += 1
+                cursor += unit_len
+            if repeats >= _LOOP_MIN_REPEATS:
+                cut_at = cursor
+                break
+        if cut_at is None:
+            kept.append(text[index])
+            index += 1
+        else:
+            index = cut_at
+    return "".join(kept)
+
+
+def _is_unrelated_foreign_sentence(sentence: str) -> bool:
+    """A whole sentence that switched into Japanese or Korean."""
+    kana, hangul, cjk = _script_counts(sentence)
+    if hangul >= 4 and hangul >= cjk:
+        return True
+    return kana >= 3 and kana > cjk
+
+
+def _drop_unrelated_foreign_sentences(text: str) -> str:
+    kept = [
+        sentence
+        for sentence in _SENTENCE_PATTERN.findall(text)
+        if sentence.strip() and not _is_unrelated_foreign_sentence(sentence)
+    ]
+    return "".join(kept)
 
 
 def normalize_asr_output(text: str) -> str:
@@ -40,10 +120,81 @@ def normalize_asr_output(text: str) -> str:
     if _ASR_META_TOKEN_PATTERN.search(cleaned):
         stripped_tags = True
         cleaned = _ASR_META_TOKEN_PATTERN.sub("", cleaned)
+    cleaned = _drop_unrelated_foreign_sentences(_excise_repetition_loops(cleaned))
     cleaned = cleaned.strip()
     if stripped_tags:
         log.debug("已剥离 ASR 标签，清洗后长度: %d", len(cleaned))
+    if cleaned and not any(_is_speech_char(ch) for ch in cleaned):
+        return ""
     return cleaned
+
+
+# Fun-ASR-Nano and Qwen3-ASR keep only the start of an utterance once audio
+# exceeds the exported KV window (about 20s). Slice earlier so a continuous
+# utterance up to the 90s segment cap is still fully transcribed.
+CONTEXT_LIMITED_LOADERS = frozenset({"funasr_nano", "qwen3_asr"})
+CONTEXT_SLICE_SEC = 15.0
+CONTEXT_SLICE_OVERLAP_SEC = 0.4
+
+
+def slice_window_for_loader(loader: str) -> tuple[float, float] | None:
+    """Return (slice_sec, overlap_sec) for models that truncate long audio."""
+    if loader in CONTEXT_LIMITED_LOADERS:
+        return (CONTEXT_SLICE_SEC, CONTEXT_SLICE_OVERLAP_SEC)
+    return None
+
+
+def plan_audio_slices(
+    audio: np.ndarray,
+    sample_rate: int,
+    slice_sec: float,
+    overlap_sec: float,
+) -> list[np.ndarray]:
+    """Split audio into slices no longer than slice_sec, overlapping slightly."""
+    audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    if audio.size == 0:
+        return []
+    slice_len = max(1, int(round(slice_sec * sample_rate)))
+    overlap = max(0, int(round(overlap_sec * sample_rate)))
+    if overlap >= slice_len:
+        overlap = max(0, slice_len // 5)
+    if audio.size <= slice_len:
+        return [audio]
+
+    slices: list[np.ndarray] = []
+    start = 0
+    total = audio.size
+    while start < total:
+        end = min(total, start + slice_len)
+        slices.append(audio[start:end])
+        if end >= total:
+            break
+        next_start = end - overlap
+        if next_start <= start:
+            next_start = end
+        start = next_start
+    return slices
+
+
+def merge_slice_texts(parts: list[str], max_overlap_chars: int = 12) -> str:
+    """Join slice transcripts, dropping a duplicated boundary from the overlap."""
+    merged = ""
+    for part in parts:
+        piece = (part or "").strip()
+        if not piece:
+            continue
+        if not merged:
+            merged = piece
+            continue
+        limit = min(len(merged), len(piece), max_overlap_chars)
+        cut = 0
+        for size in range(limit, 0, -1):
+            if merged.endswith(piece[:size]):
+                cut = size
+                break
+        merged += piece[cut:]
+    return merged
+
 
 HF_URL = "https://huggingface.co"
 
@@ -509,17 +660,33 @@ class ModelLoadWorker(QThread):
 class TranscribeWorker(QThread):
     """Runs transcription in a background thread."""
     result_ready = pyqtSignal(str)
+    partial_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, recognizer, audio_data: np.ndarray):
+    def __init__(
+        self,
+        recognizer,
+        audio_data: np.ndarray,
+        *,
+        max_slice_sec: float | None = None,
+        overlap_sec: float = CONTEXT_SLICE_OVERLAP_SEC,
+    ):
         super().__init__()
         self._recognizer = recognizer
         self._audio_data = audio_data
         self._cancelled = False
+        self._max_slice_sec = max_slice_sec
+        self._overlap_sec = overlap_sec
 
     def cancel(self):
         """Set cancellation flag."""
         self._cancelled = True
+
+    def _decode_slice(self, audio: np.ndarray) -> str:
+        stream = self._recognizer.create_stream()
+        stream.accept_waveform(SAMPLE_RATE, audio)
+        self._recognizer.decode_stream(stream)
+        return normalize_asr_output(stream.result.text)
 
     def run(self):
         if self._cancelled:
@@ -536,15 +703,33 @@ class TranscribeWorker(QThread):
                 return
 
             log.info("开始识别 (%.1f 秒音频)...", len(audio) / SAMPLE_RATE)
+            if self._max_slice_sec and audio.size > int(self._max_slice_sec * SAMPLE_RATE):
+                pieces = plan_audio_slices(
+                    audio, SAMPLE_RATE, self._max_slice_sec, self._overlap_sec
+                )
+            else:
+                pieces = [audio]
 
-            stream = self._recognizer.create_stream()
-            stream.accept_waveform(SAMPLE_RATE, audio)
-            self._recognizer.decode_stream(stream)
+            texts: list[str] = []
+            for index, piece in enumerate(pieces, start=1):
+                if self._cancelled:
+                    return
+                if len(pieces) > 1:
+                    log.info(
+                        "识别分段 %d/%d (%.1f 秒)",
+                        index,
+                        len(pieces),
+                        len(piece) / SAMPLE_RATE,
+                    )
+                texts.append(self._decode_slice(piece))
+                merged = merge_slice_texts(texts)
+                if merged:
+                    self.partial_ready.emit(merged)
 
             if self._cancelled:
                 return
 
-            text = normalize_asr_output(stream.result.text)
+            text = merge_slice_texts(texts) if len(pieces) > 1 else (texts[0] if texts else "")
             log.debug("识别结果长度: %d 字符", len(text))
             self.result_ready.emit(text)
 
@@ -558,6 +743,7 @@ class TranscribeWorker(QThread):
 class SpeechRecognizer(QObject):
     """Offline speech recognizer supporting multiple sherpa-onnx models."""
     final_result = pyqtSignal(str)
+    partial_result = pyqtSignal(str)
     error = pyqtSignal(str)
     ready = pyqtSignal()
     model_load_progress = pyqtSignal(str)
@@ -648,9 +834,24 @@ class SpeechRecognizer(QObject):
         seq = self._request_seq
         self._active_seq = seq
 
-        worker = TranscribeWorker(self._recognizer, full_audio)
+        info = get_model_info(self._model_id)
+        loader = info.get("loader", "") if info else ""
+        window = slice_window_for_loader(loader)
+        if window is None:
+            worker = TranscribeWorker(self._recognizer, full_audio)
+        else:
+            slice_sec, overlap_sec = window
+            worker = TranscribeWorker(
+                self._recognizer,
+                full_audio,
+                max_slice_sec=slice_sec,
+                overlap_sec=overlap_sec,
+            )
         worker.result_ready.connect(
             lambda text, s=seq: self._on_final_result(text, s)
+        )
+        worker.partial_ready.connect(
+            lambda text, s=seq: self._on_partial_result(text, s)
         )
         worker.error.connect(lambda e, s=seq: self._on_worker_error(e, s))
         worker.finished.connect(lambda w=worker: self._reap_worker(w))
@@ -665,6 +866,11 @@ class SpeechRecognizer(QObject):
             pass
         if worker is self._current_worker and not worker.isRunning():
             self._current_worker = None
+
+    def _on_partial_result(self, text: str, seq: int):
+        if seq != self._active_seq:
+            return
+        self.partial_result.emit(text)
 
     def _on_final_result(self, text: str, seq: int):
         if seq != self._active_seq:
