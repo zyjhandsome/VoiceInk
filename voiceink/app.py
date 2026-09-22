@@ -39,11 +39,12 @@ from voiceink.text_polisher import (
     LLM_MODE_POLISH,
     TextPolisher,
 )
-from voiceink.text_paster import TextPaster, get_foreground_process_name
+from voiceink.text_paster import PasteResult, TextPaster
 from voiceink.sound_manager import SoundManager
 from voiceink.ui.floating_window import FloatingWindow
 from voiceink.ui.tray_icon import TrayIcon
 from voiceink.ui.main_window import MainWindow
+from voiceink.runtime_status import RuntimeStatus, RuntimeState, runtime_status_from_flags
 
 log = logging.getLogger("VoiceInk")
 
@@ -156,6 +157,9 @@ class App(QObject):
     def _refresh_continuous_ui_after_output(self) -> None:
         if self._continuous_session_active():
             self._floating.show_listening()
+        elif self._continuous_user_stopped and self._pending_segment_count() > 0:
+            pending = self._pending_segment_count()
+            self._floating.show_continuous_stopped(f"正在处理剩余内容（{pending} 段）")
         else:
             self._floating.dismiss_if_idle()
 
@@ -328,7 +332,9 @@ class App(QObject):
             self._floating.clear_model_loading_lock()
             self._tray.set_activity_tooltip(None)
             self._floating.show_error(self._friendly_error(msg))
-            self._sync_settings_runtime_status()
+            self._sync_settings_runtime_status(
+                RuntimeStatus(RuntimeState.UNAVAILABLE, "模型载入失败")
+            )
             return
         if self._recorder.is_continuous:
             log.info("模型重新加载，暂停持续监听")
@@ -464,8 +470,11 @@ class App(QObject):
         # Cleared on the next user start in _on_continuous_hotkey_start.
         self._enqueue_history_cleanup()
         self._tray.set_activity_tooltip(None)
-        self._floating.show_continuous_stopped()
-        QTimer.singleShot(1200, self._floating.dismiss_if_idle)
+        pending = self._pending_segment_count()
+        detail = f"正在处理剩余内容（{pending} 段）" if pending else ""
+        self._floating.show_continuous_stopped(detail)
+        if not pending:
+            QTimer.singleShot(1200, self._floating.dismiss_if_idle)
 
     def _on_recorder_error(self, error_msg: str):
         if self._recorder.is_continuous:
@@ -572,7 +581,10 @@ class App(QObject):
         self._pending_record = self._build_pending_history_record(audio)
         self._is_transcribing = True
         self._tray.set_activity_tooltip("recognizing")
-        self._floating.show_recognizing()
+        if self._continuous_user_stopped:
+            self._floating.show_continuous_stopped("正在处理剩余内容 · 正在识别")
+        else:
+            self._floating.show_recognizing()
         self._recognizer.transcribe_final(audio)
 
     def _build_pending_history_record(
@@ -644,7 +656,10 @@ class App(QObject):
 
         if llm_enabled and mode == LLM_MODE_POLISH and api_url and api_key and model_name:
             self._tray.set_activity_tooltip("polishing")
-            self._floating.show_polishing(text)
+            if self._continuous_user_stopped:
+                self._floating.show_continuous_stopped("正在处理剩余内容 · 正在润色")
+            else:
+                self._floating.show_polishing(text)
             self._polisher.polish(
                 text,
                 api_url,
@@ -653,6 +668,9 @@ class App(QObject):
                 prompt,
                 mode=LLM_MODE_POLISH,
             )
+        elif llm_enabled and mode == LLM_MODE_POLISH:
+            log.warning("文字润色已开启但配置不完整，直接输出原文")
+            self._output_text(text, degraded_from_polish=True)
         else:
             self._output_text(text)
 
@@ -777,32 +795,47 @@ class App(QObject):
 
     def _handle_paste_result(
         self,
-        result: str,
+        result: PasteResult | str,
         *,
         degraded_from_polish: bool = False,
         record: SegmentRecord | None = None,
     ):
+        if isinstance(result, PasteResult):
+            status = result.status
+            target_app = result.target_app
+            error_detail = result.detail
+        else:
+            # Compatibility for tests and third-party integrations using the old callback.
+            status = result.split(":", 1)[0]
+            target_app = ""
+            error_detail = result.partition(":")[2]
         paste_hint = "可按 Cmd+V 粘贴" if sys.platform == "darwin" else "可按 Ctrl+V 粘贴"
-        success_msg = "已输入（原文）" if degraded_from_polish else "已输入"
+        success_msg = "已发送（原文）" if degraded_from_polish else "已发送"
+        target_hint = f"发送到 {target_app}" if target_app else "请确认目标应用已接收"
 
-        if result == "pasted":
-            log.info("已粘贴到光标位置")
+        if status in {"sent", "pasted"}:
+            log.info("已向目标窗口发送粘贴快捷键%s", f": {target_app}" if target_app else "")
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
             )
             if self._continuous_session_active():
                 if degraded_from_polish:
-                    self._floating.show_info(success_msg)
+                    self._floating.show_info(success_msg, target_hint)
                 else:
-                    self._floating.show_success("已输入")
+                    self._floating.show_success(success_msg, target_hint)
                 QTimer.singleShot(1700, self._refresh_continuous_ui_after_output)
+            elif self._continuous_user_stopped:
+                self._floating.show_continuous_stopped(
+                    f"剩余内容：{success_msg} · {target_hint}"
+                )
+                QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
             else:
                 self._floating.dismiss_if_idle()
                 if degraded_from_polish:
-                    self._floating.show_info(success_msg)
+                    self._floating.show_info(success_msg, target_hint)
                 else:
-                    self._floating.show_success("已输入")
-        elif result == "clipboard":
+                    self._floating.show_success(success_msg, target_hint)
+        elif status == "clipboard":
             log.info("已复制到剪贴板（粘贴未确认成功）")
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
@@ -810,18 +843,20 @@ class App(QObject):
             if self._continuous_session_active():
                 self._floating.show_success("已复制", paste_hint)
                 QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
+            elif self._continuous_user_stopped:
+                self._floating.show_continuous_stopped(f"剩余内容：已复制 · {paste_hint}")
+                QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
             else:
                 self._floating.dismiss_if_idle()
                 self._floating.show_success("已复制到剪贴板", paste_hint)
         else:
-            error_msg = result.replace("error:", "")
-            log.error("输出失败: %s", error_msg)
+            log.error("输出失败: %s", error_detail)
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
             )
             self._floating.show_error(self._friendly_error("输出失败"))
 
-        self._enqueue_history_record(record)
+        self._enqueue_history_record(record, target_app=target_app)
         QTimer.singleShot(300, self._pump_segment_queue)
 
     def _refresh_open_history_ui(self) -> None:
@@ -829,14 +864,18 @@ class App(QObject):
             return
         self._main._history.refresh()
 
-    def _enqueue_history_record(self, record: SegmentRecord | None) -> None:
+    def _enqueue_history_record(
+        self,
+        record: SegmentRecord | None,
+        *,
+        target_app: str = "",
+    ) -> None:
         if record is None:
             return
         if not self._config.get("history.enabled", True):
             return
         if not (record.raw_text.strip() or record.polished_text.strip()):
             return
-        target_app = get_foreground_process_name()
         self._history.enqueue(
             SegmentRecord(
                 session_id=record.session_id,
@@ -861,12 +900,14 @@ class App(QObject):
 
     # ── Settings ──────────────────────────────────────
 
+    def _runtime_status(self) -> RuntimeStatus:
+        return runtime_status_from_flags(
+            is_loading=bool(self._recognizer.is_loading),
+            is_ready=bool(self._recognizer.is_ready),
+        )
+
     def _runtime_status_label(self) -> str:
-        if self._recognizer.is_loading:
-            return "模型载入中…"
-        if self._recognizer.is_ready:
-            return "就绪"
-        return "模型未就绪"
+        return self._runtime_status().label
 
     def _active_model_display_name(self) -> str:
         from voiceink.speech_recognizer import MODEL_REGISTRY
@@ -877,17 +918,17 @@ class App(QObject):
                 return model["name"]
         return active_id or "未选择模型"
 
-    def _sync_tray_status_summary(self) -> None:
-        status = self._runtime_status_label()
-        if status == "就绪":
-            summary = f"{status} · {self._active_model_display_name()}"
+    def _sync_tray_status_summary(self, status: RuntimeStatus | None = None) -> None:
+        status = status or self._runtime_status()
+        if status.state is RuntimeState.READY:
+            summary = f"{status.label} · {self._active_model_display_name()}"
         else:
-            summary = status
+            summary = status.label
         self._tray.set_status_summary(summary)
 
-    def _sync_settings_runtime_status(self) -> None:
-        status = self._runtime_status_label()
-        self._sync_tray_status_summary()
+    def _sync_settings_runtime_status(self, status: RuntimeStatus | None = None) -> None:
+        status = status or self._runtime_status()
+        self._sync_tray_status_summary(status)
         settings = None
         if self._main is not None:
             settings = getattr(self._main, "_settings", None)
@@ -895,7 +936,7 @@ class App(QObject):
             settings = self._settings_win
         if settings is None:
             return
-        settings.set_runtime_status(status)
+        settings.set_runtime_status(status.state, status.label)
 
     def _show_main_window(self, page: str | None = None):
         if self._main is None:
@@ -906,6 +947,7 @@ class App(QObject):
             settings.settings_changed.connect(self._on_settings_changed)
             settings.auto_start_changed.connect(self._on_auto_start_toggled)
             settings.sound_enabled_changed.connect(self._on_sound_enabled_changed)
+            settings.restore_clipboard_changed.connect(self._on_restore_clipboard_changed)
             settings.models_changed.connect(self._on_models_changed)
             settings.theme_changed.connect(self._on_theme_changed)
             settings.finished.connect(self._on_settings_closed)
@@ -1037,6 +1079,9 @@ class App(QObject):
     def _on_sound_enabled_changed(self, enabled: bool):
         self._config.set("sound_enabled", enabled)
         self._sound.enabled = enabled
+
+    def _on_restore_clipboard_changed(self, enabled: bool):
+        self._paster.restore_clipboard = enabled
 
     def _setup_auto_start(self, enabled: bool):
         if sys.platform != "win32":

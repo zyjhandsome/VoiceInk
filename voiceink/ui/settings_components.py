@@ -361,7 +361,7 @@ def polish_preview_content() -> QWidget:
     lay.setContentsMargins(SPACE_MD, 4, SPACE_MD, SPACE_MD)
     lay.setSpacing(8)
 
-    head = QLabel("效果预览")
+    head = QLabel("效果示例（非实时结果）")
     head.setProperty("viRole", "polishPreviewHeading")
     head.setStyleSheet(
         f"color: {TEXT}; font-size: {tok.TYPE_TITLE}px; font-weight: 700; background: transparent;"

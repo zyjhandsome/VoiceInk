@@ -44,9 +44,10 @@ class TestFloatingWindowStates:
 
     def test_show_continuous_stopped(self, win):
         win.show_listening()
-        win.show_continuous_stopped()
+        win.show_continuous_stopped("正在处理剩余内容（1 段）")
         assert win._listening_active is False
         assert "已停止" in win._status_label.text()
+        assert "剩余内容" in win._text_label.text()
 
     def test_show_recording(self, win):
         win.show_recording()
@@ -62,6 +63,22 @@ class TestFloatingWindowStates:
     def test_show_polishing(self, win):
         win.show_polishing("润色文本")
         assert win._status_label.text() == "润色中"
+
+    def test_processing_keeps_continuous_listening_visible(self, win):
+        win.show_listening()
+        win.show_recognizing()
+        assert "正在听" in win._status_label.text()
+        assert "识别中" in win._status_label.text()
+        assert win._waveform.isVisible()
+        assert win._waveform._timer.isActive()
+
+    def test_success_does_not_hide_active_listening_bar(self, win):
+        win.show_listening()
+        win.show_success("已发送", "发送到 notepad.exe")
+        assert win._listening_active is True
+        assert "正在听" in win._status_label.text()
+        assert "已发送" in win._status_label.text()
+        assert not win._hide_timer.isActive()
 
     def test_show_success_with_subtitle(self, win):
         win.show_success("已输入", "可按 Ctrl+V")

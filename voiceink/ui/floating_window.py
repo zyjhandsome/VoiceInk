@@ -389,11 +389,11 @@ class FloatingWindow(QWidget):
         self._waveform.hide()
         self._present()
 
-    def show_continuous_stopped(self):
+    def show_continuous_stopped(self, detail: str = ""):
         self._restore_compact_height()
         self._listening_active = False
         self._set_state("已停止监听", "STATE_MUTED", pulse=False)
-        self._text_label.setText("")
+        self._apply_excerpt(detail)
         self.unsetCursor()
         self._waveform.stop()
         self._waveform.hide()
@@ -421,9 +421,14 @@ class FloatingWindow(QWidget):
 
     def show_recognizing(self, partial_text: str = ""):
         self._restore_compact_height()
-        self._set_state("正在识别", "STATE_RECOGNIZE", pulse=False)
-        self._waveform.stop()
-        self._waveform.hide()
+        if self._listening_active:
+            self._set_state("正在听 · 识别中", "STATE_LISTEN", pulse=False)
+            self._waveform.show()
+            self._waveform.start()
+        else:
+            self._set_state("正在识别", "STATE_RECOGNIZE", pulse=False)
+            self._waveform.stop()
+            self._waveform.hide()
         if partial_text:
             display = partial_text if len(partial_text) <= 50 else "..." + partial_text[-47:]
             self._apply_excerpt(display)
@@ -431,9 +436,14 @@ class FloatingWindow(QWidget):
 
     def show_polishing(self, text: str = ""):
         self._restore_compact_height()
-        self._set_state("润色中", "STATE_POLISH", pulse=False)
-        self._waveform.stop()
-        self._waveform.hide()
+        if self._listening_active:
+            self._set_state("正在听 · 润色中", "STATE_LISTEN", pulse=False)
+            self._waveform.show()
+            self._waveform.start()
+        else:
+            self._set_state("润色中", "STATE_POLISH", pulse=False)
+            self._waveform.stop()
+            self._waveform.hide()
         if text:
             display = text if len(text) <= 50 else "..." + text[-47:]
             self._apply_excerpt(display)
@@ -442,23 +452,35 @@ class FloatingWindow(QWidget):
     def show_success(self, message: str = "已输入", subtitle: str = ""):
         self._restore_compact_height()
         self._model_loading_active = False
-        self._waveform.stop()
-        self._waveform.hide()
-        self._set_state(message, "STATE_SUCCESS")
+        if self._listening_active:
+            self._set_state(f"正在听 · {message}", "STATE_LISTEN", pulse=False)
+            self._waveform.show()
+            self._waveform.start()
+        else:
+            self._waveform.stop()
+            self._waveform.hide()
+            self._set_state(message, "STATE_SUCCESS")
         self._apply_excerpt(subtitle)
         self._present()
-        dur = 2200 if subtitle else 1500
-        self._hide_timer.start(dur)
+        if not self._listening_active:
+            dur = 2200 if subtitle else 1500
+            self._hide_timer.start(dur)
 
     def show_info(self, message: str, subtitle: str = ""):
         self._restore_compact_height()
-        self._waveform.stop()
-        self._waveform.hide()
-        self._set_state(message, "STATE_RECOGNIZE", pulse=False)
+        if self._listening_active:
+            self._set_state(f"正在听 · {message}", "STATE_LISTEN", pulse=False)
+            self._waveform.show()
+            self._waveform.start()
+        else:
+            self._waveform.stop()
+            self._waveform.hide()
+            self._set_state(message, "STATE_RECOGNIZE", pulse=False)
         self._apply_excerpt(subtitle)
         self._present()
-        dur = 2200 if subtitle else 1800
-        self._hide_timer.start(dur)
+        if not self._listening_active:
+            dur = 2200 if subtitle else 1800
+            self._hide_timer.start(dur)
 
     def show_warning(self, message: str, subtitle: str = ""):
         if self._model_loading_active:

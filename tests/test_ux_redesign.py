@@ -79,6 +79,8 @@ def test_engine_hero_shows_model_load_state(main_window):
     assert settings._model_hero_status.text() == "模型载入中…"
     settings.set_runtime_status("就绪")
     assert "已载入" in settings._model_hero_status.text()
+    settings.set_runtime_status("模型未就绪")
+    assert settings._model_hero_status.text() == "模型未就绪"
 
 
 def test_main_window_edge_hit_test(main_window):

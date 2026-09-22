@@ -208,6 +208,7 @@ _LIGHT: dict[str, Any] = {
     # Keep AA contrast as small text on BG; visual weight of switches is
     # reduced via track size / shadow, not by lightening this green.
     "GREEN": "#15803D",
+    "GREEN_TEXT": "#166534",
     "GREEN_BG": "#DCFCE7",
     "RED": "#C81E1E",
     "RED_BG": "#FEE2E2",
@@ -279,6 +280,7 @@ _DARK: dict[str, Any] = {
     "TEXT_MUTED_DARK": "#9CA3AF",
     # Mid green (not neon #22C55E) so dark-theme ON switches stay quieter.
     "GREEN": "#16A34A",
+    "GREEN_TEXT": "#86EFAC",
     "GREEN_BG": "#14532D",
     "RED": "#F87171",
     "RED_BG": "#7F1D1D",

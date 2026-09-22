@@ -208,9 +208,11 @@ class TestGeneralPageLayout:
             qapp.processEvents()
             assert win._about_paths_wrap.objectName() == "aboutPaths"
             assert not win._about_paths_wrap.isVisible()
+            assert win._about_paths_toggle.accessibleName() == "展开文件位置"
             win._about_paths_toggle.click()
             qapp.processEvents()
             assert win._about_paths_wrap.isVisible()
+            assert win._about_paths_toggle.accessibleName() == "收起文件位置"
             labels = [lb.text() for lb in win._about_paths_wrap.findChildren(QLabel)]
             assert "模型目录" in labels
             assert "配置文件" in labels
@@ -245,6 +247,15 @@ class TestGeneralPageLayout:
         settings_window._on_llm_enable_toggled(True)
 
         assert not settings_window._llm_preview_card.isHidden()
+
+    def test_enabling_unconfigured_polish_shows_inline_status(self, settings_window):
+        settings_window._llm_url_edit.clear()
+        settings_window._llm_key_edit.clear()
+        settings_window._llm_model_edit.clear()
+        settings_window._llm_enable_row.setChecked(True)
+        status = settings_window._llm_test_status.text()
+        assert "未配置" in status
+        assert "直接输出原文" in status
 
     def test_password_toggle_updates_its_text(self, settings_window):
         settings_window._llm_key_toggle.setChecked(True)
@@ -398,6 +409,13 @@ class TestToggles:
         assert config.get("sound_enabled") is False
         assert signals == [False]
 
+    def test_restore_clipboard_toggle_emits_runtime_update(self, settings_window, config):
+        signals = []
+        settings_window.restore_clipboard_changed.connect(signals.append)
+        settings_window._restore_clipboard_row.setChecked(True)
+        assert config.get("output.restore_clipboard") is True
+        assert signals == [True]
+
 
 class TestHotkeyBinding:
     def test_rejects_modifierless_hotkey(self, settings_window, config, monkeypatch):
@@ -446,6 +464,7 @@ class TestMicProbe:
         assert not settings_window._mic_probe_active
         assert settings_window._mic_test_btn.isEnabled()
         assert "已检测到声音" in settings_window._mic_test_status.text()
+        assert "可以正常使用" not in settings_window._mic_test_status.text()
         assert "峰值" not in settings_window._mic_test_status.text()
 
 

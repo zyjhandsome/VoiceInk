@@ -1,7 +1,7 @@
 """About settings page."""
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QStyle, QVBoxLayout, QWidget
 
 from voiceink.config import VERSION
 from voiceink.ui import design_tokens as tok
@@ -54,13 +54,15 @@ def build_about_page(win) -> QWidget:
     win._about_paths_toggle.setCheckable(True)
     win._about_paths_toggle.setChecked(False)
     win._about_paths_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+    win._about_paths_toggle.setAccessibleName("展开文件位置")
     win._about_paths_toggle.setStyleSheet(
         f"QPushButton#aboutPathsToggle {{"
-        f" color: {tok.TEXT_SEC}; background: transparent; border: none;"
+        f" color: {tok.TEXT_SEC}; background: transparent; border: 2px solid transparent;"
         f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 400;"
-        f" text-align: left; padding: 10px 16px;"
+        f" text-align: left; padding: 8px 14px;"
         f"}}"
         f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
+        f"QPushButton#aboutPathsToggle:focus {{ border: {tok.FOCUS_RING}; }}"
     )
     win._about_paths_wrap = QWidget()
     win._about_paths_wrap.setObjectName("aboutPaths")
@@ -68,7 +70,21 @@ def build_about_page(win) -> QWidget:
     win._about_paths_lay.setContentsMargins(0, 0, 0, 0)
     win._about_paths_lay.setSpacing(0)
     win._about_paths_wrap.setVisible(False)
-    win._about_paths_toggle.toggled.connect(win._about_paths_wrap.setVisible)
+
+    def _set_paths_expanded(expanded: bool) -> None:
+        win._about_paths_wrap.setVisible(expanded)
+        arrow = (
+            QStyle.StandardPixmap.SP_ArrowDown
+            if expanded
+            else QStyle.StandardPixmap.SP_ArrowRight
+        )
+        win._about_paths_toggle.setIcon(win.style().standardIcon(arrow))
+        win._about_paths_toggle.setAccessibleName(
+            "收起文件位置" if expanded else "展开文件位置"
+        )
+
+    win._about_paths_toggle.toggled.connect(_set_paths_expanded)
+    _set_paths_expanded(False)
     win._about_info_lay.addWidget(win._about_paths_toggle)
     win._about_info_lay.addWidget(win._about_paths_wrap)
 

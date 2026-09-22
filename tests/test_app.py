@@ -2,6 +2,8 @@ import pytest
 import numpy as np
 
 from voiceink.app import App, MIN_AUDIO_SAMPLES
+from voiceink.runtime_status import RuntimeState
+from voiceink.text_paster import PasteResult
 from tests.helpers.app_harness import app_harness
 
 
@@ -65,6 +67,17 @@ class TestIslandUserCopy:
             msg = h["tray"].showMessage.call_args[0][1]
             assert "设置 → 引擎" in msg
             assert "设置 → 模型" not in msg
+
+    def test_model_load_failure_publishes_unavailable_state(self):
+        with app_harness() as h:
+            settings = h["app"]._settings_win = type(
+                "SettingsSpy",
+                (),
+                {"set_runtime_status": lambda self, state, label: setattr(self, "value", (state, label))},
+            )()
+            h["app"]._on_model_load_progress("模型加载失败: boom")
+            assert settings.value == (RuntimeState.UNAVAILABLE, "模型载入失败")
+            h["tray"].set_status_summary.assert_any_call("模型载入失败")
 
 
 class TestAppFriendlyError:
@@ -173,7 +186,18 @@ class TestHandlePasteResult:
         with app_harness() as h:
             app = h["app"]
             app._handle_paste_result("pasted")
-            h["floating"].show_success.assert_any_call("已输入")
+            h["floating"].show_success.assert_any_call(
+                "已发送", "请确认目标应用已接收"
+            )
+
+    def test_paste_feedback_names_captured_target(self):
+        with app_harness() as h:
+            h["app"]._handle_paste_result(
+                PasteResult("sent", target_app="notepad.exe")
+            )
+            h["floating"].show_success.assert_any_call(
+                "已发送", "发送到 notepad.exe"
+            )
 
     def test_clipboard_shows_copied_hint(self):
         with app_harness() as h:
@@ -193,7 +217,9 @@ class TestHandlePasteResult:
         with app_harness() as h:
             app = h["app"]
             app._handle_paste_result("pasted", degraded_from_polish=True)
-            h["floating"].show_info.assert_any_call("已输入（原文）")
+            h["floating"].show_info.assert_any_call(
+                "已发送（原文）", "请确认目标应用已接收"
+            )
 
 
 class TestHotkeyTapTooShortHint:
@@ -334,6 +360,18 @@ class TestFinalResultFlow:
             app._on_final_result("你好世界")
             h["polisher"].polish.assert_called()
             h["paster"].paste_async.assert_not_called()
+
+    def test_incomplete_polish_config_outputs_original_with_notice(self):
+        with app_harness({"llm.enabled": True}) as h:
+            app = h["app"]
+            h["recognizer"].is_ready = True
+            app._on_final_result("你好世界")
+            h["polisher"].polish.assert_not_called()
+            callback = h["paster"].paste_async.call_args[0][1]
+            callback("pasted")
+            h["floating"].show_info.assert_any_call(
+                "已发送（原文）", "请确认目标应用已接收"
+            )
 
 
 class TestBeginTranscription:

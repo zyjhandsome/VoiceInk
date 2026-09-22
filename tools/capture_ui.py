@@ -81,7 +81,8 @@ def main():
         config.set("auto_start", False)
         store = PreviewStore()
         win = MainWindow(config, store)
-        win._settings.set_runtime_status("就绪（示例）")
+        from voiceink.runtime_status import RuntimeState
+        win._settings.set_runtime_status(RuntimeState.READY, "就绪（示例）")
         bar = FloatingWindow()
         for mode in ("light", "dark"):
             apply_theme(app, mode=mode, surfaces=[win, win._settings, win._history, bar])

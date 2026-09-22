@@ -51,6 +51,7 @@ from voiceink.ui.model_card import ModelCard, RATING_TOOLTIP, format_model_ratin
 from voiceink.ui import design_tokens as _tok
 from voiceink.ui import settings_styles as _settings_styles
 from voiceink.ui.theme import normalize_theme_mode
+from voiceink.runtime_status import RuntimeState, coerce_runtime_status
 
 # Non-color layout constants (theme-independent).
 _CONTROL_NUMERIC_WIDTH = _tok.CONTROL_NUMERIC_WIDTH
@@ -65,6 +66,7 @@ class SettingsWindow(QWidget):
     settings_changed = pyqtSignal()
     auto_start_changed = pyqtSignal(bool)
     sound_enabled_changed = pyqtSignal(bool)
+    restore_clipboard_changed = pyqtSignal(bool)
     models_changed = pyqtSignal()
     theme_changed = pyqtSignal(str)
     hotkey_capture_started = pyqtSignal()
@@ -83,7 +85,7 @@ class SettingsWindow(QWidget):
         self._mic_probe_active = False
         self._mic_probe_max = 0.0
         self._loading = False
-        self._runtime_status_hint = "就绪"
+        self._runtime_status = coerce_runtime_status(RuntimeState.LOADING)
         self._setup_window()
         self._setup_ui()
         self._load_settings()
@@ -163,11 +165,12 @@ class SettingsWindow(QWidget):
         if hasattr(self, "_about_paths_toggle"):
             self._about_paths_toggle.setStyleSheet(
                 f"QPushButton#aboutPathsToggle {{"
-                f" color: {tok.TEXT_SEC}; background: transparent; border: none;"
+                f" color: {tok.TEXT_SEC}; background: transparent; border: 2px solid transparent;"
                 f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 400;"
-                f" text-align: left; padding: 10px 16px;"
+                f" text-align: left; padding: 8px 14px;"
                 f"}}"
                 f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
+                f"QPushButton#aboutPathsToggle:focus {{ border: {tok.FOCUS_RING}; }}"
             )
 
     def show_page(self, index: int) -> None:
@@ -228,25 +231,27 @@ class SettingsWindow(QWidget):
 
     # ── Page: General ──────────────────────────────────
 
-    def set_runtime_status(self, hint: str) -> None:
-        self._runtime_status_hint = hint.strip() or "就绪"
+    def set_runtime_status(
+        self,
+        state_or_label: RuntimeState | str,
+        label: str | None = None,
+    ) -> None:
+        self._runtime_status = coerce_runtime_status(state_or_label, label)
         self._paint_model_hero_status()
-        self.runtime_status_changed.emit(self._runtime_status_hint)
+        self.runtime_status_changed.emit(self._runtime_status.label)
 
     def _paint_model_hero_status(self) -> None:
         """「已下载 ≠ 已载入」— the engine page must say whether the model is usable."""
         label = getattr(self, "_model_hero_status", None)
         if label is None:
             return
-        status = self._runtime_status_hint
-        ready = "就绪" in status
-        failed = any(word in status for word in ("失败", "错误", "不可用"))
-        if ready:
-            fg, bg, text = _tok.GREEN, _tok.GREEN_BG, "已载入 · 可用"
-        elif failed:
-            fg, bg, text = _tok.RED, _tok.RED_BG, status
+        status = self._runtime_status
+        if status.state is RuntimeState.READY:
+            fg, bg, text = _tok.GREEN_TEXT, _tok.GREEN_BG, "已载入 · 可用"
+        elif status.state is RuntimeState.UNAVAILABLE:
+            fg, bg, text = _tok.RED, _tok.RED_BG, status.label
         else:
-            fg, bg, text = _tok.AMBER_TEXT, _tok.AMBER_SOFT, status
+            fg, bg, text = _tok.AMBER_TEXT, _tok.AMBER_SOFT, status.label
         label.setText(text)
         label.setStyleSheet(
             f"background: {bg}; color: {fg}; border-radius: {_tok.RADIUS_PILL}px;"
@@ -565,6 +570,26 @@ class SettingsWindow(QWidget):
         self._config.set("llm.enabled", enabled)
         self._flush_llm_fields()
 
+    def _llm_missing_fields(self) -> list[str]:
+        fields = (
+            ("接口地址", self._llm_url_edit.text().strip()),
+            ("API 密钥", self._llm_key_edit.text().strip()),
+            ("模型名称", self._llm_model_edit.text().strip()),
+        )
+        return [label for label, value in fields if not value]
+
+    def _update_llm_configuration_status(self) -> None:
+        if not self._llm_enable_row.isChecked():
+            self._llm_test_status.setText("")
+            return
+        missing = self._llm_missing_fields()
+        if missing:
+            self._llm_test_status.setText(
+                f"未配置：缺少{'、'.join(missing)}。转写会直接输出原文。"
+            )
+        else:
+            self._llm_test_status.setText("配置已填写，尚未测试连接。")
+
     def _polish_scroll_page(self):
         w = self._llm_enable_row.parentWidget()
         while w is not None:
@@ -624,13 +649,20 @@ class SettingsWindow(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
 
+        llm_enabled = self._config.get("llm.enabled", False)
+        llm_configured = all(
+            self._config.get(key, "")
+            for key in ("llm.api_url", "llm.api_key", "llm.model_name")
+        )
         runtime_items = [
             ("当前模型", active_name),
             ("快捷键", format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))),
             (
                 "润色",
-                "已开启"
-                if self._config.get("llm.enabled", False)
+                "已开启 · 待验证"
+                if llm_enabled and llm_configured
+                else "已开启 · 未配置"
+                if llm_enabled
                 else "已关闭",
             ),
         ]
@@ -796,6 +828,7 @@ class SettingsWindow(QWidget):
 
         self._refresh_about_info()
         self._loading = False
+        self._update_llm_configuration_status()
 
     def _set_combo_by_data(self, combo: QComboBox, value: int) -> bool:
         idx = combo.findData(value)
@@ -807,8 +840,13 @@ class SettingsWindow(QWidget):
         return False
 
     def _reset_audio_devices_to_auto(self):
+        was_loading = self._loading
+        self._loading = True
         self._set_combo_by_data(self._mic_device_combo, -1)
         self._set_combo_by_data(self._system_device_combo, -1)
+        self._loading = was_loading
+        if not was_loading:
+            self._persist_runtime_settings()
         self._set_mic_test_status("已恢复为「自动选择」，请再点「测试声音」。")
 
     def _refresh_audio_device_lists(self):
@@ -929,11 +967,11 @@ class SettingsWindow(QWidget):
         peak = self._mic_probe_max
         warn = self._mic_test_recorder.last_start_warning
         if peak >= threshold:
-            base = "已检测到声音，可以正常使用。"
+            base = "已检测到声音。"
             self._set_mic_test_status(f"{base} {warn}".strip() if warn else base)
         else:
             self._set_mic_test_status(
-                "几乎无输入。请点「恢复自动选择」后再测；仍失败再展开下方改设备。"
+                "几乎无输入。可直接恢复自动选择后重测，或展开下方手动选择设备。"
             )
 
     def _cancel_mic_probe_if_active(self):
@@ -1028,6 +1066,7 @@ class SettingsWindow(QWidget):
         if self._loading:
             return
         self._config.set("output.restore_clipboard", checked)
+        self.restore_clipboard_changed.emit(checked)
 
     def _on_history_enabled_toggled(self, checked: bool):
         self._set_history_limit_rows_visible(checked)
@@ -1116,6 +1155,7 @@ class SettingsWindow(QWidget):
         self._config.set("llm.model_name", self._llm_model_edit.text().strip())
         self._config.set("llm.prompt", self._llm_prompt_edit.toPlainText().strip())
         self._config.set("llm.mode", "polish")
+        self._update_llm_configuration_status()
 
     def _on_done(self):
         self._cancel_mic_probe_if_active()
