@@ -27,8 +27,9 @@ class _FakeSegmenter:
         self._feed_result = feed_result
         self._flush_result = flush_result
         self.reset_called = False
+        self.last_route = ""
 
-    def feed(self, block):
+    def feed(self, block, **_kwargs):
         return self._feed_result
 
     def flush(self):

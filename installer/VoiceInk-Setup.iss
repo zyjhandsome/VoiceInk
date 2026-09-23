@@ -25,6 +25,8 @@ SetupIconFile=..\voiceink\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+; 只带简体中文，避免向导页中英混排，也不弹出语言选择。
+ShowLanguageDialog=no
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\VoiceInk.exe
 UninstallDisplayName=VoiceInk
@@ -35,13 +37,13 @@ DisableDirPage=no
 ; Version info
 VersionInfoVersion={#AppVersionQuad}
 VersionInfoCompany=VoiceInk
-VersionInfoDescription=VoiceInk Setup
+VersionInfoDescription=VoiceInk 安装程序
 VersionInfoCopyright=VoiceInk
 VersionInfoProductName=VoiceInk
 VersionInfoProductVersion={#AppVersionQuad}
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

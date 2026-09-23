@@ -107,9 +107,41 @@ def _session_model(segments: list[SegmentRecord]) -> str:
     return next((s.model for s in segments if s.model), "")
 
 
+def history_shows_speakers(segments: list[SegmentRecord]) -> bool:
+    """Labels appear only after a second person shows up in this session."""
+    ids = {int(segment.speaker_id) for segment in segments if int(segment.speaker_id) > 0}
+    return len(ids) >= 2
+
+
+def _route_caption(route: str) -> str:
+    return {"mic": "麦克风", "system": "电脑播放"}.get((route or "").strip(), "")
+
+
+def _speaker_heading(segment: SegmentRecord) -> str:
+    heading = f"说话人 {int(segment.speaker_id)}"
+    route = _route_caption(segment.speaker_route)
+    if route:
+        return f"{heading} · {route}"
+    return heading
+
+
+def _labeled_text(segment: SegmentRecord, text: str, *, show_speakers: bool) -> str:
+    body = text.strip()
+    if not body:
+        return ""
+    if show_speakers and int(segment.speaker_id) > 0:
+        return f"{_speaker_heading(segment)}\n{body}"
+    return body
+
+
 def _session_body(segments: list[SegmentRecord]) -> str:
-    texts = [_effective_text(s).strip() for s in _segments_in_order(segments)]
-    return "\n\n".join(t for t in texts if t)
+    ordered = _segments_in_order(segments)
+    show_speakers = history_shows_speakers(ordered)
+    chunks = [
+        _labeled_text(segment, _effective_text(segment), show_speakers=show_speakers)
+        for segment in ordered
+    ]
+    return "\n\n".join(chunk for chunk in chunks if chunk)
 
 
 _SOURCE_CHIP = {
@@ -1054,14 +1086,19 @@ class HistoryWindow(QWidget):
         mark_css = f"background: {tok.AMBER_SOFT}; color: {tok.TEXT};"
         blocks: list[str] = []
         many = len(segments) > 1
+        show_speakers = history_shows_speakers(segments)
         for index, segment in enumerate(segments, start=1):
             text = (segment.polished_text if show_polished else segment.raw_text) or ""
             text = text.strip() or (segment.raw_text or "").strip()
             if not text:
                 continue
-            if many:
+            if many or show_speakers:
                 stamp = datetime.fromtimestamp(segment.created_at / 1000).strftime("%H:%M:%S")
-                caption = f"{index} · {stamp}"
+                if show_speakers and int(segment.speaker_id) > 0:
+                    head = _speaker_heading(segment)
+                else:
+                    head = str(index)
+                caption = f"{head} · {stamp}"
                 if segment.duration_ms:
                     caption += f" · {_format_duration(segment.duration_ms)}"
                 blocks.append(
@@ -1166,7 +1203,13 @@ class HistoryWindow(QWidget):
         if not session_id:
             return
         segments = self._store.get_session_segments(session_id)
-        text = "\n\n".join(s.raw_text.strip() for s in _segments_in_order(segments) if s.raw_text.strip())
+        ordered = _segments_in_order(segments)
+        show_speakers = history_shows_speakers(ordered)
+        text = "\n\n".join(
+            _labeled_text(segment, segment.raw_text, show_speakers=show_speakers)
+            for segment in ordered
+            if segment.raw_text.strip()
+        )
         QApplication.clipboard().setText(text)
         self._show_feedback("已复制原文" if _session_has_polished(segments) else "已复制")
 

@@ -27,6 +27,7 @@ from voiceink.audio_devices import (
 )
 from voiceink.audio_recorder import AudioRecorder
 from voiceink.audio_utils import TARGET_SAMPLE_RATE
+from voiceink.speaker_session import SpeakerSession, voice_embedding
 from voiceink.speech_recognizer import (
     DEFAULT_MODEL_ID,
     SpeechRecognizer,
@@ -62,6 +63,8 @@ class _PendingHistoryRecord:
     duration_ms: int
     trigger_mode: str
     model: str
+    speaker_id: int = 0
+    speaker_route: str = ""
 
 
 class App(QObject):
@@ -105,6 +108,8 @@ class App(QObject):
         self._update_download_worker = None
         self._is_transcribing = False
         self._segment_queue: list[np.ndarray] = []
+        self._segment_routes: list[str] = []
+        self._speakers = SpeakerSession()
         self._continuous_user_stopped = False
         self._current_session_id: str | None = None
         self._current_seq = 0
@@ -420,7 +425,7 @@ class App(QObject):
             return
         self._hold_paste_sent = True
         self._hold_duration_ms = 0
-        self._segment_queue.clear()
+        self._clear_queued_audio()
         self._clear_live_transcript()
         self._reset_recording_ui_after_abort()
         self._recorder.cancel()
@@ -447,6 +452,7 @@ class App(QObject):
         self._continuous_user_stopped = False
         self._current_session_id = None
         self._current_seq = 0
+        self._speakers.reset()
         self._clear_live_transcript()
         self._start_continuous_listening()
 
@@ -561,12 +567,18 @@ class App(QObject):
         self._tray.set_activity_tooltip(None)
         self._floating.dismiss_if_idle()
 
-    def _hold_audio_until_ready(self, audio: np.ndarray, *, front: bool) -> None:
+    def _hold_audio_until_ready(
+        self,
+        audio: np.ndarray,
+        route: str = "",
+        *,
+        front: bool,
+    ) -> None:
         """Keep captured audio until the model can transcribe it."""
         if front:
-            self._segment_queue.insert(0, audio)
+            self._enqueue_audio(audio, route, front=True)
         else:
-            self._segment_queue.append(audio)
+            self._enqueue_audio(audio, route)
         if self._recognizer.is_loading:
             log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
             self._floating.show_model_loading(
@@ -576,17 +588,44 @@ class App(QObject):
         log.warning("模型未就绪，语音段已保留（队列 %d）", len(self._segment_queue))
         self._show_model_not_ready()
 
+    def _segment_route_from_recorder(self) -> str:
+        consume = getattr(self._recorder, "consume_segment_route", None)
+        if not callable(consume):
+            return ""
+        route = consume()
+        return route if isinstance(route, str) else ""
+
+    def _enqueue_audio(self, audio: np.ndarray, route: str = "", *, front: bool = False) -> None:
+        if front:
+            self._segment_queue.insert(0, audio)
+            self._segment_routes.insert(0, route)
+            return
+        self._segment_queue.append(audio)
+        self._segment_routes.append(route)
+
+    def _pop_queued_audio(self) -> tuple[np.ndarray, str]:
+        audio = self._segment_queue.pop(0)
+        if len(self._segment_routes) == len(self._segment_queue) + 1:
+            return audio, self._segment_routes.pop(0)
+        self._segment_routes.clear()
+        return audio, ""
+
+    def _clear_queued_audio(self) -> None:
+        self._segment_queue.clear()
+        self._segment_routes.clear()
+
     def _on_segment_ready(self, audio: np.ndarray):
+        route = self._segment_route_from_recorder()
         if audio.size < MIN_AUDIO_SAMPLES:
             return
         if not self._recognizer.is_ready:
-            self._hold_audio_until_ready(audio, front=False)
+            self._hold_audio_until_ready(audio, route, front=False)
             return
         if self._is_transcribing:
-            self._segment_queue.append(audio)
+            self._enqueue_audio(audio, route)
             log.debug("转写排队，队列长度 %d", len(self._segment_queue))
             return
-        self._begin_transcription(audio)
+        self._begin_transcription(audio, route=route)
 
     # ── Recognition ───────────────────────────────────
 
@@ -605,11 +644,14 @@ class App(QObject):
             return
         self._begin_transcription(full_audio)
 
-    def _begin_transcription(self, audio: np.ndarray):
+    def _begin_transcription(self, audio: np.ndarray, route: str = ""):
         if not self._recognizer.is_ready:
-            self._hold_audio_until_ready(audio, front=True)
+            self._hold_audio_until_ready(audio, route, front=True)
             return
         self._pending_record = self._build_pending_history_record(audio)
+        speaker_id, speaker_route = self._label_speaker(audio, route)
+        self._pending_record.speaker_id = speaker_id
+        self._pending_record.speaker_route = speaker_route
         if not self._is_continuous_mode():
             self._hold_duration_ms += self._pending_record.duration_ms
         self._is_transcribing = True
@@ -823,8 +865,8 @@ class App(QObject):
             return
         if not self._recognizer.is_ready:
             return
-        next_audio = self._segment_queue.pop(0)
-        self._begin_transcription(next_audio)
+        next_audio, next_route = self._pop_queued_audio()
+        self._begin_transcription(next_audio, route=next_route)
 
     def _on_stt_ready(self):
         self._floating.clear_model_loading_lock()
@@ -919,7 +961,18 @@ class App(QObject):
             target_app="",
             trigger_mode=pending.trigger_mode,
             model=pending.model,
+            speaker_id=int(pending.speaker_id),
+            speaker_route=pending.speaker_route or "",
         )
+
+    def _label_speaker(self, audio: np.ndarray, route: str) -> tuple[int, str]:
+        """Number this segment inside the current continuous session only."""
+        if not self._is_continuous_mode():
+            return 0, ""
+        stored_route = ""
+        if self._config.get("audio.input_source") == INPUT_SOURCE_MIXED and route in ("mic", "system"):
+            stored_route = route
+        return self._speakers.assign(voice_embedding(audio), stored_route), stored_route
 
     def _handle_paste_result(
         self,
@@ -1018,6 +1071,8 @@ class App(QObject):
                 target_app=target_app or "",
                 trigger_mode=record.trigger_mode,
                 model=record.model,
+                speaker_id=int(record.speaker_id),
+                speaker_route=record.speaker_route or "",
             )
         )
 
@@ -1203,7 +1258,7 @@ class App(QObject):
         self._update_tray_models()
         if self._pending_segment_count() > 0:
             log.warning("设置已保存，丢弃 %d 段待识别语音", self._pending_segment_count())
-        self._segment_queue.clear()
+        self._clear_queued_audio()
         self._paster.restore_clipboard = self._config.get(
             "output.restore_clipboard", False
         )
@@ -1370,7 +1425,9 @@ class App(QObject):
 
     def _sync_about_update_status(self) -> None:
         settings = self._settings_widget()
-        if settings is None or self._update_check_state == "downloading":
+        if settings is None:
+            return
+        if self._update_check_state == "downloading":
             return
         state = self._update_check_state
         if state == "available" and self._pending_release is not None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from voiceink.audio_utils import TARGET_SAMPLE_RATE, rms_volume
+from voiceink.speaker_session import dominant_route
 
 SPEECH_RMS_THRESHOLD = 0.002
 SILENCE_HOLD_SEC = 0.85
@@ -38,11 +39,24 @@ class SpeechSegmenter:
 
     def reset(self) -> None:
         self._buffer: list[np.ndarray] = []
+        self._energy: list[tuple[int, float, float]] = []
         self._total_samples = 0
         self._silence_run = 0
         self._in_speech = False
+        self._last_route = ""
 
-    def feed(self, mono_block: np.ndarray) -> np.ndarray | None:
+    @property
+    def last_route(self) -> str:
+        """mic, system, or empty for the segment most recently emitted."""
+        return self._last_route
+
+    def feed(
+        self,
+        mono_block: np.ndarray,
+        *,
+        mic_energy: float = 0.0,
+        system_energy: float = 0.0,
+    ) -> np.ndarray | None:
         block = np.asarray(mono_block, dtype=np.float32).reshape(-1)
         if block.size == 0:
             return None
@@ -51,8 +65,7 @@ class SpeechSegmenter:
         if loud:
             self._in_speech = True
             self._silence_run = 0
-            self._buffer.append(block)
-            self._total_samples += block.size
+            self._remember_block(block, mic_energy, system_energy)
             if self._total_samples >= self._max_samples:
                 return self._take_segment(limit=self._max_samples)
             return None
@@ -60,8 +73,7 @@ class SpeechSegmenter:
         if not self._in_speech:
             return None
 
-        self._buffer.append(block)
-        self._total_samples += block.size
+        self._remember_block(block, mic_energy, system_energy)
         self._silence_run += block.size
         if self._total_samples >= self._max_samples:
             return self._take_segment(limit=self._max_samples)
@@ -78,8 +90,39 @@ class SpeechSegmenter:
             self.reset()
             return None
         out = np.concatenate(self._buffer).astype(np.float32, copy=False)
+        mic, system, _tail = self._split_energy(out.size)
         self.reset()
+        self._last_route = dominant_route(mic, system)
         return out
+
+    def _remember_block(self, block: np.ndarray, mic_energy: float, system_energy: float) -> None:
+        self._buffer.append(block)
+        self._energy.append((int(block.size), float(mic_energy), float(system_energy)))
+        self._total_samples += int(block.size)
+
+    def _split_energy(self, sample_count: int) -> tuple[float, float, list[tuple[int, float, float]]]:
+        mic = 0.0
+        system = 0.0
+        remaining = int(sample_count)
+        tail: list[tuple[int, float, float]] = []
+        for count, mic_part, system_part in self._energy:
+            count = int(count)
+            if count <= 0:
+                continue
+            if remaining <= 0:
+                tail.append((count, mic_part, system_part))
+                continue
+            if count <= remaining:
+                mic += mic_part
+                system += system_part
+                remaining -= count
+                continue
+            fraction = remaining / count
+            mic += mic_part * fraction
+            system += system_part * fraction
+            tail.append((count - remaining, mic_part * (1.0 - fraction), system_part * (1.0 - fraction)))
+            remaining = 0
+        return mic, system, tail
 
     def _take_segment(self, limit: int | None = None) -> np.ndarray | None:
         if self._total_samples < self._min_samples:
@@ -89,14 +132,14 @@ class SpeechSegmenter:
             self.reset()
             return None
         audio = np.concatenate(self._buffer).astype(np.float32, copy=False)
-        if limit is not None and audio.size > limit:
-            head = audio[:limit]
-            tail = audio[limit:]
-            self.reset()
-            if tail.size:
-                self._in_speech = True
-                self._buffer = [tail]
-                self._total_samples = int(tail.size)
-            return head
+        take = audio.size if limit is None else min(int(limit), int(audio.size))
+        mic, system, tail_energy = self._split_energy(take)
+        tail = audio[take:] if take < audio.size else None
         self.reset()
-        return audio
+        self._last_route = dominant_route(mic, system)
+        if tail is not None and tail.size:
+            self._in_speech = True
+            self._buffer = [tail]
+            self._total_samples = int(tail.size)
+            self._energy = tail_energy
+        return audio[:take]

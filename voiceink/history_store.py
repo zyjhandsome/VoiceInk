@@ -26,11 +26,22 @@ CREATE TABLE IF NOT EXISTS history (
   duration_ms   INTEGER NOT NULL DEFAULT 0,
   target_app    TEXT    NOT NULL DEFAULT '',
   trigger_mode  TEXT    NOT NULL DEFAULT '',
-  model         TEXT    NOT NULL DEFAULT ''
+  model         TEXT    NOT NULL DEFAULT '',
+  speaker_id    INTEGER NOT NULL DEFAULT 0,
+  speaker_route TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_history_session ON history(session_id);
 CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at);
 """
+
+
+def _ensure_speaker_columns(conn: sqlite3.Connection) -> None:
+    """Add speaker columns on databases created before continuous diarization."""
+    present = {row[1] for row in conn.execute("PRAGMA table_info(history)")}
+    if "speaker_id" not in present:
+        conn.execute("ALTER TABLE history ADD COLUMN speaker_id INTEGER NOT NULL DEFAULT 0")
+    if "speaker_route" not in present:
+        conn.execute("ALTER TABLE history ADD COLUMN speaker_route TEXT NOT NULL DEFAULT ''")
 
 _SESSION_SUMMARY_SQL = """
 SELECT
@@ -72,6 +83,8 @@ class SegmentRecord:
     target_app: str = ""
     trigger_mode: str = ""
     model: str = ""
+    speaker_id: int = 0
+    speaker_route: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,6 +129,7 @@ class HistoryStore:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.executescript(_DDL)
+                _ensure_speaker_columns(conn)
                 conn.execute("PRAGMA user_version=1;")
                 conn.commit()
         except Exception:
@@ -241,7 +255,8 @@ class HistoryStore:
                 rows = conn.execute(
                     """
                     SELECT session_id, seq, created_at, raw_text, polished_text,
-                           source, duration_ms, target_app, trigger_mode, model
+                           source, duration_ms, target_app, trigger_mode, model,
+                           speaker_id, speaker_route
                     FROM history
                     WHERE session_id = ?
                     ORDER BY seq ASC
@@ -260,6 +275,8 @@ class HistoryStore:
                     target_app=r[7],
                     trigger_mode=r[8],
                     model=r[9],
+                    speaker_id=int(r[10] or 0),
+                    speaker_route=r[11] or "",
                 )
                 for r in rows
             ]
@@ -333,8 +350,9 @@ class HistoryStore:
             """
             INSERT INTO history (
               session_id, seq, created_at, raw_text, polished_text,
-              source, duration_ms, target_app, trigger_mode, model
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              source, duration_ms, target_app, trigger_mode, model,
+              speaker_id, speaker_route
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.session_id,
@@ -347,6 +365,8 @@ class HistoryStore:
                 record.target_app,
                 record.trigger_mode,
                 record.model,
+                int(record.speaker_id),
+                record.speaker_route or "",
             ),
         )
         conn.commit()

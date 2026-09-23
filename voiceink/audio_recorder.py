@@ -72,6 +72,9 @@ class AudioRecorder(QObject):
         self._continuous_timer.timeout.connect(self._on_continuous_tick)
         self._last_speech_at = 0.0
         self._no_speech_warned = False
+        self._block_mic_energy = 0.0
+        self._block_system_energy = 0.0
+        self._segment_route = ""
 
     def configure(
         self,
@@ -301,7 +304,7 @@ class AudioRecorder(QObject):
         return self._last_start_warning
 
     def _drain_mixed_mono(self) -> Optional[np.ndarray]:
-        parts: list[tuple[np.ndarray, int]] = []
+        parts: list[tuple[np.ndarray, int, str]] = []
         with self._lock:
             for lane in self._lanes:
                 if lane.drain_idx >= len(lane.chunks):
@@ -310,10 +313,24 @@ class AudioRecorder(QObject):
                 lane.drain_idx = len(lane.chunks)
                 if not new:
                     continue
-                parts.append((np.concatenate(new), lane.sample_rate))
+                parts.append((np.concatenate(new), lane.sample_rate, lane.endpoint.role))
         if not parts:
+            self._block_mic_energy = 0.0
+            self._block_system_energy = 0.0
             return None
-        tracks = [resample_mono(raw, sr, TARGET_SAMPLE_RATE) for raw, sr in parts]
+        tracks: list[np.ndarray] = []
+        mic_energy = 0.0
+        system_energy = 0.0
+        for raw, sample_rate, role in parts:
+            track = resample_mono(raw, sample_rate, TARGET_SAMPLE_RATE)
+            energy = float(np.dot(track, track)) if track.size else 0.0
+            if role == "system":
+                system_energy += energy
+            else:
+                mic_energy += energy
+            tracks.append(track)
+        self._block_mic_energy = mic_energy
+        self._block_system_energy = system_energy
         if len(tracks) == 1:
             return tracks[0]
         return mix_to_mono(tracks, TARGET_SAMPLE_RATE)
@@ -335,11 +352,11 @@ class AudioRecorder(QObject):
         self.volume_changed.emit(vol)
         if vol >= self._segmenter.speech_threshold:
             self._last_speech_at = time.monotonic()
-        segment = self._segmenter.feed(block)
+        segment = self._feed_segmenter(block)
         if segment is not None and segment.size > 0:
             self._last_speech_at = time.monotonic()
             log.debug("持续监听切分片段: %d 采样点", segment.size)
-            self.segment_ready.emit(segment)
+            self._emit_segment(segment)
         elif (
             not self._no_speech_warned
             and time.monotonic() - self._last_speech_at >= self.NO_SPEECH_WARN_SEC
@@ -431,17 +448,34 @@ class AudioRecorder(QObject):
         emitted = 0
         block = self._drain_mixed_mono()
         if block is not None and block.size > 0:
-            segment = self._segmenter.feed(block)
+            segment = self._feed_segmenter(block)
             if segment is not None and segment.size > 0:
                 log.debug("持续监听收尾片段: %d 采样点", segment.size)
-                self.segment_ready.emit(segment)
+                self._emit_segment(segment)
                 emitted += 1
         flushed = self._segmenter.flush()
         if flushed is not None and flushed.size > 0:
             log.debug("持续监听 flush 片段: %d 采样点", flushed.size)
-            self.segment_ready.emit(flushed)
+            self._emit_segment(flushed)
             emitted += 1
         return emitted
+
+    def _feed_segmenter(self, block: np.ndarray) -> Optional[np.ndarray]:
+        return self._segmenter.feed(
+            block,
+            mic_energy=self._block_mic_energy,
+            system_energy=self._block_system_energy,
+        )
+
+    def _emit_segment(self, segment: np.ndarray) -> None:
+        self._segment_route = self._segmenter.last_route
+        self.segment_ready.emit(segment)
+
+    def consume_segment_route(self) -> str:
+        """Return the route of the segment just emitted, then clear it."""
+        route = self._segment_route
+        self._segment_route = ""
+        return route
 
     def stop_continuous(self):
         if not self._continuous_mode and not self._is_recording:

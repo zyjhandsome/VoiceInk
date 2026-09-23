@@ -578,6 +578,8 @@ def test_app_show_history_window_reuses_single_window(qapp, monkeypatch):
     app._main = None
     app._pending_segment_count = 0
     app._hotkey_mgr = MagicMock()
+    app._update_check_state = ""
+    app._pending_release = None
     app.apply_appearance_theme = lambda: None
     app._sync_settings_runtime_status = lambda: None
 
