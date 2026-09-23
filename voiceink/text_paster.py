@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import subprocess
+from dataclasses import dataclass
 from typing import Callable
 
 import pyperclip
@@ -12,6 +13,15 @@ log = logging.getLogger("VoiceInk")
 
 PASTE_DELAY_MS = 150
 VERIFY_AFTER_PASTE_MS = 120
+
+
+@dataclass(frozen=True)
+class PasteResult:
+    """Evidence-based output result; `sent` does not claim content verification."""
+
+    status: str
+    target_app: str = ""
+    detail: str = ""
 
 
 def _get_foreground_window_win32():
@@ -65,13 +75,9 @@ def get_foreground_window_info():
         return _get_foreground_window_linux()
 
 
-def get_foreground_process_name() -> str:
-    """Return foreground process basename only (D4 privacy: no window title).
-
-    Windows: resolve PID via win32api/win32process. Elsewhere: best-effort "" .
-    """
+def _process_name_from_window_info(info: tuple) -> str:
+    """Resolve a captured window's process basename without retaining its title."""
     try:
-        info = get_foreground_window_info()
         if sys.platform != "win32":
             return ""
         if len(info) < 3:
@@ -98,6 +104,11 @@ def get_foreground_process_name() -> str:
         return os.path.basename(path) if path else ""
     except Exception:
         return ""
+
+
+def get_foreground_process_name() -> str:
+    """Return foreground process basename only (D4 privacy: no window title)."""
+    return _process_name_from_window_info(get_foreground_window_info())
 
 
 def _paste_shortcut():
@@ -151,18 +162,19 @@ class TextPaster:
             return "pasted"
         return "clipboard"
 
-    def paste_async(self, text: str, callback: Callable[[str], None]) -> None:
+    def paste_async(self, text: str, callback: Callable[[PasteResult], None]) -> None:
         """
         Copy text and attempt paste after a short delay, then verify focus
         stayed on the target window. Invokes callback with result status.
         """
         if not text:
-            callback("error:空文本")
+            callback(PasteResult("error", detail="空文本"))
             return
 
         info = get_foreground_window_info()
         hwnd = info[0]
         has_target = hwnd != 0 and not self._is_own_window(info)
+        target_app = _process_name_from_window_info(info) if has_target else ""
 
         old_clipboard = None
         if self.restore_clipboard:
@@ -175,11 +187,11 @@ class TextPaster:
             pyperclip.copy(text)
         except Exception as e:
             log.error("写入剪贴板失败: %s", e)
-            callback(f"error:{e}")
+            callback(PasteResult("error", target_app=target_app, detail=str(e)))
             return
 
         if not has_target:
-            callback("clipboard")
+            callback(PasteResult("clipboard"))
             return
 
         def _do_paste():
@@ -187,7 +199,7 @@ class TextPaster:
                 _paste_shortcut()
             except Exception as e:
                 log.warning("模拟粘贴失败: %s", e)
-                callback("clipboard")
+                callback(PasteResult("clipboard", target_app=target_app))
                 return
             QTimer.singleShot(VERIFY_AFTER_PASTE_MS, _verify)
 
@@ -198,13 +210,13 @@ class TextPaster:
                         pyperclip.copy(old_clipboard)
                     except Exception:
                         pass
-                callback("pasted")
+                callback(PasteResult("sent", target_app=target_app))
             else:
                 log.info("粘贴校验未通过（焦点已切换或目标不可粘贴），保留剪贴板内容")
                 try:
                     pyperclip.copy(text)
                 except Exception:
                     pass
-                callback("clipboard")
+                callback(PasteResult("clipboard", target_app=target_app))
 
         QTimer.singleShot(PASTE_DELAY_MS, _do_paste)

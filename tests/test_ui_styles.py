@@ -54,7 +54,7 @@ class TestColorContrastContracts:
             (light["ACCENT_TEXT"], light["BG"]),
             (light["RED"], light["BG"]),
             (light["GREEN"], light["BG"]),
-            ("#FFFFFF", light["PRIMARY_CONTAINER"]),
+            (light["PRIMARY_ON"], light["PRIMARY_CONTAINER"]),
         ):
             assert _contrast(foreground, background) >= 4.5
 
@@ -63,15 +63,15 @@ class TestColorContrastContracts:
 
         dark = tokens_for("dark")
         selected_background = _blend(
-            dark["ACCENT"], dark["SETTINGS_SIDEBAR_BG"], 0.16
+            "#FFFFFF", dark["SETTINGS_SIDEBAR_BG"], 0.06
         )
-        assert _contrast(dark["ACCENT_TEXT"], selected_background) >= 4.5
+        assert _contrast(dark["TEXT"], selected_background) >= 4.5
         for background in (
             dark["PRIMARY_CONTAINER"],
             dark["PRIMARY_CONTAINER_HOVER"],
             dark["PRIMARY_CONTAINER_PRESSED"],
         ):
-            assert _contrast("#FFFFFF", background) >= 4.5
+            assert _contrast(dark["PRIMARY_ON"], background) >= 4.5
 
 
 class TestSettingsStyles:
@@ -147,7 +147,7 @@ class TestSettingsStyles:
             import voiceink.ui.settings_styles as st
 
             assert card._delete_btn is not None
-            assert card._delete_btn.styleSheet() == st.BTN_GHOST_SM
+            assert card._delete_btn.styleSheet() == st.BTN_DANGER_SM
         finally:
             card.close()
 
@@ -159,13 +159,14 @@ class TestSidebarVisualContracts:
         from voiceink.ui import design_tokens as t
 
         t.activate("light")
-        assert t.NAV_BG.upper() == t.BG.upper() == "#F3F4F6"
+        assert t.NAV_BG.upper() == "#F6F7F8"
+        assert t.BG.upper() == "#FFFFFF"
 
     def test_nav_btn_style_uses_single_left_bar_and_soft_wash(self):
         from voiceink.ui.design_tokens import ACCENT, NAV_SELECTED_BG
         from voiceink.ui.settings_components import NAV_BTN_STYLE
 
-        assert "font-size: 13px" in NAV_BTN_STYLE
+        assert "font-size: 14px" in NAV_BTN_STYLE
         # Prototype v3: left bar + soft wash + accent label.
         checked_block = NAV_BTN_STYLE.split(":checked")[1].split("}")[0]
         assert f"background: {NAV_SELECTED_BG}" in checked_block
@@ -175,15 +176,15 @@ class TestSidebarVisualContracts:
         assert "border: 2px solid" not in checked_block
 
     def test_page_title_avoids_negative_tracking(self):
-        from voiceink.ui.design_tokens import TEXT_DIM
+        from voiceink.ui.design_tokens import TEXT_SEC
         from voiceink.ui.settings_components import PAGE_TITLE, SECTION_LABEL
 
         assert "font-size: 20px" in PAGE_TITLE
-        assert "font-weight: 600" in PAGE_TITLE
+        assert "font-weight: 700" in PAGE_TITLE
         assert "letter-spacing: -" not in PAGE_TITLE
         assert "letter-spacing: 0" in PAGE_TITLE
-        assert TEXT_DIM.lower() in SECTION_LABEL.lower()
-        assert "font-size: 12px" in SECTION_LABEL
+        assert TEXT_SEC.lower() in SECTION_LABEL.lower()
+        assert "font-size: 14px" in SECTION_LABEL
 
     def test_group_and_hero_surfaces_are_bordered_cards(self):
         from voiceink.ui.design_tokens import BORDER, RADIUS_LG, SURFACE
@@ -211,20 +212,22 @@ class TestSidebarVisualContracts:
     def test_vertical_choice_selected_uses_single_emphasis(self):
         from PyQt6.QtWidgets import QRadioButton
 
-        from voiceink.ui.design_tokens import ACCENT, ACCENT_SOFT, HAIRLINE, NAV_SELECTED_BAR_PX, TEXT
+        from voiceink.ui import design_tokens as tok
         from voiceink.ui.settings_components import ChoiceCard, VerticalChoiceCard
 
+        tok.activate("light")
         radio = QRadioButton()
         radio.setChecked(True)
         card = VerticalChoiceCard("仅麦克风", "收录你的说话声", "mic", radio)
         try:
             sheet = card.styleSheet()
-            assert f"background: {ACCENT_SOFT}" in sheet
-            assert f"border: 1px solid {HAIRLINE}" in sheet
-            assert f"border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT}" in sheet
+            assert tok.NAV_SELECTED_BG in sheet
+            assert f"border: 1px solid {tok.HAIRLINE}" in sheet
+            assert f"border: 2px solid" not in sheet
+            assert "border-left:" not in sheet or "border-left: 0" in sheet
             title = next(label for label in card.findChildren(QLabel) if label.text() == "仅麦克风")
-            assert f"color: {TEXT}" in title.styleSheet()
-            assert f"color: {ACCENT}" not in title.styleSheet()
+            assert f"color: {tok.TEXT}" in title.styleSheet()
+            assert f"color: {tok.ACCENT}" not in title.styleSheet()
         finally:
             card.close()
             radio.close()
@@ -234,12 +237,13 @@ class TestSidebarVisualContracts:
         grid = ChoiceCard("仅麦克风", "收录你的说话声", "mic", radio2)
         try:
             sheet = grid.styleSheet()
-            assert f"background: {ACCENT_SOFT}" in sheet
-            assert f"border-left: {NAV_SELECTED_BAR_PX}px solid {ACCENT}" in sheet
-            assert f"border: 2px solid {ACCENT}" not in sheet
+            assert tok.NAV_SELECTED_BG in sheet
+            assert f"border: 1px solid {tok.HAIRLINE}" in sheet
+            assert f"border: 2px solid" not in sheet
+            assert "border-left:" not in sheet or "border-left: 0" in sheet
             title = next(label for label in grid.findChildren(QLabel) if label.text() == "仅麦克风")
-            assert f"color: {TEXT}" in title.styleSheet()
-            assert f"color: {ACCENT}" not in title.styleSheet()
+            assert f"color: {tok.TEXT}" in title.styleSheet()
+            assert f"color: {tok.ACCENT}" not in title.styleSheet()
         finally:
             grid.close()
             radio2.close()
@@ -249,52 +253,23 @@ class TestSidebarVisualContracts:
 
         assert not hasattr(components, "GeneralPageHeader")
 
-    def test_sidebar_brand_and_nav_metrics(self):
+    def test_settings_island_nav_has_no_sidebar(self, tmp_path, monkeypatch):
         import sys
-
-        from PyQt6.QtWidgets import QApplication, QFrame, QPushButton
-
-        from voiceink.ui.design_tokens import BORDER, SURFACE_PEARL, TEXT
-        from voiceink.ui.nav_icons import nav_icon
-        from voiceink.ui.settings_components import SettingsSidebar
+        from PyQt6.QtWidgets import QApplication
+        from voiceink.config import Config
+        from voiceink.ui.settings_window import SettingsWindow
 
         QApplication.instance() or QApplication(sys.argv)
-        sidebar = SettingsSidebar(nav_icon)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+        win = SettingsWindow(Config(config_dir=tmp_path))
         try:
-            brand = next(
-                lbl for lbl in sidebar.findChildren(QLabel) if lbl.text() == "VoiceInk"
-            )
-            assert TEXT.lower() in brand.styleSheet().lower()
-            assert "letter-spacing: -" not in brand.styleSheet()
-
-            status = next(
-                w for w in sidebar.findChildren(QFrame)
-                if w.objectName() == "sidebarStatusCard"
-            )
-            sheet = status.styleSheet().lower()
-            assert SURFACE_PEARL.lower() in sheet
-            assert f"1px solid {BORDER}".lower() in sheet
-
-            from voiceink.ui.design_tokens import SETTINGS_SIDEBAR_BG
-            from voiceink.ui.settings_components import NAV_BTN_STYLE
-
-            from voiceink.ui.design_tokens import ACCENT
-
-            checked = NAV_BTN_STYLE.split(":checked")[1].split("QPushButton")[0]
-            assert ACCENT.lower() in checked.lower() or "2563eb" in checked.lower()
-            assert "border-left: 3px solid" in checked
-
-            nav_btns = [
-                b for b in sidebar.findChildren(QPushButton)
-                if b.objectName() == "settingsNavBtn"
-            ]
-            assert len(nav_btns) == 4
-            assert all(b.height() >= 34 for b in nav_btns)
-            assert all(not b.text().startswith("  ") for b in nav_btns)
-            assert "border-right" in sidebar.styleSheet()
-            assert SETTINGS_SIDEBAR_BG.lower() in sidebar.styleSheet().lower()
+            assert not hasattr(win, "_sidebar")
+            assert not hasattr(win, "_island_nav")
+            assert win._pages.count() == 4
         finally:
-            sidebar.close()
+            win.close()
 
 
 class TestClassicDesktopTokens:
@@ -304,16 +279,46 @@ class TestClassicDesktopTokens:
         t.activate("light")
         light = t.tokens_for("light")
         assert t.ACCENT.upper() == light["ACCENT"].upper() == "#2563EB"
-        assert t.BG.upper() == light["BG"].upper() == "#F3F4F6"
         assert "Inter" not in t.FONT
         assert t.RADIUS_MD == 8
         assert t.STATE_RECORD.upper() in {"#DC2626", "#E5484D", "#EF4444", "#F87171"}
-        assert t.STATE_LISTEN == t.FLOAT_TEXT or t.STATE_LISTEN == t.FLOAT_TEXT_SEC
         assert t.STATE_RECOGNIZE in (t.FLOAT_TEXT, t.FLOAT_TEXT_SEC)
         assert t.STATE_POLISH in (t.FLOAT_TEXT, t.FLOAT_TEXT_SEC)
         assert t.SETTINGS_SIDEBAR_BG.upper() == t.SURFACE.upper()
-        assert t.NAV_SELECTED_BG == t.ACCENT_SOFT
         assert "#" not in t.NAV_SELECTED_BG.lower() or t.NAV_SELECTED_BG.startswith("rgba")
+
+    def test_ink_surfaces_and_primary(self):
+        from voiceink.ui import design_tokens as t
+        from voiceink.ui.design_tokens import tokens_for
+
+        light = tokens_for("light")
+        dark = tokens_for("dark")
+        assert light["BG"] == light["SURFACE"] == "#FFFFFF"
+        assert dark["BG"] == dark["SURFACE"] == "#181818"
+        assert light["NAV_BG"] == "#F6F7F8"
+        assert dark["NAV_BG"] == "#141618"
+        assert light["PRIMARY_CONTAINER"] == "#0D0D0D"
+        assert light["PRIMARY_ON"] == "#FFFFFF"
+        assert dark["PRIMARY_CONTAINER"] == "#FFFFFF"
+        assert dark["PRIMARY_ON"] == "#0D0D0D"
+        assert t.SIDEBAR_WIDTH == 184
+        t.activate("dark")
+        assert t.STATE_LISTEN == t.GREEN
+        t.activate("light")
+        assert t.STATE_LISTEN == t.GREEN
+
+    def test_primary_buttons_use_primary_on(self):
+        import voiceink.ui.settings_styles as st
+        from voiceink.ui import design_tokens as t
+
+        t.activate("light")
+        st.reload_styles()
+        primary = st.build_btn_primary()
+        accent_sm = st.build_btn_accent_sm()
+        assert f"color: {t.PRIMARY_ON}" in primary
+        assert f"color: {t.PRIMARY_ON}" in accent_sm
+        assert "color: white" not in primary
+        assert "color: white" not in accent_sm
 
     def test_dark_tokens_differ_from_light(self):
         from voiceink.ui.design_tokens import tokens_for

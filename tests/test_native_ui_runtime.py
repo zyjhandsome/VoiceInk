@@ -24,12 +24,17 @@ def test_runtime_has_no_webengine_dependency_or_bridge_modules():
     assert not (ui_dir / "web").exists()
 
 
-def test_selected_html_surfaces_are_archived_as_prototypes():
-    archive = ROOT / "prototypes" / "reference-html"
-    assert {
+def test_html_prototype_surfaces_are_retired():
+    archive = ROOT / "prototypes"
+    leftover = (
         "history.html",
         "settings_about.html",
         "settings_general.html",
         "settings_models.html",
         "settings_polish.html",
-    }.issubset({path.name for path in archive.glob("*.html")})
+        "index.html",
+    )
+    assert not (archive / "reference-html").exists()
+    for name in leftover:
+        assert not (archive / name).exists()
+        assert not (archive / "reference-html" / name).exists()

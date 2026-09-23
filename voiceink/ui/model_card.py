@@ -54,8 +54,9 @@ class ModelCard(QFrame):
         self._name_lbl = QLabel(self._info["name"])
         self._name_lbl.setProperty("viRole", "modelName")
         head.addWidget(self._name_lbl)
-        if self._is_active:
-            self._badge = QLabel("当前")
+        from voiceink.speech_recognizer import DEFAULT_MODEL_ID
+        if self._is_active or self._model_id == DEFAULT_MODEL_ID:
+            self._badge = QLabel("当前" if self._is_active else "推荐")
             self._badge.setProperty("viRole", "modelBadge")
             head.addWidget(self._badge)
         head.addStretch()
@@ -120,6 +121,13 @@ class ModelCard(QFrame):
             actions.addWidget(self._action_btn)
         actions.addStretch()
         layout.addLayout(actions)
+        for button in self.findChildren(QPushButton):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setAccessibleName(f"{button.text()}：{self._info['name']}")
+        self._error_label = QLabel()
+        self._error_label.setWordWrap(True)
+        self._error_label.hide()
+        layout.addWidget(self._error_label)
         self.reapply_styles()
 
     def reapply_styles(self) -> None:
@@ -134,14 +142,14 @@ class ModelCard(QFrame):
             f" border-radius: {tok.RADIUS_MD}px; }}"
         )
         self._name_lbl.setStyleSheet(
-            f"color: {tok.TEXT}; font-size: {tok.TYPE_TITLE_SM}px; font-weight: 600;"
+            f"color: {tok.TEXT}; font-size: {tok.TYPE_TITLE_SM}px; font-weight: 700;"
             f" background: transparent;"
         )
         if self._badge is not None:
             self._badge.setStyleSheet(
                 f"background: {tok.SURFACE_PEARL}; color: {tok.TEXT_SEC};"
                 f" border-radius: {tok.RADIUS_PILL}px;"
-                f"padding: 3px 9px; font-size: {tok.TYPE_CAPTION}px; font-weight: 600;"
+                f"padding: 3px 9px; font-size: {tok.TYPE_CAPTION}px; font-weight: 700;"
             )
         self._size_lbl.setStyleSheet(
             f"color: {tok.TEXT_DIM}; font-size: {tok.TYPE_FOOTNOTE}px; background: transparent;"
@@ -166,11 +174,13 @@ class ModelCard(QFrame):
             self._select_btn.setStyleSheet(ss.BTN_ACCENT_SM)
         if self._delete_btn is not None:
             # Secondary ghost — same family as「更改存储…»; confirm dialog keeps safety.
-            self._delete_btn.setStyleSheet(ss.BTN_GHOST_SM)
+            self._delete_btn.setStyleSheet(ss.BTN_DANGER_SM)
         if self._action_btn is not None:
             self._action_btn.setStyleSheet(ss.BTN_ACCENT_SM)
+        self._error_label.setStyleSheet(f"color: {tok.RED}; font-size: {tok.TYPE_FOOTNOTE}px; padding-top: 8px;")
 
     def set_download_progress(self, pct: int):
+        self._error_label.hide()
         if self._progress_bar:
             self._progress_bar.setVisible(True)
             self._progress_bar.setValue(pct)
@@ -179,6 +189,8 @@ class ModelCard(QFrame):
             self._action_btn.setText(f"{pct}%")
 
     def set_download_error(self, msg: str):
+        self._error_label.setText(f"下载失败：{msg}")
+        self._error_label.show()
         if self._progress_bar:
             self._progress_bar.setVisible(False)
         if self._action_btn:

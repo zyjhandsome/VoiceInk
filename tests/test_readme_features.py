@@ -100,6 +100,29 @@ class TestReadmeHoldHotkeyFlow:
             h["floating"].show_recognizing.assert_called_once()
             assert h["app"]._is_transcribing is True
 
+    def test_confirmed_text_accumulates_on_the_listening_bar(self):
+        with app_harness({"audio.trigger_mode": "continuous", "llm.enabled": False}) as h:
+            h["app"]._on_final_result("今天天气不错")
+            h["app"]._on_final_result("我们出发吧")
+            shown = [
+                call.args[0]
+                for call in h["floating"].show_live_transcript.call_args_list
+            ]
+            assert shown[-1] == "今天天气不错我们出发吧"
+
+    def test_hold_slice_text_shows_while_the_key_is_still_down(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            h["recorder"].is_recording = True
+            h["app"]._on_partial_result("前十五秒")
+            h["app"]._on_final_result("前十五秒还在说")
+            shown = [
+                call.args[0]
+                for call in h["floating"].show_live_transcript.call_args_list
+            ]
+            assert shown[0] == "前十五秒"
+            assert shown[-1] == "前十五秒还在说"
+            h["floating"].dismiss_if_idle.assert_not_called()
+
 
 class TestReadmeHotkeyManagerToApp:
     """README: 按住说话约 0.18 秒、持续转写约 0.30 秒；短按不进入。"""
@@ -121,7 +144,7 @@ class TestReadmeHotkeyManagerToApp:
 
 
 class TestReadmeContinuousMode:
-    """README FAQ: 自动持续转写 — 按住快捷键开始，浮窗 × 结束。"""
+    """README FAQ: 自动持续转写 — 按住快捷键开始，Esc 或听写条「结束」结束。"""
 
     def test_stt_ready_does_not_auto_start_continuous(self):
         with app_harness({"audio.trigger_mode": "continuous", "hotkey": "ctrl+space"}) as h:
@@ -134,6 +157,9 @@ class TestReadmeContinuousMode:
                 h["tray"].showMessage.assert_called()
                 msg = h["tray"].showMessage.call_args[0][1]
                 assert "持续转写" in msg or "监听" in msg
+                assert "Esc 或听写条「结束」" in msg
+                assert "浮窗" not in msg
+                assert "×" not in msg
 
     def test_continuous_short_tap_does_not_show_idle_float(self):
         with app_harness({"audio.trigger_mode": "continuous", "hotkey": "ctrl+space"}) as h:
@@ -254,6 +280,29 @@ class TestReadmeAudioSources:
             h["app"]._apply_audio_config()
             kwargs = h["recorder"].configure.call_args.kwargs
             assert kwargs["input_source"] == "microphone"
+
+
+class TestReadmeIslandCopy:
+    def test_readme_and_build_point_to_engine_nav(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        build = (root / "build.py").read_text(encoding="utf-8")
+        assert "设置 → 模型" not in readme
+        assert "设置 → 引擎" in readme
+        assert "模型加载中" not in readme
+        assert "模型载入中" in readme
+        assert "设置 → 模型" not in build
+        assert "设置 → 引擎" in build
+
+    def test_readme_describes_main_window_not_island(self):
+        from pathlib import Path
+
+        text = Path("README.md").read_text(encoding="utf-8")
+        assert "打开 VoiceInk" in text
+        assert "听写条" in text or "薄" in text
+        assert "双击托盘会唤醒空间岛" not in text
 
 
 class TestReadmeSettingsLifecycle:

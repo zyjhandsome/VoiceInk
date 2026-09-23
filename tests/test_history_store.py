@@ -156,6 +156,18 @@ class TestEnqueueSemantics:
         s.close(timeout=5.0)
         assert len(s.get_session_segments("s")) == 30
 
+    def test_enqueue_notifies_after_commit_when_readers_can_see_row(self, store):
+        seen = threading.Event()
+
+        def on_committed():
+            if store.list_sessions():
+                seen.set()
+
+        store.add_committed_callback(on_committed)
+        store.enqueue(_record("live", 0, raw_text="实时写入", created_at=1000))
+        assert seen.wait(timeout=2.0)
+        assert store.list_sessions()[0].session_id == "live"
+
     def test_enqueue_is_nonblocking_and_flush_preserves_queue(self, store):
         start = time.perf_counter()
         for i in range(50):

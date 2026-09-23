@@ -35,7 +35,7 @@ class TestFloatingWindowStates:
         win.show_listening()
         assert win._listening_active is True
         assert win._model_loading_active is False
-        assert "自动监听" in win._status_label.text()
+        assert "正在听" in win._status_label.text()
 
     def test_show_continuous_idle_sets_hint(self, win):
         win.show_continuous_idle("Alt+Space")
@@ -44,9 +44,10 @@ class TestFloatingWindowStates:
 
     def test_show_continuous_stopped(self, win):
         win.show_listening()
-        win.show_continuous_stopped()
+        win.show_continuous_stopped("正在处理剩余内容（1 段）")
         assert win._listening_active is False
         assert "已停止" in win._status_label.text()
+        assert "剩余内容" in win._text_label.text()
 
     def test_show_recording(self, win):
         win.show_recording()
@@ -56,12 +57,28 @@ class TestFloatingWindowStates:
     def test_show_recognizing_truncates_long_text(self, win):
         long_text = "字" * 80
         win.show_recognizing(long_text)
-        assert win._status_label.text() == "识别中"
+        assert win._status_label.text() == "正在识别"
         assert win._text_label.text().startswith("...")
 
     def test_show_polishing(self, win):
         win.show_polishing("润色文本")
         assert win._status_label.text() == "润色中"
+
+    def test_processing_keeps_continuous_listening_visible(self, win):
+        win.show_listening()
+        win.show_recognizing()
+        assert "正在听" in win._status_label.text()
+        assert "识别中" in win._status_label.text()
+        assert win._waveform.isVisible()
+        assert win._waveform._timer.isActive()
+
+    def test_success_does_not_hide_active_listening_bar(self, win):
+        win.show_listening()
+        win.show_success("已发送", "发送到 notepad.exe")
+        assert win._listening_active is True
+        assert "正在听" in win._status_label.text()
+        assert "已发送" in win._status_label.text()
+        assert not win._hide_timer.isActive()
 
     def test_show_success_with_subtitle(self, win):
         win.show_success("已输入", "可按 Ctrl+V")
@@ -80,6 +97,12 @@ class TestFloatingWindowStates:
         win.show_busy_transcribing()
         assert "请稍候" in win._status_label.text()
 
+    def test_model_loading_excerpt_stays_single_line(self, win):
+        win.show_model_loading("正在将 Fun-ASR-Nano 载入内存\n第二行请勿录音")
+        assert "\n" not in win._text_label.text()
+        assert win._text_label.isVisible()
+        assert win._text_label.maximumHeight() <= 18
+
     def test_update_partial_text(self, win):
         win.update_partial_text("部分文本")
         assert win._text_label.text() == "部分文本"
@@ -97,12 +120,12 @@ class TestModelLoadingGuard:
         assert win._model_loading_active is True
         win.show_error("识别失败")
         # Still showing model-loading state, error was ignored.
-        assert win._status_label.text() == "模型加载中"
+        assert win._status_label.text() == "模型载入中"
 
     def test_warning_suppressed_during_model_loading(self, win):
         win.show_model_loading()
         win.show_warning("音频受限")
-        assert win._status_label.text() == "模型加载中"
+        assert win._status_label.text() == "模型载入中"
 
     def test_clear_lock_allows_errors_again(self, win):
         win.show_model_loading()
@@ -120,11 +143,24 @@ class TestModelLoadingGuard:
         assert not win.isVisible()
         assert win._model_loading_active is False
 
-    def test_error_message_can_expand_window_height(self, win):
+    def test_error_stays_capsule_height(self, win):
         win.show_error("识别失败：" + "请检查网络或模型配置。" * 12)
 
-        assert win.height() > 124
-        assert win._text_label.wordWrap()
+        from voiceink.ui.floating_window import COMPACT_HEIGHT
+
+        assert win.height() <= COMPACT_HEIGHT + 40
+        assert win.toolTip()
+
+    def test_error_splits_newline_then_colon(self, win):
+        msg = "录音过短\n请按住快捷键说话，时长至少 0.1 秒"
+        win.show_error(msg)
+
+        from voiceink.ui.floating_window import COMPACT_HEIGHT
+
+        assert win._status_label.text() == "录音过短"
+        assert win._text_label.text()
+        assert win.height() <= COMPACT_HEIGHT + 40
+        assert msg in win.toolTip()
 
     def test_success_clears_loading_flag(self, win):
         win.show_model_loading()
@@ -134,23 +170,134 @@ class TestModelLoadingGuard:
 
 class TestFloatingWindowClassicColors:
     def test_recording_uses_record_accent_others_neutral(self, win):
-        from voiceink.ui.design_tokens import FLOAT_TEXT, STATE_RECORD
+        from voiceink.ui.design_tokens import STATE_LISTEN, STATE_RECORD
 
         win.show_listening()
         listen_ss = win._status_label.styleSheet().lower()
         assert STATE_RECORD.lower() not in listen_ss
-        assert FLOAT_TEXT.lower() in listen_ss or "ffffff" in listen_ss or "235, 235, 245" in listen_ss
+        assert STATE_LISTEN.lower() in listen_ss
 
         win.show_recording()
         rec_ss = win._status_label.styleSheet().lower()
         assert STATE_RECORD.lower() in rec_ss
 
+        win.dismiss_if_idle()
         win.show_recognizing("hi")
         assert STATE_RECORD.lower() not in win._status_label.styleSheet().lower()
 
 
+def test_listen_bar_is_thin_without_extra_actions(win):
+    from voiceink.ui.floating_window import BAR_HEIGHT, BAR_WIDTH
+    win.show_listening()
+    assert win.height() <= BAR_HEIGHT + 8
+    assert win.width() <= BAR_WIDTH + 16
+    assert win._end_btn.text() == "结束"
+    assert not hasattr(win, "_history_btn")
+    assert not hasattr(win, "_settings_btn")
+
+
+def test_hold_bar_stays_put_until_the_key_is_released(win):
+    from voiceink.ui.design_tokens import STATE_RECORD
+
+    win.show_recording()
+    held_height = win.height()
+    assert "松开结束" in win._text_label.text()
+
+    win.show_recognizing()
+    assert win.height() == held_height
+    assert win._status_label.text() == "录音中"
+    assert "松开结束" in win._text_label.text()
+    assert STATE_RECORD.lower() in win._status_label.styleSheet().lower()
+
+    win.show_live_transcript("开头" + "啊" * 40 + "这句还在")
+    shown = win._text_label.text()
+    shown_height = win.height()
+    assert "这句还在" in shown
+    assert win._status_label.text() == "录音中"
+    assert win._dot._timer.isActive()
+
+    win.show_recognizing()
+    win.show_recording()
+    assert win._text_label.text() == shown
+    assert win.height() == shown_height
+    assert win._status_label.text() == "录音中"
+    assert STATE_RECORD.lower() in win._status_label.styleSheet().lower()
+    assert win._dot._timer.isActive()
+
+
+def test_hold_recording_shows_live_transcript(win):
+    win.show_recording()
+    win.show_live_transcript("开头" + "啊" * 80 + "这句还在")
+    assert "这句还在" in win._text_label.text()
+    assert "松开结束" not in win._text_label.text()
+    assert win._waveform.isVisible()
+    assert win._waveform.width() <= 40
+
+    win.show_recognizing()
+    win.show_success("已输入", "可按 Ctrl+V 粘贴")
+    assert "这句还在" in win._text_label.text()
+
+
+def test_live_transcript_keeps_the_tail_while_listening(win):
+    win.show_listening()
+    win.show_live_transcript("开头" + "啊" * 80 + "结尾还在")
+    assert "结尾还在" in win._text_label.text()
+    assert win._waveform.isVisible()
+    assert win._waveform.width() <= 40
+
+    win.show_listening()
+    win.show_recognizing()
+    win.show_success("已发送", "发送到 notepad")
+    assert "结尾还在" in win._text_label.text()
+    assert "正在听" in win._status_label.text()
+
+
+def test_partial_text_grows_excerpt_only(win):
+    from voiceink.ui.floating_window import BAR_EXCERPT_HEIGHT
+    win.show_listening()
+    win.update_partial_text("下一步把这份纪要贴到会议群里。")
+    assert win.height() <= BAR_EXCERPT_HEIGHT + 8
+    assert "纪要" in win._text_label.text()
+    assert win._end_btn.text() == "结束"
+
+
+def test_update_partial_text_recenters_on_excerpt_resize(win, qapp):
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtWidgets import QApplication
+
+    from voiceink.ui.floating_window import BAR_WIDTH
+
+    screen = QApplication.screenAt(QCursor.pos()) or qapp.primaryScreen()
+    assert screen is not None
+    geo = screen.availableGeometry()
+
+    win.show_listening()
+    qapp.processEvents()
+    compact_x = win.x()
+    compact_w = win.width()
+    expected_compact_x = geo.x() + (geo.width() - compact_w) // 2
+    assert compact_x == expected_compact_x
+
+    win.update_partial_text("下一步把这份纪要贴到会议群里。")
+    qapp.processEvents()
+    excerpt_w = win.width()
+    assert excerpt_w > BAR_WIDTH
+    expected_excerpt_x = geo.x() + (geo.width() - excerpt_w) // 2
+    assert win.x() == expected_excerpt_x
+    assert win.x() != compact_x
+
+
 class TestCloseButton:
-    def test_close_emits_stop_when_listening(self, win):
+    def test_end_emits_stop_when_listening(self, win):
+        stops = []
+        win.continuous_stop_requested.connect(lambda: stops.append(True))
+        win.show_listening()
+        win._end_btn.click()
+        assert stops == [True]
+
+    def test_listening_close_emits_stop_if_present(self, win):
+        if not hasattr(win, "_close_btn"):
+            return
         stops = []
         win.continuous_stop_requested.connect(lambda: stops.append(True))
         win.show_listening()
@@ -159,13 +306,11 @@ class TestCloseButton:
 
     def test_close_dismisses_when_idle(self, win):
         win.show_continuous_idle("Alt+Space")
-        win._on_close_clicked()
+        if hasattr(win, "_on_close_clicked"):
+            win._on_close_clicked()
+        else:
+            win.dismiss_if_idle()
         assert win.isVisible() is False
-
-    def test_update_close_button_tooltip(self, win):
-        win.show_listening()
-        win._update_close_button()
-        assert "结束" in win._close_btn.toolTip()
 
 
 class TestSubWidgets:

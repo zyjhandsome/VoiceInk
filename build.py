@@ -4,7 +4,7 @@ Build script for packaging VoiceInk as a standalone Windows application.
 Output: dist/VoiceInk/ — VoiceInk.exe, _internal/, and optional models/.
 
 Models are copied next to the exe (not inside it) from ~/.voiceink/models/
-or ./models/ when present. **FireRedASR2 must exist locally** or the build exits with an error.
+or ./models/ when present. **Fun-ASR-Nano must exist locally** or the build exits with an error.
 Fetch it with: `python voiceink_build/download_bundle_model_for_build.py` (writes to `./models/`).
 
 Distribution:
@@ -68,8 +68,8 @@ def _require_bundle_model(downloaded: list[tuple[str, Path]]) -> None:
     dirname = info["dir_name"]
     if any(d == dirname for d, _ in downloaded):
         return
-    print("\n[ERROR] 打包 EXE 需要已在本地就绪的 FireRedASR2 模型。")
-    print("  请先在应用「设置 → 模型」中下载该模型，或将完整目录放到:")
+    print("\n[ERROR] 打包 EXE 需要已在本地就绪的 Fun-ASR-Nano 模型。")
+    print("  请先在应用「设置 → 引擎」中下载该模型，或将完整目录放到:")
     print(f"    {SCRIPT_DIR / 'models' / dirname}")
     print(f"    或 {Path.home() / '.voiceink' / 'models' / dirname}")
     sys.exit(1)

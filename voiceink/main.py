@@ -150,7 +150,7 @@ def main():
     from voiceink.ui.theme import apply_theme
 
     _boot_config = Config()
-    apply_theme(app, mode=_boot_config.get("appearance.theme_mode", "system"))
+    apply_theme(app, mode=_boot_config.get("appearance.theme_mode", "dark"))
 
     from voiceink.app import App
     voice_ink = App()

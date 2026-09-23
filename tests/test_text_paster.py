@@ -72,7 +72,8 @@ class TestTextPasterPaste:
         paster = TextPaster()
         results = []
         paster.paste_async("", lambda r: results.append(r))
-        assert results == ["error:空文本"]
+        assert [result.status for result in results] == ["error"]
+        assert results[0].detail == "空文本"
 
     def test_restore_clipboard_flag(self):
         paster = TextPaster(restore_clipboard=True)
@@ -114,6 +115,7 @@ def paste_env(monkeypatch):
         state["shortcut_calls"] += 1
 
     monkeypatch.setattr(tp, "_paste_shortcut", _shortcut)
+    monkeypatch.setattr(tp, "_process_name_from_window_info", lambda _info: "editor.exe")
 
     def set_foreground(sequence):
         seq = list(sequence)
@@ -134,7 +136,8 @@ class TestPasteAsyncFlow:
         paster = TextPaster()
         results = []
         paster.paste_async("你好", results.append)
-        assert results == ["pasted"]
+        assert [result.status for result in results] == ["sent"]
+        assert results[0].target_app == "editor.exe"
         assert paste_env["shortcut_calls"] == 1
         assert "你好" in paste_env["copied"]
 
@@ -144,14 +147,14 @@ class TestPasteAsyncFlow:
         paster = TextPaster()
         results = []
         paster.paste_async("文本", results.append)
-        assert results == ["clipboard"]
+        assert [result.status for result in results] == ["clipboard"]
 
     def test_own_window_skips_paste(self, paste_env):
         paste_env["set_foreground"]([(1, "VoiceInk", 1)])
         paster = TextPaster()
         results = []
         paster.paste_async("文本", results.append)
-        assert results == ["clipboard"]
+        assert [result.status for result in results] == ["clipboard"]
         assert paste_env["shortcut_calls"] == 0
 
     def test_no_target_wayland_hwnd_zero(self, paste_env):
@@ -160,7 +163,7 @@ class TestPasteAsyncFlow:
         paster = TextPaster()
         results = []
         paster.paste_async("文本", results.append)
-        assert results == ["clipboard"]
+        assert [result.status for result in results] == ["clipboard"]
         assert paste_env["shortcut_calls"] == 0
 
     def test_shortcut_exception_downgrades_to_clipboard(self, paste_env, monkeypatch):
@@ -173,14 +176,14 @@ class TestPasteAsyncFlow:
         paster = TextPaster()
         results = []
         paster.paste_async("文本", results.append)
-        assert results == ["clipboard"]
+        assert [result.status for result in results] == ["clipboard"]
 
     def test_restore_clipboard_after_verified_paste(self, paste_env):
         paste_env["set_foreground"]([(1234, "Editor", 1)])
         paster = TextPaster(restore_clipboard=True)
         results = []
         paster.paste_async("新文本", results.append)
-        assert results == ["pasted"]
+        assert [result.status for result in results] == ["sent"]
         # Original clipboard restored after a verified paste.
         assert paste_env["clipboard"] == "OLD"
 

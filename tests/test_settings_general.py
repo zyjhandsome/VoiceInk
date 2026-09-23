@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton, QWidget
 
 from voiceink.audio_devices import (
     INPUT_SOURCE_MICROPHONE,
@@ -55,8 +55,11 @@ def settings_window(config, qapp, monkeypatch):
 
 
 class TestGeneralPageLayout:
-    def test_header_title_matches_reference(self, settings_window):
-        assert settings_window._general_hero._title.text() == "通用设置"
+    def test_island_nav_labels(self, settings_window):
+        assert isinstance(settings_window, QWidget)
+        assert settings_window._pages.count() == 4
+        assert not hasattr(settings_window, "_sidebar")
+        assert not hasattr(settings_window, "_general_hero")
 
     def test_general_footer_note_combines_save_and_hotkey_guidance(self, settings_window):
         assert settings_window._general_footer_note.text() == (
@@ -76,20 +79,20 @@ class TestGeneralPageLayout:
         """Prototype v3 titles; chrome keeps product action bar."""
         from PyQt6.QtWidgets import QLabel
 
-        assert settings_window._general_hero._title.text() == "通用设置"
-        assert settings_window._general_hero._subtitle.text() == "录音、音频与偏好"
         assert settings_window._mic_test_btn.text() == "测试声音（约 2 秒）"
         assert settings_window._advanced_audio_btn.text() == "手动选择音频设备"
 
-        # Preference rows: title only (no prototype subtitles).
+        # Simple preferences remain terse; history explains what is retained.
         for row, title in (
             (settings_window._auto_start_row, "开机时自动启动"),
             (settings_window._sound_row, "录音提示音"),
             (settings_window._restore_clipboard_row, "粘贴后恢复剪贴板"),
-            (settings_window._history_enabled_row, "保存语音历史"),
         ):
             texts = [lb.text() for lb in row.findChildren(QLabel) if lb.text()]
             assert texts == [title], texts
+        history_text = " ".join(lb.text() for lb in settings_window._history_enabled_row.findChildren(QLabel))
+        assert "保存语音历史" in history_text
+        assert "不保存音频" in history_text
 
         footnotes = [
             lb.text()
@@ -110,7 +113,7 @@ class TestGeneralPageLayout:
 
         labels = settings_window._about_usage_tip.findChildren(QLabel)
         assert labels
-        assert any(f"color: {AMBER_TEXT}" in label.styleSheet() for label in labels)
+        assert all(f"color: {AMBER_TEXT}" not in label.styleSheet() for label in labels)
 
     def test_settings_stack_contains_only_native_pages(self, settings_window):
         from voiceink.ui.settings_components import SettingsPage
@@ -178,10 +181,81 @@ class TestGeneralPageLayout:
             assert f"border: 1px solid {BORDER}" in sheet
             assert f"border-radius: {RADIUS_LG}px" in sheet
 
+    def test_settings_content_column_is_transparent_on_sheet(self, settings_window):
+        from voiceink.ui import design_tokens as tok
+
+        for widget in (
+            settings_window._content_wrap,
+            settings_window._pages_host,
+            settings_window._pages,
+        ):
+            sheet = widget.styleSheet()
+            assert "transparent" in sheet.lower()
+            assert f"background: {tok.BG}" not in sheet
+        assert not hasattr(settings_window, "_sheet")
+
+    def test_about_paths_start_hidden_and_reveal_on_toggle(
+        self, config, qapp, monkeypatch
+    ):
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(
+            SettingsWindow, "_refresh_audio_device_lists", lambda self: None
+        )
+        win = SettingsWindow(config)
+        try:
+            win.show_page(3)
+            win.show()
+            qapp.processEvents()
+            assert win._about_paths_wrap.objectName() == "aboutPaths"
+            assert not win._about_paths_wrap.isVisible()
+            assert win._about_paths_toggle.accessibleName() == "展开文件位置"
+            win._about_paths_toggle.click()
+            qapp.processEvents()
+            assert win._about_paths_wrap.isVisible()
+            assert win._about_paths_toggle.accessibleName() == "收起文件位置"
+            labels = [lb.text() for lb in win._about_paths_wrap.findChildren(QLabel)]
+            assert "模型目录" in labels
+            assert "配置文件" in labels
+        finally:
+            win.close()
+
+    def test_incomplete_llm_fields_write_status_not_messagebox(
+        self, settings_window, monkeypatch
+    ):
+        settings_window._llm_url_edit.clear()
+        settings_window._llm_key_edit.clear()
+        settings_window._llm_model_edit.clear()
+        boxes = []
+        monkeypatch.setattr(
+            QMessageBox, "warning", staticmethod(lambda *a, **k: boxes.append("warning"))
+        )
+        monkeypatch.setattr(
+            QMessageBox,
+            "information",
+            staticmethod(lambda *a, **k: boxes.append("information")),
+        )
+        monkeypatch.setattr(
+            QMessageBox,
+            "critical",
+            staticmethod(lambda *a, **k: boxes.append("critical")),
+        )
+        settings_window._test_llm()
+        assert settings_window._llm_test_status.text() == "请填写完整的接口信息。"
+        assert boxes == []
+
     def test_polish_preview_stays_visible_when_enabled(self, settings_window):
         settings_window._on_llm_enable_toggled(True)
 
         assert not settings_window._llm_preview_card.isHidden()
+
+    def test_enabling_unconfigured_polish_shows_inline_status(self, settings_window):
+        settings_window._llm_url_edit.clear()
+        settings_window._llm_key_edit.clear()
+        settings_window._llm_model_edit.clear()
+        settings_window._llm_enable_row.setChecked(True)
+        status = settings_window._llm_test_status.text()
+        assert "未配置" in status
+        assert "直接输出原文" in status
 
     def test_password_toggle_updates_its_text(self, settings_window):
         settings_window._llm_key_toggle.setChecked(True)
@@ -212,7 +286,33 @@ class TestGeneralPageLayout:
         assert len(picker.findChildren(CompactPickCard)) == 2
 
         assert settings_window._mixed_audio_callout.parent() is not None
-        assert not settings_window._mixed_audio_callout.isHidden()
+
+    def test_history_limit_rows_follow_toggle(self, settings_window):
+        settings_window.show()
+        settings_window._history_enabled_row.setChecked(False)
+        settings_window._set_history_limit_rows_visible(
+            settings_window._history_enabled_row.isChecked()
+        )
+        assert not settings_window._history_retention_row.isVisible()
+        assert not settings_window._history_max_entries_row.isVisible()
+        settings_window._history_enabled_row.setChecked(True)
+        settings_window._set_history_limit_rows_visible(True)
+        assert settings_window._history_retention_row.isVisible()
+
+    def test_mixed_callout_only_when_mixed(self, settings_window):
+        settings_window.show()
+        settings_window._src_mic_rb.setChecked(True)
+        settings_window._sync_source_device_widgets()
+        assert not settings_window._mixed_audio_callout.isVisible()
+        settings_window._src_mixed_rb.setChecked(True)
+        settings_window._sync_source_device_widgets()
+        assert settings_window._mixed_audio_callout.isVisible()
+
+    def test_hotkey_hint_is_one_sentence(self, settings_window):
+        text = settings_window._hotkey_hint.text()
+        assert "0.30" in text
+        assert text.count("。") <= 2
+        assert "浮窗" not in text
 
 
 class TestTriggerMode:
@@ -250,7 +350,7 @@ class TestInputSource:
         qapp.processEvents()
         settings_window._src_mic_rb.setChecked(True)
         settings_window._sync_source_device_widgets()
-        assert not settings_window._mixed_audio_callout.isHidden()
+        assert settings_window._mixed_audio_callout.isHidden()
         settings_window._src_mixed_rb.setChecked(True)
         settings_window._sync_source_device_widgets()
         assert not settings_window._mixed_audio_callout.isHidden()
@@ -309,6 +409,13 @@ class TestToggles:
         assert config.get("sound_enabled") is False
         assert signals == [False]
 
+    def test_restore_clipboard_toggle_emits_runtime_update(self, settings_window, config):
+        signals = []
+        settings_window.restore_clipboard_changed.connect(signals.append)
+        settings_window._restore_clipboard_row.setChecked(True)
+        assert config.get("output.restore_clipboard") is True
+        assert signals == [True]
+
 
 class TestHotkeyBinding:
     def test_rejects_modifierless_hotkey(self, settings_window, config, monkeypatch):
@@ -357,6 +464,7 @@ class TestMicProbe:
         assert not settings_window._mic_probe_active
         assert settings_window._mic_test_btn.isEnabled()
         assert "已检测到声音" in settings_window._mic_test_status.text()
+        assert "可以正常使用" not in settings_window._mic_test_status.text()
         assert "峰值" not in settings_window._mic_test_status.text()
 
 

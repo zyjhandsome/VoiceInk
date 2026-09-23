@@ -19,7 +19,6 @@ from voiceink.ui import settings_styles
 from voiceink.ui.hotkey_edit import HotkeyEdit
 from voiceink.ui.settings_components import (
     AudioSourcePicker,
-    PageHero,
     SettingsPage,
     ThemeModeSegment,
     ToggleOptionRow,
@@ -29,6 +28,7 @@ from voiceink.ui.settings_components import (
     group_divider,
     info_callout,
     labeled_row,
+    page_header,
     settings_group,
     settings_section,
     stacked_field_row,
@@ -38,11 +38,7 @@ from voiceink.ui.settings_components import (
 def build_general_page(win) -> QWidget:
     """Prototype v3 layout: stacked 录音 → 音频 → 偏好 cards (top to bottom)."""
     page = SettingsPage()
-    win._general_hero = PageHero(
-        "通用设置",
-        subtitle="录音、音频与偏好",
-    )
-    page.add(win._general_hero)
+    page.add(page_header("通用", "按你的习惯设置听写。更改会自动保存。"))
 
     # ── 录音 ──
     record_card = settings_group()
@@ -94,11 +90,11 @@ def build_general_page(win) -> QWidget:
     win._mixed_audio_callout = info_callout(
         "混合模式可能混入背景音导致识别杂乱。日常口述建议「仅麦克风」。"
     )
-    callout_wrap = QWidget()
-    callout_lay = QHBoxLayout(callout_wrap)
+    win._mixed_audio_callout_wrap = QWidget()
+    callout_lay = QHBoxLayout(win._mixed_audio_callout_wrap)
     callout_lay.setContentsMargins(12, 0, 12, 12)
     callout_lay.addWidget(win._mixed_audio_callout)
-    audio_lay.addWidget(callout_wrap)
+    audio_lay.addWidget(win._mixed_audio_callout_wrap)
     win._src_mic_rb.toggled.connect(win._sync_source_device_widgets)
     win._src_sys_rb.toggled.connect(win._sync_source_device_widgets)
     win._src_mixed_rb.toggled.connect(win._sync_source_device_widgets)
@@ -115,7 +111,18 @@ def build_general_page(win) -> QWidget:
     win._mic_test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     win._mic_test_btn.setFixedHeight(36)
     win._mic_test_btn.clicked.connect(win._run_mic_probe)
-    test_row_lay.addWidget(win._mic_test_btn, 0, Qt.AlignmentFlag.AlignLeft)
+    test_actions = QHBoxLayout()
+    test_actions.setContentsMargins(0, 0, 0, 0)
+    test_actions.setSpacing(8)
+    test_actions.addWidget(win._mic_test_btn)
+    win._mic_reset_btn = QPushButton("恢复自动选择")
+    win._mic_reset_btn.setProperty("viBtn", "ghostSm")
+    win._mic_reset_btn.setStyleSheet(settings_styles.BTN_GHOST_SM)
+    win._mic_reset_btn.setMinimumHeight(36)
+    win._mic_reset_btn.clicked.connect(win._reset_audio_devices_to_auto)
+    test_actions.addWidget(win._mic_reset_btn)
+    test_actions.addStretch(1)
+    test_row_lay.addLayout(test_actions)
     win._mic_test_status = QLabel("")
     win._mic_test_status.setProperty("viRole", "hint")
     win._mic_test_status.setStyleSheet(
@@ -193,7 +200,7 @@ def build_general_page(win) -> QWidget:
     win._theme_title_label = QLabel("主题")
     win._theme_title_label.setProperty("viRole", "rowTitle")
     win._theme_title_label.setStyleSheet(
-        f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 500; background: transparent;"
+        f"color: {tok.TEXT}; font-size: {tok.TYPE_BODY_SM}px; font-weight: 400; background: transparent;"
     )
     win._theme_desc_label = QLabel("跟随系统时按 Windows 外观显示")
     win._theme_desc_label.setProperty("viRole", "rowSubtitle")
@@ -221,7 +228,7 @@ def build_general_page(win) -> QWidget:
     prefs_lay.addWidget(win._restore_clipboard_row)
     prefs_lay.addWidget(group_divider())
 
-    win._history_enabled_row = ToggleOptionRow("保存语音历史")
+    win._history_enabled_row = ToggleOptionRow("保存语音历史", "在本机保存转写文本，便于搜索和复制；不保存音频")
     win._history_retention_days_spin = QSpinBox()
     win._history_retention_days_spin.setRange(1, 3650)
     win._history_retention_days_spin.setSuffix(" 天")

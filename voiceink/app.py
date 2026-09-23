@@ -5,11 +5,12 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import numpy as np
-from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtCore import QEvent, QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 
 from voiceink.config import (
     Config,
+    DEFAULT_HOTKEY,
     format_hotkey,
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
@@ -32,18 +33,19 @@ from voiceink.speech_recognizer import (
     set_models_dir,
     normalize_asr_output,
     get_model_info,
+    merge_slice_texts,
 )
 from voiceink.history_store import HistoryStore, SegmentRecord
 from voiceink.text_polisher import (
     LLM_MODE_POLISH,
     TextPolisher,
 )
-from voiceink.text_paster import TextPaster, get_foreground_process_name
+from voiceink.text_paster import PasteResult, TextPaster
 from voiceink.sound_manager import SoundManager
 from voiceink.ui.floating_window import FloatingWindow
 from voiceink.ui.tray_icon import TrayIcon
-from voiceink.ui.settings_window import SettingsWindow
-from voiceink.ui.history_window import HistoryWindow
+from voiceink.ui.main_window import MainWindow
+from voiceink.runtime_status import RuntimeStatus, RuntimeState, runtime_status_from_flags
 
 log = logging.getLogger("VoiceInk")
 
@@ -65,11 +67,13 @@ class _PendingHistoryRecord:
 class App(QObject):
     """Central orchestrator that connects all modules."""
 
+    _history_committed = pyqtSignal()
+
     # 友好化错误信息映射
     ERROR_HINTS = {
         "麦克风": "无法访问麦克风\n请检查：1) 麦克风是否已连接\n2) 是否被其他应用占用\n3) 系统隐私设置",
-        "模型未就绪": "语音模型未就绪\n请右键托盘图标 → 设置 → 模型 → 下载模型",
-        "模型未下载": "语音模型未下载\n请右键托盘图标 → 设置 → 模型 → 下载模型",
+        "模型未就绪": "语音模型未就绪\n请右键托盘图标 → 设置 → 引擎 → 下载模型",
+        "模型未下载": "语音模型未下载\n请右键托盘图标 → 设置 → 引擎 → 下载模型",
         "录音过短": "录音过短\n请按住快捷键说话，时长至少 0.1 秒",
         "未识别": "未识别到语音内容\n请确保音频来源与设备正确，并靠近麦克风或播放电脑声音",
         "音频设备": "无法打开音频设备\n请在设置 → 通用 → 声音收录 中刷新并选择设备",
@@ -90,6 +94,15 @@ class App(QObject):
 
         self._config = Config()
         self._current_transcription = ""
+        self._live_committed = ""
+        self._live_inflight = ""
+        self._hold_paste_sent = False
+        self._hold_duration_ms = 0
+        self._pending_release = None
+        self._update_check_state = ""
+        self._update_check_interactive = False
+        self._update_check_worker = None
+        self._update_download_worker = None
         self._is_transcribing = False
         self._segment_queue: list[np.ndarray] = []
         self._continuous_user_stopped = False
@@ -111,7 +124,7 @@ class App(QObject):
 
     def _init_modules(self):
         self._hotkey_mgr = HotKeyManager(
-            self._config.get("hotkey", "ctrl+space")
+            self._config.get("hotkey", DEFAULT_HOTKEY)
         )
         self._recorder = AudioRecorder()
         self._apply_audio_config()
@@ -128,11 +141,16 @@ class App(QObject):
     def _init_ui(self):
         self._floating = FloatingWindow()
         self._tray = TrayIcon()
+        self._main: MainWindow | None = None
+        self._restore_main_after_menu = False
         self._settings_win = None
         self._history_win = None
 
         self._tray.set_auto_start(self._config.get("auto_start", False))
         self._tray.show()
+        self._floating.set_input_source(
+            self._config.get("audio.input_source", "microphone")
+        )
         # Re-apply after surfaces exist so cold-start dark/system is not stuck
         # on import-time light snapshots for inline-styled widgets.
         self.apply_appearance_theme()
@@ -145,11 +163,14 @@ class App(QObject):
         return self._is_continuous_mode() and self._recorder.is_continuous
 
     def _continuous_hotkey_label(self) -> str:
-        return format_hotkey(self._config.get("hotkey", "ctrl+space"))
+        return format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))
 
     def _refresh_continuous_ui_after_output(self) -> None:
         if self._continuous_session_active():
             self._floating.show_listening()
+        elif self._continuous_user_stopped and self._pending_segment_count() > 0:
+            pending = self._pending_segment_count()
+            self._floating.show_continuous_stopped(f"正在处理剩余内容（{pending} 段）")
         else:
             self._floating.dismiss_if_idle()
 
@@ -163,6 +184,8 @@ class App(QObject):
         self._hotkey_mgr.continuous_listen_start.connect(self._on_continuous_hotkey_start)
         self._hotkey_mgr.hotkey_tap_too_short.connect(self._on_hotkey_tap_too_short)
         self._hotkey_mgr.esc_pressed.connect(self._on_esc_pressed)
+        self._history.add_committed_callback(self._history_committed.emit)
+        self._history_committed.connect(self._refresh_open_history_ui)
         self._hotkey_mgr.listener_status.connect(self._on_hotkey_listener_status)
 
         self._recorder.volume_changed.connect(self._floating.update_volume)
@@ -173,6 +196,7 @@ class App(QObject):
         self._recorder.no_speech_warning.connect(self._on_no_speech_warning)
 
         self._recognizer.final_result.connect(self._on_final_result)
+        self._recognizer.partial_result.connect(self._on_partial_result)
         self._recognizer.error.connect(self._on_recognizer_error)
         self._recognizer.ready.connect(self._on_stt_ready)
         self._recognizer.model_load_progress.connect(self._on_model_load_progress)
@@ -181,12 +205,19 @@ class App(QObject):
         self._polisher.polish_error.connect(self._on_polish_error)
 
         self._floating.continuous_stop_requested.connect(self._stop_continuous_user_session)
+        self._floating.settings_requested.connect(self._show_settings)
+        self._floating.history_requested.connect(self._show_history_window)
 
         self._tray.open_settings.connect(self._show_settings)
+        self._tray.wake_island.connect(self._show_main_window)
         self._tray.history_requested.connect(self._show_history_window)
         self._tray.quit_app.connect(self._quit)
         self._tray.auto_start_toggled.connect(self._on_auto_start_toggled)
         self._tray.model_switched.connect(self._on_tray_model_switch)
+        self._tray.menu_about_to_show.connect(self._note_main_before_tray_menu)
+        self._tray.menu_closed.connect(self._restore_main_after_tray_menu)
+        self._tray.check_update_requested.connect(self._on_tray_check_update)
+        self._tray.messageClicked.connect(self._on_tray_message_clicked)
 
     def _apply_audio_config(self):
         from voiceink.audio_devices import (
@@ -210,6 +241,11 @@ class App(QObject):
             mic_device_index=int(self._config.get("audio.mic_device_index", -1)),
             system_device_index=sys_idx,
         )
+        floating = getattr(self, "_floating", None)
+        if floating is not None:
+            setter = getattr(floating, "set_input_source", None)
+            if callable(setter):
+                setter(source)
         try:
             plan = build_recording_plan(
                 source,
@@ -251,7 +287,7 @@ class App(QObject):
             log.warning("语音模型 %s 未下载，请在设置中下载模型", name)
             hint = (
                 f"请下载语音模型「{name}」。"
-                "Windows 可双击托盘打开设置 → 模型；或右键托盘 → 设置 → 模型。"
+                "Windows 可双击托盘打开主窗口，再到设置 → 引擎；或右键托盘 → 打开 VoiceInk。"
             )
             self._floating.show_error(hint)
             self._tray.showMessage(
@@ -265,7 +301,7 @@ class App(QObject):
 
     def _model_not_ready_message(self) -> str:
         if self._recognizer.is_loading:
-            return "模型加载中，请稍候"
+            return "模型载入中，请稍候"
         return self._friendly_error("模型未就绪")
 
     def _show_model_not_ready(self) -> None:
@@ -277,7 +313,7 @@ class App(QObject):
         self._floating.show_error(hint)
         self._tray.showMessage(
             "VoiceInk",
-            f"{hint} Windows 可双击托盘打开设置 → 模型。",
+            f"{hint} Windows 可双击托盘打开主窗口，再到设置 → 引擎。",
             QSystemTrayIcon.MessageIcon.Warning,
             6000,
         )
@@ -312,14 +348,14 @@ class App(QObject):
             self._floating.clear_model_loading_lock()
             self._tray.set_activity_tooltip(None)
             self._floating.show_error(self._friendly_error(msg))
-            self._sync_settings_runtime_status()
+            self._sync_settings_runtime_status(
+                RuntimeStatus(RuntimeState.UNAVAILABLE, "模型载入失败")
+            )
             return
         if self._recorder.is_continuous:
             log.info("模型重新加载，暂停持续监听")
             self._stop_continuous_listening()
-        self._floating.show_model_loading(
-            f"{msg}\n模型已下载，正在载入内存，完成前请勿开始录音"
-        )
+        self._floating.show_model_loading(f"{msg} · 完成前请勿录音")
         self._tray.set_activity_tooltip("loading")
         self._sync_settings_runtime_status()
 
@@ -350,6 +386,9 @@ class App(QObject):
 
         log.info("开始录音（来源: %s）...", self._recorder.input_source_display)
         self._current_transcription = ""
+        self._hold_paste_sent = False
+        self._hold_duration_ms = 0
+        self._clear_live_transcript()
         self._sound.play_start()
         self._tray.set_recording(True)
         self._tray.set_activity_tooltip("recording")
@@ -379,6 +418,10 @@ class App(QObject):
     def _on_recording_cancel(self):
         if self._is_continuous_mode():
             return
+        self._hold_paste_sent = True
+        self._hold_duration_ms = 0
+        self._segment_queue.clear()
+        self._clear_live_transcript()
         self._reset_recording_ui_after_abort()
         self._recorder.cancel()
         self._floating.show_cancelled()
@@ -392,7 +435,7 @@ class App(QObject):
             if not self._recognizer.is_loading:
                 self._tray.showMessage(
                     "VoiceInk",
-                    "语音模型未就绪。请在设置 → 模型 中下载 FireRedASR2 并等待加载完成。",
+                    "语音模型未就绪。请在设置 → 引擎 中下载默认模型并等待加载完成。",
                     QSystemTrayIcon.MessageIcon.Warning,
                     6000,
                 )
@@ -404,6 +447,7 @@ class App(QObject):
         self._continuous_user_stopped = False
         self._current_session_id = None
         self._current_seq = 0
+        self._clear_live_transcript()
         self._start_continuous_listening()
 
     def _on_hotkey_tap_too_short(self):
@@ -450,8 +494,11 @@ class App(QObject):
         # Cleared on the next user start in _on_continuous_hotkey_start.
         self._enqueue_history_cleanup()
         self._tray.set_activity_tooltip(None)
-        self._floating.show_continuous_stopped()
-        QTimer.singleShot(1200, self._floating.dismiss_if_idle)
+        pending = self._pending_segment_count()
+        detail = f"正在处理剩余内容（{pending} 段）" if pending else ""
+        self._floating.show_continuous_stopped(detail)
+        if not pending:
+            QTimer.singleShot(1200, self._floating.dismiss_if_idle)
 
     def _on_recorder_error(self, error_msg: str):
         if self._recorder.is_continuous:
@@ -514,16 +561,26 @@ class App(QObject):
         self._tray.set_activity_tooltip(None)
         self._floating.dismiss_if_idle()
 
+    def _hold_audio_until_ready(self, audio: np.ndarray, *, front: bool) -> None:
+        """Keep captured audio until the model can transcribe it."""
+        if front:
+            self._segment_queue.insert(0, audio)
+        else:
+            self._segment_queue.append(audio)
+        if self._recognizer.is_loading:
+            log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
+            self._floating.show_model_loading(
+                "模型载入中，已录制的语音将排队等待识别…"
+            )
+            return
+        log.warning("模型未就绪，语音段已保留（队列 %d）", len(self._segment_queue))
+        self._show_model_not_ready()
+
     def _on_segment_ready(self, audio: np.ndarray):
         if audio.size < MIN_AUDIO_SAMPLES:
             return
         if not self._recognizer.is_ready:
-            if self._recognizer.is_loading:
-                self._segment_queue.append(audio)
-                log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
-                self._floating.show_model_loading(
-                    "模型加载中，已录制的语音将排队等待识别…"
-                )
+            self._hold_audio_until_ready(audio, front=False)
             return
         if self._is_transcribing:
             self._segment_queue.append(audio)
@@ -535,6 +592,13 @@ class App(QObject):
 
     def _on_recording_finished(self, full_audio: np.ndarray):
         if full_audio.size < MIN_AUDIO_SAMPLES:
+            if self._emit_hold_output_if_ready():
+                return
+            if (
+                not self._is_continuous_mode()
+                and (self._is_transcribing or self._segment_queue or self._live_committed.strip())
+            ):
+                return
             log.warning("录音过短 (%d 采样点)，忽略", full_audio.size)
             self._reset_recording_ui_after_abort()
             self._floating.show_error(self._friendly_error("录音过短"))
@@ -543,14 +607,17 @@ class App(QObject):
 
     def _begin_transcription(self, audio: np.ndarray):
         if not self._recognizer.is_ready:
-            if self._recognizer.is_loading:
-                self._segment_queue.insert(0, audio)
-                self._floating.show_model_loading("模型加载中，识别已暂停…")
+            self._hold_audio_until_ready(audio, front=True)
             return
         self._pending_record = self._build_pending_history_record(audio)
+        if not self._is_continuous_mode():
+            self._hold_duration_ms += self._pending_record.duration_ms
         self._is_transcribing = True
         self._tray.set_activity_tooltip("recognizing")
-        self._floating.show_recognizing()
+        if self._continuous_user_stopped:
+            self._floating.show_continuous_stopped("正在处理剩余内容 · 正在识别")
+        else:
+            self._floating.show_recognizing()
         self._recognizer.transcribe_final(audio)
 
     def _build_pending_history_record(
@@ -586,33 +653,117 @@ class App(QObject):
             model=self._config.get("stt.model_id", DEFAULT_MODEL_ID),
         )
 
-    def _on_final_result(self, text: str):
-        text = normalize_asr_output(text)
-        if not text.strip():
-            log.warning("未识别到语音内容")
-            self._is_transcribing = False
-            if self._recognizer.is_loading:
-                self._floating.show_model_loading("模型加载中，请稍候…")
-                self._tray.set_activity_tooltip("loading")
-                self._pump_segment_queue()
-                return
-            self._tray.set_activity_tooltip(
-                "listening" if self._continuous_session_active() else None
-            )
-            if self._continuous_session_active():
-                self._floating.show_listening()
-            elif self._is_continuous_mode():
-                self._refresh_continuous_ui_after_output()
-            else:
-                self._floating.show_error(self._friendly_error("未识别"))
-            self._pump_segment_queue()
-            return
+    def _clear_live_transcript(self) -> None:
+        self._live_committed = ""
+        self._live_inflight = ""
+        self._floating.clear_live_transcript()
 
-        log.debug("识别结果长度: %d 字符", len(text))
+    def _show_live_transcript(self) -> None:
+        parts = [self._live_committed, self._live_inflight]
+        text = merge_slice_texts([part for part in parts if part])
+        if text:
+            self._floating.show_live_transcript(text)
+
+    def _on_partial_result(self, text: str) -> None:
+        piece = (text or "").strip()
+        if not piece:
+            return
+        self._live_inflight = piece
+        self._show_live_transcript()
+
+    def _commit_live_transcript(self, text: str) -> None:
+        piece = (text or "").strip()
+        if not piece:
+            return
+        if self._live_committed:
+            self._live_committed = merge_slice_texts([self._live_committed, piece])
+        else:
+            self._live_committed = piece
+        self._live_inflight = ""
+        self._show_live_transcript()
+
+    def _defer_hold_output(self) -> bool:
+        """Hold-to-talk keeps slices on the bar and pastes once the key is up."""
+        if self._is_continuous_mode() or self._hold_paste_sent:
+            return False
+        return bool(self._recorder.is_recording or self._segment_queue)
+
+    def _emit_hold_output_if_ready(self) -> bool:
+        """Paste the whole hold utterance once nothing is left to recognize."""
+        if self._is_continuous_mode() or self._hold_paste_sent:
+            return False
+        if self._recorder.is_recording or self._is_transcribing or self._segment_queue:
+            return False
+        text = (self._live_committed or "").strip()
+        if not text:
+            return False
+        self._hold_paste_sent = True
         self._current_transcription = text
         if self._pending_record is not None:
             self._pending_record.raw_text = text
+            if self._hold_duration_ms:
+                self._pending_record.duration_ms = self._hold_duration_ms
+        self._deliver_recognized_text(text)
+        return True
 
+    def _on_final_result(self, text: str):
+        text = normalize_asr_output(text)
+        if self._hold_paste_sent and not self._is_continuous_mode():
+            self._is_transcribing = False
+            self._pump_segment_queue()
+            return
+        if text.strip():
+            log.debug("识别结果长度: %d 字符", len(text))
+            self._current_transcription = text
+            self._commit_live_transcript(text)
+            if self._pending_record is not None:
+                self._pending_record.raw_text = text
+        else:
+            log.warning("未识别到语音内容")
+
+        self._is_transcribing = False
+        if self._defer_hold_output():
+            if self._recognizer.is_loading:
+                self._floating.show_model_loading("模型载入中，请稍候…")
+                self._tray.set_activity_tooltip("loading")
+            elif self._recorder.is_recording:
+                self._tray.set_activity_tooltip("recording")
+                self._floating.show_recording()
+            self._pump_segment_queue()
+            return
+
+        if not self._is_continuous_mode():
+            if self._emit_hold_output_if_ready():
+                return
+            if not text.strip():
+                self._finish_empty_recognition()
+            return
+
+        if not text.strip():
+            self._finish_empty_recognition()
+            return
+        self._deliver_recognized_text(text)
+
+    def _finish_empty_recognition(self) -> None:
+        if self._recognizer.is_loading:
+            self._floating.show_model_loading("模型载入中，请稍候…")
+            self._tray.set_activity_tooltip("loading")
+            self._pump_segment_queue()
+            return
+        self._tray.set_activity_tooltip(
+            "listening" if self._continuous_session_active() else None
+        )
+        if self._continuous_session_active():
+            self._floating.show_listening()
+        elif self._is_continuous_mode():
+            self._refresh_continuous_ui_after_output()
+        elif self._recorder.is_recording:
+            self._floating.show_recording()
+        else:
+            self._floating.show_error(self._friendly_error("未识别"))
+        self._pump_segment_queue()
+
+    def _deliver_recognized_text(self, text: str) -> None:
         llm_enabled = self._config.get("llm.enabled", False)
         api_url = self._config.get("llm.api_url", "")
         api_key = self._config.get("llm.api_key", "")
@@ -622,7 +773,10 @@ class App(QObject):
 
         if llm_enabled and mode == LLM_MODE_POLISH and api_url and api_key and model_name:
             self._tray.set_activity_tooltip("polishing")
-            self._floating.show_polishing(text)
+            if self._continuous_user_stopped:
+                self._floating.show_continuous_stopped("正在处理剩余内容 · 正在润色")
+            else:
+                self._floating.show_polishing(text)
             self._polisher.polish(
                 text,
                 api_url,
@@ -631,11 +785,29 @@ class App(QObject):
                 prompt,
                 mode=LLM_MODE_POLISH,
             )
+        elif llm_enabled and mode == LLM_MODE_POLISH:
+            log.warning("文字润色已开启但配置不完整，直接输出原文")
+            self._output_text(text, degraded_from_polish=True)
         else:
             self._output_text(text)
 
     def _on_recognizer_error(self, error_msg: str):
         self._is_transcribing = False
+        if self._recognizer.is_loading:
+            return
+        if "加载失败" in error_msg:
+            # Load progress already showed this failure. Pump must not drop audio.
+            self._pump_segment_queue()
+            return
+        if not self._is_continuous_mode():
+            if self._emit_hold_output_if_ready():
+                return
+            if self._defer_hold_output():
+                if self._recorder.is_recording:
+                    self._tray.set_activity_tooltip("recording")
+                    self._floating.show_recording()
+                self._pump_segment_queue()
+                return
         self._floating.clear_model_loading_lock()
         self._tray.set_activity_tooltip("listening" if self._is_continuous_mode() else None)
         self._sound.play_error()
@@ -648,6 +820,8 @@ class App(QObject):
         if self._is_transcribing or not self._segment_queue:
             if self._continuous_session_active() and not self._is_transcribing:
                 self._floating.show_listening()
+            return
+        if not self._recognizer.is_ready:
             return
         next_audio = self._segment_queue.pop(0)
         self._begin_transcription(next_audio)
@@ -665,8 +839,8 @@ class App(QObject):
             # no longer shows idle float, so dismiss explicitly after ready.
             self._floating.dismiss_if_idle()
             tray_msg = (
-                f"持续转写已就绪。按住 {hotkey} 开始监听，说完停顿后自动出字；"
-                "按 Esc 或点击浮窗右上角 × 停止。"
+                f"持续转写已就绪。按住 {hotkey} 开始监听，说话停顿约 1 秒后自动输入，不用点结束；"
+                "按 Esc 或听写条「结束」停止整场。"
             )
         else:
             log.info("✓ 语音识别模型已就绪，按 %s 开始语音输入", hotkey)
@@ -704,6 +878,8 @@ class App(QObject):
                 self._floating.show_listening()
             elif self._is_continuous_mode():
                 self._refresh_continuous_ui_after_output()
+            elif self._recorder.is_recording:
+                self._floating.show_recording()
             else:
                 self._floating.show_error(self._friendly_error("未识别"))
             self._pump_segment_queue()
@@ -747,32 +923,48 @@ class App(QObject):
 
     def _handle_paste_result(
         self,
-        result: str,
+        result: PasteResult | str,
         *,
         degraded_from_polish: bool = False,
         record: SegmentRecord | None = None,
     ):
+        if isinstance(result, PasteResult):
+            status = result.status
+            target_app = result.target_app
+            error_detail = result.detail
+        else:
+            # Compatibility for tests and third-party integrations using the old callback.
+            status = result.split(":", 1)[0]
+            target_app = ""
+            error_detail = result.partition(":")[2]
         paste_hint = "可按 Cmd+V 粘贴" if sys.platform == "darwin" else "可按 Ctrl+V 粘贴"
-        success_msg = "已输入（原文）" if degraded_from_polish else "已输入"
+        success_msg = "已发送（原文）" if degraded_from_polish else "已发送"
+        target_hint = f"发送到 {target_app}" if target_app else "请确认目标应用已接收"
 
-        if result == "pasted":
-            log.info("已粘贴到光标位置")
+        if status in {"sent", "pasted"}:
+            log.info("已向目标窗口发送粘贴快捷键%s", f": {target_app}" if target_app else "")
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
             )
             if self._continuous_session_active():
                 if degraded_from_polish:
-                    self._floating.show_info(success_msg)
+                    self._floating.show_info(success_msg, target_hint)
                 else:
-                    self._floating.show_success("已输入")
+                    self._floating.show_success(success_msg, target_hint)
                 QTimer.singleShot(1700, self._refresh_continuous_ui_after_output)
+            elif self._continuous_user_stopped:
+                self._floating.show_continuous_stopped(
+                    f"剩余内容：{success_msg} · {target_hint}"
+                )
+                QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
+            elif self._recorder.is_recording:
+                self._floating.show_recording()
             else:
-                self._floating.dismiss_if_idle()
                 if degraded_from_polish:
-                    self._floating.show_info(success_msg)
+                    self._floating.show_info(success_msg, target_hint)
                 else:
-                    self._floating.show_success("已输入")
-        elif result == "clipboard":
+                    self._floating.show_success(success_msg, target_hint)
+        elif status == "clipboard":
             log.info("已复制到剪贴板（粘贴未确认成功）")
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
@@ -780,28 +972,40 @@ class App(QObject):
             if self._continuous_session_active():
                 self._floating.show_success("已复制", paste_hint)
                 QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
+            elif self._continuous_user_stopped:
+                self._floating.show_continuous_stopped(f"剩余内容：已复制 · {paste_hint}")
+                QTimer.singleShot(2200, self._refresh_continuous_ui_after_output)
+            elif self._recorder.is_recording:
+                self._floating.show_recording()
             else:
-                self._floating.dismiss_if_idle()
                 self._floating.show_success("已复制到剪贴板", paste_hint)
         else:
-            error_msg = result.replace("error:", "")
-            log.error("输出失败: %s", error_msg)
+            log.error("输出失败: %s", error_detail)
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
             )
             self._floating.show_error(self._friendly_error("输出失败"))
 
-        self._enqueue_history_record(record)
+        self._enqueue_history_record(record, target_app=target_app)
         QTimer.singleShot(300, self._pump_segment_queue)
 
-    def _enqueue_history_record(self, record: SegmentRecord | None) -> None:
+    def _refresh_open_history_ui(self) -> None:
+        if self._main is None:
+            return
+        self._main._history.refresh()
+
+    def _enqueue_history_record(
+        self,
+        record: SegmentRecord | None,
+        *,
+        target_app: str = "",
+    ) -> None:
         if record is None:
             return
         if not self._config.get("history.enabled", True):
             return
         if not (record.raw_text.strip() or record.polished_text.strip()):
             return
-        target_app = get_foreground_process_name()
         self._history.enqueue(
             SegmentRecord(
                 session_id=record.session_id,
@@ -826,12 +1030,14 @@ class App(QObject):
 
     # ── Settings ──────────────────────────────────────
 
+    def _runtime_status(self) -> RuntimeStatus:
+        return runtime_status_from_flags(
+            is_loading=bool(self._recognizer.is_loading),
+            is_ready=bool(self._recognizer.is_ready),
+        )
+
     def _runtime_status_label(self) -> str:
-        if self._recognizer.is_loading:
-            return "模型加载中…"
-        if self._recognizer.is_ready:
-            return "就绪"
-        return "模型未就绪"
+        return self._runtime_status().label
 
     def _active_model_display_name(self) -> str:
         from voiceink.speech_recognizer import MODEL_REGISTRY
@@ -842,63 +1048,98 @@ class App(QObject):
                 return model["name"]
         return active_id or "未选择模型"
 
-    def _sync_tray_status_summary(self) -> None:
-        status = self._runtime_status_label()
-        if status == "就绪":
-            summary = f"{status} · {self._active_model_display_name()}"
+    def _sync_tray_status_summary(self, status: RuntimeStatus | None = None) -> None:
+        status = status or self._runtime_status()
+        if status.state is RuntimeState.READY:
+            summary = f"{status.label} · {self._active_model_display_name()}"
         else:
-            summary = status
+            summary = status.label
         self._tray.set_status_summary(summary)
 
-    def _sync_settings_runtime_status(self) -> None:
-        status = self._runtime_status_label()
-        self._sync_tray_status_summary()
-        if self._settings_win is None:
+    def _sync_settings_runtime_status(self, status: RuntimeStatus | None = None) -> None:
+        status = status or self._runtime_status()
+        self._sync_tray_status_summary(status)
+        settings = None
+        if self._main is not None:
+            settings = getattr(self._main, "_settings", None)
+        if settings is None:
+            settings = self._settings_win
+        if settings is None:
             return
-        self._settings_win.set_runtime_status(status)
+        settings.set_runtime_status(status.state, status.label)
+
+    def _show_main_window(self, page: str | None = None):
+        if self._main is None:
+            self._main = MainWindow(self._config, self._history)
+            settings = self._main._settings
+            settings._pending_segment_count = self._pending_segment_count
+            settings.hotkey_updated.connect(self._on_hotkey_updated)
+            settings.settings_changed.connect(self._on_settings_changed)
+            settings.auto_start_changed.connect(self._on_auto_start_toggled)
+            settings.sound_enabled_changed.connect(self._on_sound_enabled_changed)
+            settings.restore_clipboard_changed.connect(self._on_restore_clipboard_changed)
+            settings.models_changed.connect(self._on_models_changed)
+            settings.theme_changed.connect(self._on_theme_changed)
+            settings.finished.connect(self._on_settings_closed)
+            settings.hotkey_capture_started.connect(self._hotkey_mgr.pause)
+            settings.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
+            settings.update_check_requested.connect(self._on_about_check_update)
+            settings.update_install_requested.connect(self._on_update_install_requested)
+            self._main.installEventFilter(self)
+        if page:
+            self._main.show_page(page)
+        if page == "history" or (not page and self._main.current_page() == "history"):
+            self._main._history.refresh()
+        self.apply_appearance_theme()
+        self._main._settings.reload_settings()
+        self._sync_settings_runtime_status()
+        self._main.show()
+        self._main.raise_()
+        self._main.activateWindow()
+        self._sync_about_update_status()
+
+    def _note_main_before_tray_menu(self) -> None:
+        main = self._main
+        active = QApplication.activeWindow()
+        self._restore_main_after_menu = bool(
+            main is not None and main.isVisible() and active is main
+        )
+
+    def _restore_main_after_tray_menu(self) -> None:
+        if not self._restore_main_after_menu:
+            return
+        self._restore_main_after_menu = False
+        QTimer.singleShot(0, self._reactivate_main_window)
+
+    def _reactivate_main_window(self) -> None:
+        main = self._main
+        if main is None or not main.isVisible():
+            return
+        main.raise_()
+        main.activateWindow()
+        app = QApplication.instance()
+        if app is not None and app.overrideCursor() is not None:
+            app.restoreOverrideCursor()
 
     def _show_settings(self):
-        if self._settings_win is not None and self._settings_win.isVisible():
-            self._settings_win.raise_()
-            self._settings_win.activateWindow()
-            return
-
-        if self._settings_win is None:
-            self._settings_win = SettingsWindow(
-                self._config,
-                pending_segment_count=self._pending_segment_count,
-            )
-            self._settings_win.hotkey_updated.connect(self._on_hotkey_updated)
-            self._settings_win.settings_changed.connect(self._on_settings_changed)
-            self._settings_win.auto_start_changed.connect(self._on_auto_start_toggled)
-            self._settings_win.sound_enabled_changed.connect(self._on_sound_enabled_changed)
-            self._settings_win.models_changed.connect(self._on_models_changed)
-            self._settings_win.theme_changed.connect(self._on_theme_changed)
-            self._settings_win.finished.connect(self._on_settings_closed)
-            self._settings_win.hotkey_capture_started.connect(self._hotkey_mgr.pause)
-            self._settings_win.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
-
-        self.apply_appearance_theme()
-        self._settings_win.reload_settings()
-        self._sync_settings_runtime_status()
-        self._settings_win.show()
-        self._settings_win.raise_()
-        self._settings_win.activateWindow()
+        self._show_main_window(None)
 
     def _show_history_window(self):
-        if self._history_win is None:
-            self._history_win = HistoryWindow(self._history)
-        else:
-            self._history_win.refresh()
-        self.apply_appearance_theme()
-        if not self._history_win.isVisible():
-            self._history_win.show()
-        self._history_win.raise_()
-        self._history_win.activateWindow()
+        self._show_main_window("history")
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "_main", None) and event.type() == QEvent.Type.Hide:
+            self._on_settings_closed()
+        return super().eventFilter(obj, event)
 
     def _on_settings_closed(self):
-        if self._settings_win is not None:
-            self._settings_win.cancel_hotkey_capture()
+        settings = None
+        if self._main is not None:
+            settings = getattr(self._main, "_settings", None)
+        if settings is None:
+            settings = self._settings_win
+        if settings is not None:
+            settings.cancel_hotkey_capture()
         self._hotkey_mgr.resume()
         self._update_tray_models()
 
@@ -929,17 +1170,23 @@ class App(QObject):
                 return default
 
         config = _attr("_config")
-        theme_mode = "system"
+        theme_mode = "dark"
         if mode is not None:
             theme_mode = mode
         elif config is not None:
-            theme_mode = config.get("appearance.theme_mode", "system")
+            theme_mode = config.get("appearance.theme_mode", "dark")
 
         surfaces = [
             surface
-            for attr in ("_settings_win", "_history_win", "_floating", "_tray")
+            for attr in ("_main", "_settings_win", "_history_win", "_floating", "_tray")
             if (surface := _attr(attr)) is not None
         ]
+        main = _attr("_main")
+        if main is not None:
+            for child_attr in ("_settings", "_history"):
+                child = getattr(main, child_attr, None)
+                if child is not None:
+                    surfaces.append(child)
         apply_theme(QApplication.instance(), mode=theme_mode, surfaces=surfaces)
 
     def _on_settings_changed(self):
@@ -989,6 +1236,9 @@ class App(QObject):
         self._config.set("sound_enabled", enabled)
         self._sound.enabled = enabled
 
+    def _on_restore_clipboard_changed(self, enabled: bool):
+        self._paster.restore_clipboard = enabled
+
     def _setup_auto_start(self, enabled: bool):
         if sys.platform != "win32":
             return
@@ -1020,8 +1270,16 @@ class App(QObject):
         if self._recorder.is_recording:
             self._recorder.cancel()
 
-        if self._settings_win is not None:
-            self._settings_win.cancel_all_downloads()
+        settings = None
+        if self._main is not None:
+            settings = getattr(self._main, "_settings", None)
+        if settings is None:
+            settings = self._settings_win
+        if settings is not None:
+            settings.cancel_all_downloads()
+        if self._main is not None:
+            self._main.hide()
+        elif self._settings_win is not None:
             self._settings_win.close()
 
         self._recognizer.shutdown()
@@ -1034,6 +1292,7 @@ class App(QObject):
     def start(self):
         self._hotkey_mgr.start()
         self._enqueue_history_cleanup()
+        QTimer.singleShot(5000, self._maybe_auto_check_for_update)
         if not self._config.get("first_run_welcome_seen", True):
             # 等模型加载完成后再弹欢迎框，避免挡住「模型加载中」状态
             self._recognizer.ready.connect(self._show_first_run_welcome_once)
@@ -1041,6 +1300,146 @@ class App(QObject):
         elif not self._config.get("history.onboarded", False):
             # 无欢迎框时，历史询问仍等模型就绪后再弹。
             self._recognizer.ready.connect(self._show_history_onboarding_once)
+
+    def _settings_widget(self):
+        if self._main is not None:
+            return getattr(self._main, "_settings", None)
+        return None
+
+    def _maybe_auto_check_for_update(self) -> None:
+        from voiceink.updater import should_auto_check
+
+        enabled = bool(self._config.get("update.auto_check", True))
+        last = float(self._config.get("update.last_check_at", 0) or 0)
+        if should_auto_check(enabled=enabled, last_check_at=last, now=time.time()):
+            self._start_update_check(interactive=False)
+
+    def _on_tray_check_update(self) -> None:
+        self._show_main_window("about")
+        self._start_update_check(interactive=True)
+
+    def _on_about_check_update(self) -> None:
+        self._start_update_check(interactive=True)
+
+    def _on_tray_message_clicked(self) -> None:
+        if getattr(self._tray, "notice_kind", "") != "update":
+            return
+        self._show_main_window("about")
+
+    def _start_update_check(self, *, interactive: bool) -> None:
+        from voiceink.updater import UpdateCheckWorker
+        from voiceink.version import __version__
+
+        worker = self._update_check_worker
+        if worker is not None and worker.isRunning():
+            self._update_check_interactive = self._update_check_interactive or interactive
+            if interactive:
+                self._update_check_state = "checking"
+                self._sync_about_update_status()
+            return
+        self._update_check_interactive = interactive
+        self._update_check_state = "checking"
+        if interactive:
+            self._sync_about_update_status()
+        worker = UpdateCheckWorker(__version__, self)
+        worker.result_ready.connect(self._on_update_check_result)
+        worker.failed.connect(self._on_update_check_failed)
+        self._update_check_worker = worker
+        worker.start()
+
+    def _remember_update_check(self) -> None:
+        self._config.set("update.last_check_at", time.time())
+
+    def _on_update_check_result(self, info) -> None:
+        self._remember_update_check()
+        self._pending_release = info
+        if info is None:
+            self._update_check_state = "current"
+            self._sync_about_update_status()
+            return
+        self._update_check_state = "available"
+        self._sync_about_update_status()
+        if not self._update_check_interactive:
+            self._tray.show_update_notice(f"{info.version} 可以安装")
+
+    def _on_update_check_failed(self, _message: str) -> None:
+        self._remember_update_check()
+        self._update_check_state = "error"
+        if self._update_check_interactive:
+            self._sync_about_update_status()
+
+    def _sync_about_update_status(self) -> None:
+        settings = self._settings_widget()
+        if settings is None or self._update_check_state == "downloading":
+            return
+        state = self._update_check_state
+        if state == "available" and self._pending_release is not None:
+            settings.set_update_status(
+                f"发现 {self._pending_release.version}",
+                action="install",
+            )
+        elif state == "current":
+            settings.set_update_status("已是最新版本", action="check")
+        elif state == "error":
+            settings.set_update_status("检查失败，请稍后再试", action="check")
+        elif state == "checking":
+            settings.set_update_status("正在检查…", action="busy")
+
+    def _on_update_install_requested(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        from voiceink.updater import UpdateDownloadWorker
+
+        release = self._pending_release
+        if release is None:
+            return
+        worker = self._update_download_worker
+        if worker is not None and worker.isRunning():
+            return
+        dest = Path(tempfile.gettempdir()) / "VoiceInk" / release.asset_name
+        self._update_check_state = "downloading"
+        settings = self._settings_widget()
+        if settings is not None:
+            settings.set_update_status("正在下载…", action="busy")
+        worker = UpdateDownloadWorker(release.asset_url, dest, self)
+        worker.progress.connect(self._on_update_download_progress)
+        worker.finished_path.connect(self._on_update_downloaded)
+        worker.failed.connect(self._on_update_download_failed)
+        self._update_download_worker = worker
+        worker.start()
+
+    def _on_update_download_progress(self, got: int, total: int) -> None:
+        settings = self._settings_widget()
+        if settings is None:
+            return
+        got_mb = got / (1024 * 1024)
+        if total:
+            total_mb = total / (1024 * 1024)
+            text = f"正在下载 {got_mb:.0f} / {total_mb:.0f} MB"
+        else:
+            text = f"正在下载 {got_mb:.0f} MB"
+        settings.set_update_status(text, action="busy")
+
+    def _on_update_download_failed(self, message: str) -> None:
+        self._update_check_state = "available"
+        settings = self._settings_widget()
+        if settings is not None:
+            settings.set_update_status(message, action="install")
+
+    def _on_update_downloaded(self, path: str) -> None:
+        from voiceink.updater import launch_installer
+
+        try:
+            launch_installer(path)
+        except Exception as exc:
+            log.warning("无法启动安装包: %s", exc)
+            self._update_check_state = "available"
+            settings = self._settings_widget()
+            if settings is not None:
+                settings.set_update_status("下载完成，但无法启动安装包", action="install")
+            return
+        self._quit()
 
     def _show_first_run_welcome_once(self):
         if self._config.get("first_run_welcome_seen", True):
@@ -1056,10 +1455,10 @@ class App(QObject):
             hotkey = self._continuous_hotkey_label()
             mode_tip = (
                 f"当前为「自动持续转写」：按住 {hotkey} 开始监听，"
-                "按 Esc 或点击浮窗右上角 × 停止。"
+                "按 Esc 或听写条「结束」停止。"
             )
         else:
-            hk = format_hotkey(self._config.get("hotkey", "ctrl+space"))
+            hk = format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))
             mode_tip = f"当前为「按住快捷键」：按住 {hk} 说话，松开后识别并粘贴。"
         text = (
             "VoiceInk 在本地完成语音识别（可选通过网络调用大模型润色）。\n\n"
@@ -1068,10 +1467,10 @@ class App(QObject):
             "· 仅麦克风：你的说话\n"
             "· 仅电脑播放：视频/会议远端声音\n"
             "· 混合：开会时远端 + 自己都要\n\n"
-            "请先在设置 → 模型 中下载至少一个语音模型"
+            "请先在设置 → 引擎 中下载至少一个语音模型"
             "（若安装包已附带模型，启动后会自动载入）。\n\n"
-            "默认快捷键为 Ctrl+Space；若与输入法冲突，可在设置中改为 Alt+Space。\n"
-            "Windows：双击托盘图标可打开设置。"
+            "默认快捷键为 Alt+Z；可在设置 → 通用 中更改。\n"
+            "Windows：双击托盘图标可打开主窗口。"
         )
         QMessageBox.information(None, "欢迎使用 VoiceInk", text)
         self._config.set("first_run_welcome_seen", True)

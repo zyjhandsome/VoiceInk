@@ -1,0 +1,89 @@
+{
+  "schema_version": "delivery-handoff/v1",
+  "family_version": "delivery-family/1.6",
+  "type": "delivery-handoff",
+  "handoff_id": "ui-main-window-outer-border-execute-verify-20260921T071425",
+  "previous_handoff_id": "ui-main-window-outer-border-frame-spec-20260921T070852",
+  "generated_at": "2026-09-21T07:14:25Z",
+  "stage": "delivery-execute-verify",
+  "source_revision": {
+    "repo_head": "827f802e0fa61d54fed65e7f9c9783d12c8e6357",
+    "artifact_revision": "sha256:68661aefc4cb3e8b4d388f18988d05930f4c0ad2a4f4f1148c0c16de4c0b732c",
+    "state_observed_at": "2026-09-21T07:14:25Z"
+  },
+  "state_source": {
+    "kind": "openspec_change",
+    "label": "change #ui-main-window-outer-border",
+    "anchor": "openspec/changes/ui-main-window-outer-border"
+  },
+  "capability_snapshot": {
+    "memory": "ok",
+    "openspec": "initialized",
+    "superpowers": "loaded"
+  },
+  "capability_bindings": {
+    "openspec": {},
+    "memory": {},
+    "superpowers": {},
+    "subagents": {}
+  },
+  "presentation_capability": {
+    "mode": "markdown",
+    "source": "unknown"
+  },
+  "gate_status": {
+    "status": "pass",
+    "summary": "新鲜验证 + 独立审查（independent-subagent-f7940851）通过；归档移交 OpenSpec",
+    "evidence": [
+      "py -3.10 -m pytest tests/test_main_window.py -q: exit 0, 5 passed",
+      "openspec validate ui-main-window-outer-border: valid"
+    ],
+    "approved_by": "user",
+    "approved_at": "2026-09-21T07:14:25Z",
+    "binds_to_revision": "sha256:68661aefc4cb3e8b4d388f18988d05930f4c0ad2a4f4f1148c0c16de4c0b732c",
+    "accepted_warning_ids": []
+  },
+  "evidence_mode": "full",
+  "next_skill": null,
+  "next_action": "openspec archive ui-main-window-outer-border",
+  "required_inputs": [],
+  "stop_condition": "",
+  "stage_payload": {
+    "overall_status": "verified",
+    "task_status": [],
+    "current_failures_or_blocks": [],
+    "artifact_backflow": "none",
+    "alignment_backflow": null,
+    "fresh_verification_evidence": [
+      "py -3.10 -m pytest tests/test_main_window.py -q: exit 0, 5 passed",
+      "openspec validate ui-main-window-outer-border: valid"
+    ],
+    "visual_evidence": {
+      "required": false,
+      "report": null,
+      "source_artifact_revision": null,
+      "g9": "not_required"
+    },
+    "spec_coherence": "pass",
+    "code_review": {
+      "status": "pass",
+      "mode": "independent",
+      "independent_review": "required_pass",
+      "reviewer": "independent-subagent-f7940851",
+      "findings": []
+    },
+    "archive": {
+      "status": "deferred_to_openspec",
+      "reason": "execute-verify must not sync/archive"
+    },
+    "asset_writeback": []
+  },
+  "presentation": {
+    "schema": "delivery-presentation/v1",
+    "from_task": "实施·验证",
+    "to_task": "OpenSpec 归档",
+    "summary": "verified；归档移交 OpenSpec（本技能不执行 archive）",
+    "evidence": [],
+    "continue_prompt": "openspec archive ui-main-window-outer-border"
+  }
+}

@@ -30,11 +30,11 @@ class TestResolveEffectiveTheme:
 
 
 class TestThemeConfigDefault:
-    def test_default_theme_mode_is_system(self, tmp_path: Path):
+    def test_default_theme_mode_is_dark(self, tmp_path: Path):
         from voiceink.config import Config
 
         cfg = Config(config_dir=tmp_path)
-        assert cfg.get("appearance.theme_mode") == "system"
+        assert cfg.get("appearance.theme_mode") == "dark"
 
     def test_theme_mode_persists_across_reload(self, tmp_path: Path):
         from voiceink.config import Config
@@ -93,7 +93,44 @@ class TestSettingsAppearanceEntry:
         assert cfg.get("appearance.theme_mode") == "dark"
 
         apply_theme(mode="dark", surfaces=(win,))
-        assert "#111827" in win.styleSheet()
+        from voiceink.ui import design_tokens as tok
+
+        css = win.styleSheet()
+        assert tok.tokens_for("dark")["TEXT"] in css
+        assert "background: transparent" in css
+        dialog_block = css.split("QDialog {", 1)[1].split("}", 1)[0]
+        assert "background: transparent" in dialog_block
+        assert f"background: {tok.tokens_for('dark')['BG']}" not in dialog_block
+
+    def test_settings_island_header_restyles_on_dark_theme(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """Embedded settings host has no island title/close; pages stay theme-aware."""
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        try:
+            apply_theme(mode="dark", surfaces=(win,))
+            assert tok.TEXT.upper() == "#F9FAFB"
+            assert not hasattr(win, "_island_title")
+            assert not hasattr(win, "_close_btn")
+            assert not hasattr(win, "_sheet")
+            assert "TRANSPARENT" in win._pages_host.styleSheet().upper()
+        finally:
+            win.close()
+            apply_theme(mode="light")
 
     def test_general_labels_follow_dark_text_tokens(self, tmp_path: Path, monkeypatch):
         """Regression: inline styles must not stay locked to light TEXT on dark BG."""
@@ -117,7 +154,7 @@ class TestSettingsAppearanceEntry:
             apply_theme(mode="dark", surfaces=(win,))
             assert tok.TEXT.upper() == "#F9FAFB"
 
-            title = win._general_hero._title.styleSheet().upper()
+            title = win._theme_title_label.styleSheet().upper()
             assert "#F9FAFB" in title
 
             row = win._auto_start_row
@@ -176,13 +213,14 @@ class TestSettingsAppearanceEntry:
         try:
             apply_theme(mode="dark", surfaces=(win,))
             card.reapply_styles()
-            assert "#1F2937" in card.styleSheet().upper()
+            assert "#181818" in card.styleSheet().upper()
 
             apply_theme(mode="light", surfaces=(win,))
             card.reapply_styles()
-            assert tok.BG.upper() == "#F3F4F6"
-            assert "#F3F4F6" in win._pages_host.styleSheet().upper()
+            assert tok.BG.upper() == "#FFFFFF"
+            assert "TRANSPARENT" in win._pages_host.styleSheet().upper()
             assert "#111827" not in win._pages_host.styleSheet().upper()
+            assert not hasattr(win, "_sheet")
 
             ghost = win._llm_key_toggle.styleSheet().upper()
             assert tok.SURFACE_PEARL.upper() in ghost
@@ -219,7 +257,11 @@ class TestSettingsAppearanceEntry:
                 lb for lb in win._model_hero_host.findChildren(QLabel)
                 if lb.property("viRole") == "engineHeroBadge"
             )
-            assert tok.ACCENT_TEXT.upper() in badge.styleSheet().upper()
+            assert badge.text() == "当前"
+            assert tok.SURFACE_PEARL.upper() in badge.styleSheet().upper()
+            assert tok.TEXT_SEC.upper() in badge.styleSheet().upper()
+            assert tok.ACCENT_SOFT.upper() not in badge.styleSheet().upper()
+            assert tok.ACCENT_TEXT.upper() not in badge.styleSheet().upper()
 
             # Polish action buttons share one right-edge column width.
             assert win._llm_key_toggle.width() == win._llm_test_btn.width() == win._prompt_reset_btn.width()
@@ -267,8 +309,14 @@ class TestSurfaceThemeReapply:
         win = FloatingWindow()
         apply_theme(mode="light", surfaces=(win,))
         sheet = win._container.styleSheet()
-        assert "243, 244, 246" in sheet or "#F3F4F6" in sheet.upper() or "#FFFFFF" in sheet.upper()
+        assert (
+            "255, 255, 255" in sheet
+            or "243, 244, 246" in sheet
+            or "#F3F4F6" in sheet.upper()
+            or "#FFFFFF" in sheet.upper()
+        )
         assert "39, 39, 41" not in sheet
+        assert "islandContainer" in sheet
 
     def test_tray_menu_stylesheet_follows_dark(self):
         from voiceink.ui.theme import apply_theme
@@ -276,7 +324,7 @@ class TestSurfaceThemeReapply:
 
         apply_theme(mode="dark")
         css = _menu_stylesheet()
-        assert "#1F2937" in css.upper() or "#111827" in css.upper()
+        assert "#181818" in css.upper()
         assert "#F9FAFB" in css.upper()
 
     def test_history_spinbox_widths_equal_under_dark(self, tmp_path: Path, monkeypatch):
@@ -317,7 +365,7 @@ class TestSurfaceThemeReapply:
 
         search = win._search_edit.styleSheet()
         assert "QLineEdit:focus" in search
-        assert "#374151" in search.upper()  # dark SURFACE_PEARL
+        assert "#222528" in search.upper()  # dark SURFACE_PEARL
 
         list_css = win._session_list.styleSheet()
         assert "border-left" in list_css
@@ -333,12 +381,45 @@ class TestSurfaceThemeReapply:
         assert "#F9FAFB" in title_css  # dark TEXT
 
         undo_css = win._undo_bar.styleSheet().upper()
-        assert "#374151" in undo_css  # dark SURFACE_PEARL
+        assert "#222528" in undo_css  # dark SURFACE_PEARL
 
         feedback_css = win._feedback_label.styleSheet().upper()
         assert "#F9FAFB" in feedback_css
 
         store.close()
+
+    def test_history_stream_row_labels_follow_theme_reapply(self):
+        """Time-stream row labels must restyle when the theme axis flips."""
+        import sys
+
+        from PyQt6.QtWidgets import QApplication, QLabel
+
+        from tests.test_history_window import FakeHistoryStore
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.history_window import HistoryWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        apply_theme(mode="light")
+        light_text = tok.tokens_for("light")["TEXT"].upper()
+        dark_text = tok.tokens_for("dark")["TEXT"].upper()
+
+        win = HistoryWindow(FakeHistoryStore())
+        try:
+            row = win._session_list.itemWidget(win.session_items()[0])
+            assert row is not None
+            preview = row.findChild(QLabel, "streamPreview")
+            assert preview is not None
+            light_css = preview.styleSheet().upper()
+            assert light_text in light_css
+
+            apply_theme(mode="dark", surfaces=(win,))
+            dark_css = preview.styleSheet().upper()
+            assert dark_text in dark_css
+            assert light_text not in dark_css
+        finally:
+            win.close()
+            apply_theme(mode="light")
 
     def test_info_callout_uses_token_border_not_emoji(self):
         import sys
@@ -370,7 +451,7 @@ class TestSurfaceThemeReapply:
         from voiceink.ui import tray_icon as tray_mod
         from voiceink.ui.tray_icon import TrayIcon
 
-        src = inspect.getsource(tray_mod.create_microphone_icon)
+        src = inspect.getsource(tray_mod._microphone_pixmap)
         assert "#FF6961" not in src
         assert "#D64545" not in src
         assert "STATE_RECORD" in src
@@ -388,15 +469,23 @@ class TestSurfaceThemeReapply:
 
         from PyQt6.QtWidgets import QApplication
 
+        from voiceink.ui import design_tokens as tok
         from voiceink.ui.floating_window import FloatingWindow
         from voiceink.ui.theme import apply_theme
 
         QApplication.instance() or QApplication(sys.argv)
         win = FloatingWindow()
+        assert not hasattr(win, "_close_btn")
+        assert win._end_btn.text() == "结束"
         apply_theme(mode="light", surfaces=(win,))
-        sheet = win._close_btn.styleSheet()
-        assert "rgba(255, 255, 255" not in sheet
-        assert "CHIP_BG" in sheet or "rgba(17, 24, 39" in sheet or "#" in sheet
+        sheet = win._end_btn.styleSheet()
+        assert tok.PRIMARY_CONTAINER in sheet
+        assert tok.PRIMARY_CONTAINER_HOVER in sheet
+        apply_theme(mode="dark", surfaces=(win,))
+        dark_sheet = win._end_btn.styleSheet()
+        assert tok.PRIMARY_CONTAINER in dark_sheet
+        assert tok.PRIMARY_CONTAINER_HOVER in dark_sheet
+        apply_theme(mode="light")
 
 
 class TestSettingsThemeAwareBroadcast:
@@ -432,6 +521,37 @@ class TestSettingsThemeAwareBroadcast:
             css = win._mixed_audio_callout.styleSheet().upper()
             assert tok.tokens_for("dark")["CALLOUT_BORDER"].upper() in css
             assert light_border not in css
+        finally:
+            win.close()
+            apply_theme(mode="light")
+
+    def test_llm_status_and_about_toggle_follow_dark(self, tmp_path: Path, monkeypatch):
+        import sys
+
+        from PyQt6.QtWidgets import QApplication
+
+        from voiceink.config import Config
+        from voiceink.ui import design_tokens as tok
+        from voiceink.ui.settings_window import SettingsWindow
+        from voiceink.ui.theme import apply_theme
+
+        QApplication.instance() or QApplication(sys.argv)
+        monkeypatch.setattr(SettingsWindow, "_rebuild_model_cards", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_about_info", lambda self: None)
+        monkeypatch.setattr(SettingsWindow, "_refresh_audio_device_lists", lambda self: None)
+
+        apply_theme(mode="light")
+        win = SettingsWindow(Config(config_dir=tmp_path))
+        light_sec = tok.tokens_for("light")["TEXT_SEC"].upper()
+        dark_sec = tok.tokens_for("dark")["TEXT_SEC"].upper()
+        try:
+            apply_theme(mode="dark", surfaces=(win,))
+            status_css = win._llm_test_status.styleSheet().upper()
+            toggle_css = win._about_paths_toggle.styleSheet().upper()
+            assert dark_sec in status_css
+            assert light_sec not in status_css
+            assert dark_sec in toggle_css
+            assert light_sec not in toggle_css
         finally:
             win.close()
             apply_theme(mode="light")
@@ -499,9 +619,20 @@ class TestFourSurfaceThemeAwareProtocol:
         before_icon = tray._normal_icon
         apply_theme(mode="dark", surfaces=(settings, history, floating, tray))
         try:
-            dark_bg = tok.tokens_for("dark")["BG"].upper()
-            assert dark_bg in settings.styleSheet().upper()
-            assert dark_bg in history.styleSheet().upper()
+            dark_text = tok.tokens_for("dark")["TEXT"].upper()
+            dark_bg = tok.tokens_for("dark")["BG"]
+            settings_css = settings.styleSheet()
+            history_css = history.styleSheet()
+            assert dark_text in settings_css.upper()
+            assert dark_text in history_css.upper()
+            assert "background: transparent" in settings_css
+            assert "background: transparent" in history_css
+            settings_dialog = settings_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            history_dialog = history_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            assert "background: transparent" in settings_dialog
+            assert "background: transparent" in history_dialog
+            assert f"background: {dark_bg}" not in settings_dialog
+            assert f"background: {dark_bg}" not in history_dialog
             float_sheet = floating._container.styleSheet().upper()
             assert tok.tokens_for("dark")["FLOAT_BG"].upper() in float_sheet
             assert tray._normal_icon is not before_icon
@@ -537,9 +668,19 @@ class TestFourSurfaceThemeAwareProtocol:
         settings = SettingsWindow(Config(config_dir=tmp_path))
         history = HistoryWindow(HistoryStore(tmp_path / "history.db"))
         try:
-            dark_bg = tok.BG.upper()
-            assert dark_bg in settings.styleSheet().upper()
-            assert dark_bg in history.styleSheet().upper()
+            dark_text = tok.TEXT.upper()
+            settings_css = settings.styleSheet()
+            history_css = history.styleSheet()
+            assert dark_text in settings_css.upper()
+            assert dark_text in history_css.upper()
+            assert "background: transparent" in settings_css
+            assert "background: transparent" in history_css
+            settings_dialog = settings_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            history_dialog = history_css.split("QDialog {", 1)[1].split("}", 1)[0]
+            assert "background: transparent" in settings_dialog
+            assert "background: transparent" in history_dialog
+            assert f"background: {tok.BG}" not in settings_dialog
+            assert f"background: {tok.BG}" not in history_dialog
             assert tok.TEXT.upper() in history._title_label.styleSheet().upper()
         finally:
             settings.close()

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
-    QDialog, QVBoxLayout, QHBoxLayout, QWidget,
+    QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QMessageBox, QFrame,
     QStackedWidget,
@@ -17,6 +17,7 @@ log = logging.getLogger("VoiceInk")
 
 from voiceink.config import (
     Config,
+    DEFAULT_HOTKEY,
     format_hotkey,
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
@@ -33,7 +34,6 @@ from voiceink.audio_devices import (
 
 from voiceink.ui.settings_components import (
     SettingsPage,
-    SettingsSidebar,
     elide_middle,
     empty_state,
     group_divider,
@@ -48,10 +48,10 @@ from voiceink.ui.settings_pages import (
     build_polish_page,
 )
 from voiceink.ui.model_card import ModelCard, RATING_TOOLTIP, format_model_ratings
-from voiceink.ui.nav_icons import nav_icon
 from voiceink.ui import design_tokens as _tok
 from voiceink.ui import settings_styles as _settings_styles
 from voiceink.ui.theme import normalize_theme_mode
+from voiceink.runtime_status import RuntimeState, coerce_runtime_status
 
 # Non-color layout constants (theme-independent).
 _CONTROL_NUMERIC_WIDTH = _tok.CONTROL_NUMERIC_WIDTH
@@ -61,15 +61,21 @@ _LLM_ACTION_BTN_WIDTH = 88
 # ── Settings Window ──────────────────────────────────────────────
 
 
-class SettingsWindow(QDialog):
+class SettingsWindow(QWidget):
     hotkey_updated = pyqtSignal(str)
     settings_changed = pyqtSignal()
     auto_start_changed = pyqtSignal(bool)
     sound_enabled_changed = pyqtSignal(bool)
+    restore_clipboard_changed = pyqtSignal(bool)
     models_changed = pyqtSignal()
     theme_changed = pyqtSignal(str)
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
+    update_check_requested = pyqtSignal()
+    update_install_requested = pyqtSignal()
+    runtime_status_changed = pyqtSignal(str)
+    closed = pyqtSignal()
+    finished = pyqtSignal(int)
 
     def __init__(self, config: Config, parent=None, pending_segment_count=None):
         super().__init__(parent)
@@ -81,7 +87,7 @@ class SettingsWindow(QDialog):
         self._mic_probe_active = False
         self._mic_probe_max = 0.0
         self._loading = False
-        self._runtime_status_hint = "就绪"
+        self._runtime_status = coerce_runtime_status(RuntimeState.LOADING)
         self._setup_window()
         self._setup_ui()
         self._load_settings()
@@ -90,14 +96,6 @@ class SettingsWindow(QDialog):
 
     def _setup_window(self):
         self.setWindowTitle("设置")
-        self.setMinimumSize(900, 560)
-        self.resize(960, 620)
-        self.setWindowFlags(
-            Qt.WindowType.Window
-            | Qt.WindowType.WindowCloseButtonHint
-            | Qt.WindowType.WindowMinimizeButtonHint
-            | Qt.WindowType.WindowMaximizeButtonHint
-        )
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
 
     def reapply_theme(self) -> None:
@@ -108,13 +106,36 @@ class SettingsWindow(QDialog):
             reapply_subtree,
         )
 
+        from voiceink.ui.island_chrome import island_container_css
+
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
+        self._paint_model_hero_status()
+        if hasattr(self, "_sheet"):
+            self._sheet.setStyleSheet(island_container_css())
+        if hasattr(self, "_island_nav"):
+            for btn in self._island_nav:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {tok.TEXT_SEC};"
+                    f" border: none; border-radius: 14px; padding: 0 12px; }}"
+                    f"QPushButton:checked {{ background: {tok.CHIP_BG}; color: {tok.TEXT}; }}"
+                )
+        if hasattr(self, "_island_title"):
+            self._island_title.setStyleSheet(
+                f"color: {tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 700;"
+                f" background: transparent;"
+            )
+        if hasattr(self, "_close_btn"):
+            self._close_btn.setStyleSheet(
+                f"QPushButton {{ background: {tok.CHIP_BG}; color: {tok.TEXT};"
+                f" border: none; border-radius: 14px; font-size: {tok.TYPE_BODY_SM}px; }}"
+                f"QPushButton:hover {{ background: {tok.CHIP_BG_HOVER}; }}"
+            )
         if hasattr(self, "_content_wrap"):
-            self._content_wrap.setStyleSheet(f"background: {tok.BG};")
+            self._content_wrap.setStyleSheet("background: transparent;")
         if hasattr(self, "_pages_host"):
-            self._pages_host.setStyleSheet(f"background: {tok.BG};")
+            self._pages_host.setStyleSheet("background: transparent;")
         if hasattr(self, "_pages"):
-            self._pages.setStyleSheet(f"background: {tok.BG};")
+            self._pages.setStyleSheet("background: transparent;")
         if hasattr(self, "_hotkey_hint"):
             self._hotkey_hint.setStyleSheet(
                 f"color: {tok.TEXT_DIM}; font-size: {_tok.TYPE_FOOTNOTE}px; line-height: 1.4;"
@@ -134,71 +155,110 @@ class SettingsWindow(QDialog):
             self._paint_llm_prompt_edit()
         if hasattr(self, "_about_version_label"):
             self._about_version_label.setStyleSheet(
-                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
+                f"color: {tok.TEXT_SEC}; font-size: {_tok.TYPE_CAPTION}px; font-weight: 700;"
                 f" background: {tok.SURFACE_PEARL}; border: 1px solid {tok.HAIRLINE};"
                 f" border-radius: {tok.RADIUS_PILL}px; padding: 3px 10px;"
             )
+        if hasattr(self, "_llm_test_status"):
+            self._llm_test_status.setStyleSheet(
+                f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_FOOTNOTE}px;"
+                f" background: transparent; padding: 0 16px 12px 16px;"
+            )
+        if hasattr(self, "_about_paths_toggle"):
+            self._about_paths_toggle.setStyleSheet(
+                f"QPushButton#aboutPathsToggle {{"
+                f" color: {tok.TEXT_SEC}; background: transparent; border: 2px solid transparent;"
+                f" font-size: {tok.TYPE_BODY_SM}px; font-weight: 400;"
+                f" text-align: left; padding: 8px 14px;"
+                f"}}"
+                f"QPushButton#aboutPathsToggle:hover {{ color: {tok.TEXT}; }}"
+                f"QPushButton#aboutPathsToggle:focus {{ border: {tok.FOCUS_RING}; }}"
+            )
+
+    def show_page(self, index: int) -> None:
+        self._pages.setCurrentIndex(index)
 
     def _on_nav_changed(self, row: int):
-        self._pages.setCurrentIndex(row)
+        self.show_page(row)
 
     def _open_about_from_general(self) -> None:
-        self._sidebar.set_active(3)
-        self._pages.setCurrentIndex(3)
+        self.show_page(3)
 
-    # ── Layout ─────────────────────────────────────────
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if self.parent() is None:
+            self.closed.emit()
+            self.finished.emit(0)
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
-
-        self._sidebar = SettingsSidebar(nav_icon)
-        self._sidebar.page_changed.connect(self._on_nav_changed)
-        body.addWidget(self._sidebar)
-
         # The content column starts directly with the active page. Settings are
         # auto-saved, so persistent action chrome would only consume space.
         content_wrap = QWidget()
         self._content_wrap = content_wrap
-        content_wrap.setStyleSheet(f"background: {_tok.BG};")
+        content_wrap.setStyleSheet("background: transparent;")
         content_lay = QVBoxLayout(content_wrap)
         content_lay.setContentsMargins(0, 0, 0, 0)
         content_lay.setSpacing(0)
 
         pages_host = QWidget()
         self._pages_host = pages_host
-        pages_host.setStyleSheet(f"background: {_tok.BG};")
+        pages_host.setStyleSheet("background: transparent;")
         pages_lay = QHBoxLayout(pages_host)
         # Top/bottom inset so section titles (e.g. 偏好) are not flush-clipped
         # against the content column edge when scrolled.
-        pages_lay.setContentsMargins(20, 12, 20, 12)
+        pages_lay.setContentsMargins(12, 8, 12, 12)
         pages_lay.setSpacing(0)
 
         self._pages = QStackedWidget()
         self._pages.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
         )
-        self._pages.setStyleSheet(f"background: {_tok.BG};")
+        self._pages.setStyleSheet("background: transparent;")
         self._pages.addWidget(build_general_page(self))
         self._pages.addWidget(build_model_page(self))
         self._pages.addWidget(build_polish_page(self))
         self._pages.addWidget(build_about_page(self))
+        for i in range(self._pages.count()):
+            page = self._pages.widget(i)
+            if isinstance(page, SettingsPage):
+                page.set_compact(True)
+                page.set_spacing(16)
         pages_lay.addWidget(self._pages, 1)
         content_lay.addWidget(pages_host, 1)
-        body.addWidget(content_wrap, 1)
-
-        root.addLayout(body, 1)
+        root.addWidget(content_wrap, 1)
 
     # ── Page: General ──────────────────────────────────
 
-    def set_runtime_status(self, hint: str) -> None:
-        self._runtime_status_hint = hint.strip() or "就绪"
-        self._refresh_sidebar_status()
+    def set_runtime_status(
+        self,
+        state_or_label: RuntimeState | str,
+        label: str | None = None,
+    ) -> None:
+        self._runtime_status = coerce_runtime_status(state_or_label, label)
+        self._paint_model_hero_status()
+        self.runtime_status_changed.emit(self._runtime_status.label)
+
+    def _paint_model_hero_status(self) -> None:
+        """「已下载 ≠ 已载入」— the engine page must say whether the model is usable."""
+        label = getattr(self, "_model_hero_status", None)
+        if label is None:
+            return
+        status = self._runtime_status
+        if status.state is RuntimeState.READY:
+            fg, bg, text = _tok.GREEN_TEXT, _tok.GREEN_BG, "已载入 · 可用"
+        elif status.state is RuntimeState.UNAVAILABLE:
+            fg, bg, text = _tok.RED, _tok.RED_BG, status.label
+        else:
+            fg, bg, text = _tok.AMBER_TEXT, _tok.AMBER_SOFT, status.label
+        label.setText(text)
+        label.setStyleSheet(
+            f"background: {bg}; color: {fg}; border-radius: {_tok.RADIUS_PILL}px;"
+            f" padding: 3px 10px; font-size: {_tok.TYPE_CAPTION}px; font-weight: 700;"
+        )
 
     def _configure_numeric_spin(self, spin: QSpinBox) -> None:
         """Shared metrics for flat themed QSpinBox steppers."""
@@ -276,6 +336,7 @@ class SettingsWindow(QDialog):
             item = self._model_hero_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self._model_hero_status = None
 
         from voiceink.speech_recognizer import DEFAULT_MODEL_ID, get_model_info, is_model_downloaded
 
@@ -299,17 +360,22 @@ class SettingsWindow(QDialog):
         title.setProperty("viRole", "engineHeroTitle")
         title.setStyleSheet(
             f"color: {_tok.TEXT}; font-family: {_tok.FONT_DISPLAY}; font-size: {_tok.TYPE_HERO}px;"
-            f" font-weight: 600; background: transparent;"
+            f" font-weight: 700; background: transparent;"
         )
         head.addWidget(title)
-        badge = QLabel("当前引擎")
+        badge = QLabel("当前")
         badge.setProperty("viRole", "engineHeroBadge")
         badge.setStyleSheet(
-            f"background: {_tok.ACCENT_SOFT}; color: {_tok.ACCENT_TEXT};"
+            f"background: {_tok.SURFACE_PEARL}; color: {_tok.TEXT_SEC};"
             f" border-radius: {_tok.RADIUS_PILL}px; padding: 3px 10px;"
-            f" font-size: {_tok.TYPE_CAPTION}px; font-weight: 600;"
+            f" font-size: {_tok.TYPE_CAPTION}px; font-weight: 700;"
         )
         head.addWidget(badge)
+        self._model_hero_status = QLabel()
+        self._model_hero_status.setAccessibleName("当前模型载入状态")
+        self._model_hero_status.setToolTip("下载完成后仍需载入内存；载入完成前快捷键不会响应。")
+        head.addWidget(self._model_hero_status)
+        self._paint_model_hero_status()
         head.addStretch()
         size = QLabel(f"{info['size_mb']} MB")
         size.setProperty("viRole", "engineHeroSize")
@@ -361,9 +427,9 @@ class SettingsWindow(QDialog):
             if title:
                 hdr = QLabel(title)
                 hdr.setStyleSheet(
-                    f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 600;"
+                    f"color: {_tok.TEXT_SEC}; font-size: {_tok.TYPE_FOOTNOTE}px; font-weight: 700;"
                     f" padding: 0 4px; background: transparent;"
-                    f" letter-spacing: 0.02em;"
+                    f" letter-spacing: 0;"
                 )
                 section_lay.addWidget(hdr)
 
@@ -395,10 +461,10 @@ class SettingsWindow(QDialog):
             if is_model_downloaded(m["id"]) and m["id"] != active_id
         ]
         available_models = [m for m in MODEL_REGISTRY if not is_model_downloaded(m["id"])]
+        available_models.sort(key=lambda model: model["id"] != DEFAULT_MODEL_ID)
         if downloaded_models:
             _add_section("其他已下载", downloaded_models, True)
         _add_section("可下载", available_models, False)
-        self._refresh_model_hero_status()
 
     def _on_card_action(self, model_id: str, action: str):
         if action == "select":
@@ -411,10 +477,14 @@ class SettingsWindow(QDialog):
             self._delete_model(model_id)
 
     def _start_download(self, model_id: str):
+        if model_id in self._dl_workers:
+            return
         from voiceink.speech_recognizer import ModelDownloadWorker
         worker = ModelDownloadWorker(model_id)
         self._dl_workers[model_id] = worker
         card = self._model_cards.get(model_id)
+        if card:
+            card.set_download_progress(0)
         worker.progress.connect(lambda pct, c=card: c.set_download_progress(pct) if c else None)
         worker.finished_ok.connect(lambda mid: self._on_dl_done(mid))
         worker.error.connect(lambda msg, c=card: self._on_dl_error(msg, c))
@@ -439,8 +509,10 @@ class SettingsWindow(QDialog):
 
     def _on_dl_error(self, msg: str, card):
         if card:
+            self._dl_workers.pop(card._model_id, None)
             card.set_download_error(msg)
-        QMessageBox.warning(self, "下载失败", msg)
+        else:
+            QMessageBox.warning(self, "下载失败", msg)
 
     def _delete_model(self, model_id: str):
         from voiceink.speech_recognizer import get_model_info, delete_model
@@ -474,11 +546,9 @@ class SettingsWindow(QDialog):
             anchor_y = self._llm_enable_row.mapTo(page.widget(), self._llm_enable_row.rect().topLeft()).y()
             scroll_before = page.verticalScrollBar().value()
 
+        # The before/after example stays visible in both states: it is the
+        # information a user needs *before* deciding to turn polishing on.
         self._llm_container.setVisible(enabled)
-        self._llm_preview_card.setVisible(True)
-        if hasattr(self, "_llm_preview_divider"):
-            self._llm_preview_divider.setVisible(True)
-        self._refresh_polish_hero_status()
 
         if page is not None and page.widget() is not None:
             def _restore() -> None:
@@ -501,6 +571,26 @@ class SettingsWindow(QDialog):
             return
         self._config.set("llm.enabled", enabled)
         self._flush_llm_fields()
+
+    def _llm_missing_fields(self) -> list[str]:
+        fields = (
+            ("接口地址", self._llm_url_edit.text().strip()),
+            ("API 密钥", self._llm_key_edit.text().strip()),
+            ("模型名称", self._llm_model_edit.text().strip()),
+        )
+        return [label for label, value in fields if not value]
+
+    def _update_llm_configuration_status(self) -> None:
+        if not self._llm_enable_row.isChecked():
+            self._llm_test_status.setText("")
+            return
+        missing = self._llm_missing_fields()
+        if missing:
+            self._llm_test_status.setText(
+                f"未配置：缺少{'、'.join(missing)}。转写会直接输出原文。"
+            )
+        else:
+            self._llm_test_status.setText("配置已填写，尚未测试连接。")
 
     def _polish_scroll_page(self):
         w = self._llm_enable_row.parentWidget()
@@ -544,12 +634,8 @@ class SettingsWindow(QDialog):
     # ── Page: About ────────────────────────────────────
 
     def _refresh_about_info(self):
-        # Keep the fixed VoiceInk/version row at index 0. Dynamic rows are
-        # appended below it and are the only rows replaced on refresh.
-        while self._about_info_lay.count() > 1:
-            item = self._about_info_lay.takeAt(1)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+        if not hasattr(self, "_about_runtime_lay"):
+            return
 
         from voiceink.speech_recognizer import MODEL_REGISTRY, is_model_downloaded, get_model_info
 
@@ -560,28 +646,74 @@ class SettingsWindow(QDialog):
         downloaded = [m for m in MODEL_REGISTRY if is_model_downloaded(m["id"])]
         total_mb = sum(m["size_mb"] for m in downloaded)
 
-        items = [
+        while self._about_runtime_lay.count():
+            item = self._about_runtime_lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+
+        llm_enabled = self._config.get("llm.enabled", False)
+        llm_configured = all(
+            self._config.get(key, "")
+            for key in ("llm.api_url", "llm.api_key", "llm.model_name")
+        )
+        runtime_items = [
             ("当前模型", active_name),
-            ("已下载", f"{len(downloaded)} 个 · 约 {total_mb} MB"),
-            ("模型目录", str(self._config.models_dir)),
-            ("配置文件", str(self._config.config_dir / "config.json")),
-            ("快捷键", format_hotkey(self._config.get("hotkey", "ctrl+space"))),
+            ("快捷键", format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))),
             (
                 "润色",
-                "已开启"
-                if self._config.get("llm.enabled", False)
+                "已开启 · 待验证"
+                if llm_enabled and llm_configured
+                else "已开启 · 未配置"
+                if llm_enabled
                 else "已关闭",
             ),
         ]
+        for key, val in runtime_items:
+            self._about_runtime_lay.addWidget(group_divider())
+            self._about_runtime_lay.addWidget(kv_row(key, val))
 
-        for key, val in items:
-            self._about_info_lay.addWidget(group_divider())
+        while self._about_paths_lay.count():
+            item = self._about_paths_lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+
+        path_items = [
+            ("已下载", f"{len(downloaded)} 个 · 约 {total_mb} MB"),
+            ("模型目录", str(self._config.models_dir)),
+            ("配置文件", str(self._config.config_dir / "config.json")),
+        ]
+        for key, val in path_items:
+            self._about_paths_lay.addWidget(group_divider())
             if key in ("模型目录", "配置文件"):
-                self._about_info_lay.addWidget(kv_row_elided(key, val, max_len=42))
+                self._about_paths_lay.addWidget(kv_row_elided(key, val, max_len=42))
             else:
-                self._about_info_lay.addWidget(kv_row(key, val))
+                self._about_paths_lay.addWidget(kv_row(key, val))
 
         self._refresh_about_hero_status()
+
+    def _on_about_update_button(self) -> None:
+        if self._about_update_btn.text() == "下载并安装":
+            self.update_install_requested.emit()
+            return
+        self.update_check_requested.emit()
+
+    def _on_about_auto_update_toggled(self, checked: bool) -> None:
+        if self._loading:
+            return
+        self._config.set("update.auto_check", bool(checked))
+
+    def set_update_status(self, text: str, *, action: str = "check") -> None:
+        if not hasattr(self, "_about_update_status"):
+            return
+        self._about_update_status.setText(text)
+        if action == "install":
+            self._about_update_btn.setText("下载并安装")
+            self._about_update_btn.setEnabled(True)
+        elif action == "busy":
+            self._about_update_btn.setEnabled(False)
+        else:
+            self._about_update_btn.setText("检查更新")
+            self._about_update_btn.setEnabled(True)
 
     def _config_source_label(self, source: str | None = None) -> str:
         src = source or self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
@@ -595,86 +727,20 @@ class SettingsWindow(QDialog):
         m = mode or self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
         return "持续转写" if m == TRIGGER_MODE_CONTINUOUS else "按住录音"
 
-    def _active_model_name(self) -> str:
-        from voiceink.speech_recognizer import get_model_info
-        active_id = self._config.get("stt.model_id", "")
-        info = get_model_info(active_id) if active_id else None
-        return info["name"] if info else "未选择"
-
-    def _refresh_general_hero_status(self) -> None:
-        if not hasattr(self, "_general_header"):
-            return
-        # General page uses a static reference header; status lives in sidebar.
-
-    def _refresh_model_hero_status(self) -> None:
-        if not hasattr(self, "_model_hero"):
-            return
-        from voiceink.speech_recognizer import get_model_info, is_model_downloaded
-
-        active_id = self._config.get("stt.model_id", "")
-        info = get_model_info(active_id) if active_id else None
-        if info and is_model_downloaded(active_id):
-            self._model_hero.set_subtitle(
-                f"{info['name']} · {info['size_mb']} MB · {info['languages']}"
-            )
-            self._model_hero.set_tags([])
-        else:
-            self._model_hero.set_subtitle("尚未下载或未启用模型")
-            self._model_hero.set_tags([])
-
-    def _refresh_polish_hero_status(self) -> None:
-        if not hasattr(self, "_polish_hero"):
-            return
-        enabled = self._config.get("llm.enabled", False)
-        if hasattr(self, "_llm_enable_row"):
-            enabled = self._llm_enable_row.isChecked()
-        if enabled:
-            model = self._config.get("llm.model_name", "") or "未配置"
-            self._polish_hero.set_inline_status(f"已开启 · {model}")
-            self._polish_hero.set_subtitle("")
-        else:
-            self._polish_hero.set_inline_status("已关闭")
-            self._polish_hero.set_subtitle("")
-
     def _refresh_about_hero_status(self) -> None:
-        if not hasattr(self, "_about_hero"):
+        if not hasattr(self, "_about_usage_tip"):
             return
-        self._about_hero.set_tags([])
-        self._about_hero.set_subtitle("")
-        if hasattr(self, "_about_usage_tip"):
-            hotkey = format_hotkey(self._config.get("hotkey", "ctrl+space"))
-            if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
-                tip = (
-                    f"持续转写：按住 {hotkey} 开始监听，停顿后自动出字；"
-                    f"Esc 或浮窗 × 结束"
-                )
-            else:
-                tip = f"按住 {hotkey} 说话，松开后识别并粘贴"
-            labels = self._about_usage_tip.findChildren(QLabel)
-            if labels:
-                labels[0].setText(tip)
-
-    def _refresh_sidebar_status(self) -> None:
-        if not hasattr(self, "_sidebar"):
-            return
-        llm_on = self._config.get("llm.enabled", False)
-        if hasattr(self, "_llm_enable_row"):
-            llm_on = self._llm_enable_row.isChecked()
-        llm = "润色已开启" if llm_on else "润色已关闭"
-        model = elide_middle(self._active_model_name(), 20)
-        self._sidebar.set_status_line(
-            f"{self._runtime_status_hint} · {model}",
-            llm,
-        )
-        if hasattr(self._sidebar, "set_footer_status"):
-            self._sidebar.set_footer_status(self._runtime_status_hint)
-
-    def _refresh_all_heroes(self) -> None:
-        self._refresh_general_hero_status()
-        self._refresh_model_hero_status()
-        self._refresh_polish_hero_status()
-        self._refresh_about_hero_status()
-        self._refresh_sidebar_status()
+        hotkey = format_hotkey(self._config.get("hotkey", DEFAULT_HOTKEY))
+        if self._config.get("audio.trigger_mode") == TRIGGER_MODE_CONTINUOUS:
+            tip = (
+                f"持续转写：按住 {hotkey} 开始监听，说话停顿约 1 秒后自动输入，不用点结束；"
+                f"Esc 或听写条「结束」停止整场"
+            )
+        else:
+            tip = f"按住 {hotkey} 说话，松开后识别并粘贴"
+        labels = self._about_usage_tip.findChildren(QLabel)
+        if labels:
+            labels[0].setText(tip)
 
     # ── Shared ─────────────────────────────────────────
 
@@ -705,6 +771,14 @@ class SettingsWindow(QDialog):
         sys_on = src in (INPUT_SOURCE_SYSTEM, INPUT_SOURCE_MIXED)
         self._mic_device_combo.setEnabled(mic_on)
         self._system_device_combo.setEnabled(sys_on)
+        mixed = self._src_mixed_rb.isChecked()
+        self._mixed_audio_callout.setVisible(mixed)
+        if hasattr(self, "_mixed_audio_callout_wrap"):
+            self._mixed_audio_callout_wrap.setVisible(mixed)
+
+    def _set_history_limit_rows_visible(self, visible: bool) -> None:
+        self._history_retention_row.setVisible(visible)
+        self._history_max_entries_row.setVisible(visible)
 
     def _apply_input_source_radios(self, source: str):
         if source == INPUT_SOURCE_SYSTEM:
@@ -723,7 +797,7 @@ class SettingsWindow(QDialog):
 
     def _load_settings(self):
         self._loading = True
-        self._hotkey_edit.set_value(self._config.get("hotkey", "ctrl+space"))
+        self._hotkey_edit.set_value(self._config.get("hotkey", DEFAULT_HOTKEY))
         self._auto_start_row.setChecked(self._config.get("auto_start", False))
         self._sound_row.setChecked(self._config.get("sound_enabled", True))
         self._restore_clipboard_row.setChecked(
@@ -731,15 +805,20 @@ class SettingsWindow(QDialog):
         )
         self._refresh_hotkey_hint()
         self._history_enabled_row.setChecked(self._config.get("history.enabled", True))
+        if hasattr(self, "_about_auto_update_row"):
+            self._about_auto_update_row.setChecked(
+                bool(self._config.get("update.auto_check", True))
+            )
         self._history_retention_days_spin.setValue(
             int(self._config.get("history.retention_days", 90))
         )
         self._history_max_entries_spin.setValue(
             int(self._config.get("history.max_entries", 5000))
         )
+        self._set_history_limit_rows_visible(self._history_enabled_row.isChecked())
 
         theme_mode = normalize_theme_mode(
-            self._config.get("appearance.theme_mode", "system")
+            self._config.get("appearance.theme_mode", "dark")
         )
         idx = self._theme_combo.findData(theme_mode)
         if idx < 0:
@@ -771,9 +850,6 @@ class SettingsWindow(QDialog):
         llm_on = self._config.get("llm.enabled", False)
         self._llm_enable_row.setChecked(llm_on)
         self._llm_container.setVisible(llm_on)
-        self._llm_preview_card.setVisible(True)
-        if hasattr(self, "_llm_preview_divider"):
-            self._llm_preview_divider.setVisible(True)
         self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
         self._llm_key_edit.setText(self._config.get("llm.api_key", ""))
         self._llm_model_edit.setText(self._config.get("llm.model_name", ""))
@@ -781,8 +857,8 @@ class SettingsWindow(QDialog):
         self._llm_prompt_edit.setEnabled(True)
 
         self._refresh_about_info()
-        self._refresh_all_heroes()
         self._loading = False
+        self._update_llm_configuration_status()
 
     def _set_combo_by_data(self, combo: QComboBox, value: int) -> bool:
         idx = combo.findData(value)
@@ -794,8 +870,13 @@ class SettingsWindow(QDialog):
         return False
 
     def _reset_audio_devices_to_auto(self):
+        was_loading = self._loading
+        self._loading = True
         self._set_combo_by_data(self._mic_device_combo, -1)
         self._set_combo_by_data(self._system_device_combo, -1)
+        self._loading = was_loading
+        if not was_loading:
+            self._persist_runtime_settings()
         self._set_mic_test_status("已恢复为「自动选择」，请再点「测试声音」。")
 
     def _refresh_audio_device_lists(self):
@@ -874,7 +955,12 @@ class SettingsWindow(QDialog):
         self._mic_probe_active = True
         self._mic_probe_max = 0.0
         self._mic_test_btn.setEnabled(False)
-        self._set_mic_test_status("监听中…请说话并播放一段电脑声音")
+        instruction = {
+            INPUT_SOURCE_MICROPHONE: "请对麦克风说话",
+            INPUT_SOURCE_SYSTEM: "请播放一段电脑声音",
+            INPUT_SOURCE_MIXED: "请说话并播放一段电脑声音",
+        }.get(src, "请对麦克风说话")
+        self._set_mic_test_status(f"正在测试…{instruction}")
         self._mic_test_recorder.volume_changed.connect(self._on_mic_probe_volume)
         self._mic_test_recorder.error.connect(self._on_mic_probe_error)
         self._mic_test_recorder.warning.connect(self._on_mic_probe_warning)
@@ -892,8 +978,7 @@ class SettingsWindow(QDialog):
         if self._mic_test_recorder.is_recording:
             self._mic_test_recorder.cancel()
         self._mic_test_btn.setEnabled(True)
-        self._set_mic_test_status("")
-        QMessageBox.warning(self, "音频设备", msg)
+        self._set_mic_test_status(f"测试失败：{msg}。可展开「手动选择音频设备」后重试。")
 
     def _on_mic_probe_warning(self, msg: str):
         if not self._mic_probe_active:
@@ -912,11 +997,11 @@ class SettingsWindow(QDialog):
         peak = self._mic_probe_max
         warn = self._mic_test_recorder.last_start_warning
         if peak >= threshold:
-            base = "已检测到声音，可以正常使用。"
+            base = "已检测到声音。"
             self._set_mic_test_status(f"{base} {warn}".strip() if warn else base)
         else:
             self._set_mic_test_status(
-                "几乎无输入。请点「恢复自动选择」后再测；仍失败再展开下方改设备。"
+                "几乎无输入。可直接恢复自动选择后重测，或展开下方手动选择设备。"
             )
 
     def _cancel_mic_probe_if_active(self):
@@ -976,20 +1061,16 @@ class SettingsWindow(QDialog):
         self.settings_changed.emit()
         self._refresh_hotkey_hint()
         self._refresh_about_info()
-        self._refresh_all_heroes()
 
     def _refresh_hotkey_hint(self) -> None:
         if not hasattr(self, "_hotkey_hint"):
             return
-        if self._selected_trigger_mode() == TRIGGER_MODE_CONTINUOUS:
-            self._hotkey_hint.setText(
-                "点击输入框后按下组合键绑定；持续转写需按住约 0.30 秒开始监听，"
-                "松开不会结束；Esc 或浮窗 × 结束整场。"
-            )
-        else:
-            self._hotkey_hint.setText(
-                "点击输入框后按下组合键绑定；按住约 0.18 秒开始录音，松开后识别。"
-            )
+        self._hotkey_hint.setText(
+            "按住约 0.30 秒开始，松开后继续听；说话停顿约 1 秒后自动输入，不用点结束。"
+            "Esc 或听写条「结束」停止整场。"
+            if self._selected_trigger_mode() == TRIGGER_MODE_CONTINUOUS else
+            "按住约 0.18 秒开始录音，松开后识别并输入；录音中按 Esc 取消。"
+        )
 
     def _on_theme_mode_changed(self, _index: int = 0):
         if self._loading:
@@ -1015,8 +1096,10 @@ class SettingsWindow(QDialog):
         if self._loading:
             return
         self._config.set("output.restore_clipboard", checked)
+        self.restore_clipboard_changed.emit(checked)
 
     def _on_history_enabled_toggled(self, checked: bool):
+        self._set_history_limit_rows_visible(checked)
         if self._loading:
             return
         self._config.set("history.enabled", checked)
@@ -1037,7 +1120,7 @@ class SettingsWindow(QDialog):
         if not has_modifier:
             QMessageBox.warning(self, "提示", "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。")
             self._loading = True
-            self._hotkey_edit.set_value(self._config.get("hotkey", "ctrl+space"))
+            self._hotkey_edit.set_value(self._config.get("hotkey", DEFAULT_HOTKEY))
             self._loading = False
             return
         old = self._config.get("hotkey")
@@ -1045,7 +1128,6 @@ class SettingsWindow(QDialog):
         if hotkey != old:
             self.hotkey_updated.emit(hotkey)
         self._refresh_about_info()
-        self._refresh_all_heroes()
 
     def _on_input_source_radio_toggled(self, checked: bool):
         if not checked or self._loading:
@@ -1103,6 +1185,7 @@ class SettingsWindow(QDialog):
         self._config.set("llm.model_name", self._llm_model_edit.text().strip())
         self._config.set("llm.prompt", self._llm_prompt_edit.toPlainText().strip())
         self._config.set("llm.mode", "polish")
+        self._update_llm_configuration_status()
 
     def _on_done(self):
         self._cancel_mic_probe_if_active()
@@ -1116,7 +1199,7 @@ class SettingsWindow(QDialog):
         key = self._llm_key_edit.text().strip()
         model = self._llm_model_edit.text().strip()
         if not all([url, key, model]):
-            QMessageBox.warning(self, "提示", "请填写完整的接口信息。")
+            self._llm_test_status.setText("请填写完整的接口信息。")
             return
 
         class _W(QThread):
@@ -1141,9 +1224,9 @@ class SettingsWindow(QDialog):
         btn.setEnabled(True)
         btn.setText("测试连接")
         if w.ok:
-            QMessageBox.information(self, "成功", "连接正常，可以使用。")
+            self._llm_test_status.setText("连接正常，可以使用。")
         else:
-            QMessageBox.warning(self, "失败", w.msg)
+            self._llm_test_status.setText(w.msg)
 
     # ── Cleanup ────────────────────────────────────────
 

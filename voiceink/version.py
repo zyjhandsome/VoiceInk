@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-__version__ = "1.3.9"
+__version__ = "2.0.6"
 
 
 def file_version_quad() -> str:

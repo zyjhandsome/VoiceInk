@@ -1,7 +1,13 @@
+import sys
+
 import pytest
 import numpy as np
+from PyQt6.QtWidgets import QApplication
+from unittest.mock import MagicMock
 
 from voiceink.app import App, MIN_AUDIO_SAMPLES
+from voiceink.runtime_status import RuntimeState
+from voiceink.text_paster import PasteResult
 from tests.helpers.app_harness import app_harness
 
 
@@ -28,6 +34,54 @@ class TestAppErrorHints:
     )
     def test_error_hints_cover_common_cases(self, keyword):
         assert keyword in App.ERROR_HINTS
+
+
+class TestIslandUserCopy:
+    def test_error_hints_point_to_engine_not_model_nav(self):
+        for hint in App.ERROR_HINTS.values():
+            assert "设置 → 模型" not in hint
+        assert "设置 → 引擎" in App.ERROR_HINTS["模型未就绪"]
+        assert "设置 → 引擎" in App.ERROR_HINTS["模型未下载"]
+
+    def test_model_load_progress_copy_is_single_line(self):
+        with app_harness() as h:
+            h["recorder"].is_continuous = False
+            h["app"]._on_model_load_progress("正在加载 Fun-ASR-Nano…")
+            detail = h["floating"].show_model_loading.call_args[0][0]
+            assert "\n" not in detail
+            assert "正在加载 Fun-ASR-Nano…" in detail
+
+    def test_loading_status_uses_zai_ru_vocab(self):
+        with app_harness() as h:
+            h["recognizer"].is_loading = True
+            h["recognizer"].is_ready = False
+            assert h["app"]._runtime_status_label() == "模型载入中…"
+            assert h["app"]._model_not_ready_message() == "模型载入中，请稍候"
+            audio = np.zeros(MIN_AUDIO_SAMPLES + 8, dtype=np.float32)
+            h["app"]._on_segment_ready(audio)
+            detail = h["floating"].show_model_loading.call_args[0][0]
+            assert "模型载入中" in detail
+            assert "模型加载中" not in detail
+
+    def test_not_ready_tray_points_to_engine(self):
+        with app_harness() as h:
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            h["app"]._show_model_not_ready()
+            msg = h["tray"].showMessage.call_args[0][1]
+            assert "设置 → 引擎" in msg
+            assert "设置 → 模型" not in msg
+
+    def test_model_load_failure_publishes_unavailable_state(self):
+        with app_harness() as h:
+            settings = h["app"]._settings_win = type(
+                "SettingsSpy",
+                (),
+                {"set_runtime_status": lambda self, state, label: setattr(self, "value", (state, label))},
+            )()
+            h["app"]._on_model_load_progress("模型加载失败: boom")
+            assert settings.value == (RuntimeState.UNAVAILABLE, "模型载入失败")
+            h["tray"].set_status_summary.assert_any_call("模型载入失败")
 
 
 class TestAppFriendlyError:
@@ -74,6 +128,52 @@ class TestAppSignals:
     def test_signals_connected(self):
         with app_harness() as h:
             assert hasattr(h["app"], "_connect_signals")
+
+    def test_island_signals_connected(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["tray"].wake_island.connect.assert_called_with(app._show_main_window)
+            h["floating"].settings_requested.connect.assert_called_with(
+                app._show_settings
+            )
+            h["floating"].history_requested.connect.assert_called_with(
+                app._show_history_window
+            )
+
+
+class TestTrayMenuDoesNotLeaveMainWindowStuck:
+    def test_closing_the_tray_menu_reactivates_the_main_window(self, monkeypatch):
+        QApplication.instance() or QApplication(sys.argv)
+        app = App.__new__(App)
+        main = MagicMock()
+        main.isVisible.return_value = True
+        app._main = main
+        app._restore_main_after_menu = False
+        monkeypatch.setattr(QApplication, "activeWindow", staticmethod(lambda: main))
+        monkeypatch.setattr(
+            "voiceink.app.QTimer.singleShot",
+            lambda _delay, callback: callback(),
+        )
+
+        app._note_main_before_tray_menu()
+        app._restore_main_after_tray_menu()
+
+        main.raise_.assert_called_once()
+        main.activateWindow.assert_called_once()
+
+    def test_menu_close_does_not_steal_focus_from_another_window(self):
+        QApplication.instance() or QApplication(sys.argv)
+        app = App.__new__(App)
+        main = MagicMock()
+        main.isVisible.return_value = True
+        app._main = main
+        app._restore_main_after_menu = False
+
+        app._note_main_before_tray_menu()
+        app._restore_main_after_tray_menu()
+
+        main.raise_.assert_not_called()
+        main.activateWindow.assert_not_called()
 
 
 class TestAppState:
@@ -125,7 +225,18 @@ class TestHandlePasteResult:
         with app_harness() as h:
             app = h["app"]
             app._handle_paste_result("pasted")
-            h["floating"].show_success.assert_any_call("已输入")
+            h["floating"].show_success.assert_any_call(
+                "已发送", "请确认目标应用已接收"
+            )
+
+    def test_paste_feedback_names_captured_target(self):
+        with app_harness() as h:
+            h["app"]._handle_paste_result(
+                PasteResult("sent", target_app="notepad.exe")
+            )
+            h["floating"].show_success.assert_any_call(
+                "已发送", "发送到 notepad.exe"
+            )
 
     def test_clipboard_shows_copied_hint(self):
         with app_harness() as h:
@@ -145,7 +256,9 @@ class TestHandlePasteResult:
         with app_harness() as h:
             app = h["app"]
             app._handle_paste_result("pasted", degraded_from_polish=True)
-            h["floating"].show_info.assert_any_call("已输入（原文）")
+            h["floating"].show_info.assert_any_call(
+                "已发送（原文）", "请确认目标应用已接收"
+            )
 
 
 class TestHotkeyTapTooShortHint:
@@ -209,6 +322,51 @@ class TestSegmentReadyQueueing:
             app._on_segment_ready(np.zeros(1600, dtype=np.float32))
             assert len(app._segment_queue) == 1
 
+    def test_segment_kept_when_model_not_ready(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._on_segment_ready(audio)
+            assert len(app._segment_queue) == 1
+            assert app._segment_queue[0] is audio
+            h["recognizer"].transcribe_final.assert_not_called()
+            h["floating"].show_error.assert_called()
+
+    def test_pump_keeps_queue_when_model_not_ready(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._segment_queue = [audio]
+            app._pump_segment_queue()
+            assert app._segment_queue == [audio]
+            h["recognizer"].transcribe_final.assert_not_called()
+
+    def test_recognizer_error_while_loading_keeps_hud_lock(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_loading = True
+            app._is_transcribing = True
+            app._on_recognizer_error("识别失败: boom")
+            assert app._is_transcribing is False
+            h["floating"].clear_model_loading_lock.assert_not_called()
+            h["floating"].show_error.assert_not_called()
+
+    def test_load_failure_error_does_not_drop_queue(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._segment_queue = [audio]
+            app._on_recognizer_error("模型加载失败: boom")
+            assert app._segment_queue == [audio]
+            h["recognizer"].transcribe_final.assert_not_called()
+            h["floating"].show_error.assert_not_called()
+
 
 class TestFinalResultFlow:
     def test_empty_result_non_continuous_shows_error(self):
@@ -220,6 +378,52 @@ class TestFinalResultFlow:
             app._on_final_result("   ")
             assert h["floating"].show_error.called
             assert app._is_transcribing is False
+
+    def test_hold_pastes_the_whole_utterance_once_on_release(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            app = h["app"]
+            h["recorder"].is_recording = True
+            app._on_final_result("前十五秒")
+            app._on_final_result("后十五秒")
+            h["paster"].paste_async.assert_not_called()
+
+            h["recorder"].is_recording = False
+            app._is_transcribing = False
+            app._on_recording_finished(np.array([], dtype=np.float32))
+
+            h["paster"].paste_async.assert_called_once()
+            assert h["paster"].paste_async.call_args[0][0] == "前十五秒后十五秒"
+            h["floating"].show_error.assert_not_called()
+
+    def test_hold_release_tail_pastes_every_slice(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            app = h["app"]
+            h["recorder"].is_recording = True
+            app._on_final_result("前十五秒")
+            h["paster"].paste_async.assert_not_called()
+
+            h["recorder"].is_recording = False
+            app._on_final_result("松开后的尾巴")
+
+            h["paster"].paste_async.assert_called_once()
+            assert h["paster"].paste_async.call_args[0][0] == "前十五秒松开后的尾巴"
+
+    def test_hold_waits_until_the_queued_tail_is_recognized(self):
+        with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
+            app = h["app"]
+            h["recorder"].is_recording = False
+            app._segment_queue = [np.ones(1600, dtype=np.float32)]
+            app._on_final_result("前十五秒")
+            h["paster"].paste_async.assert_not_called()
+            assert app._live_committed == "前十五秒"
+
+    def test_continuous_still_pastes_each_segment(self):
+        with app_harness({"audio.trigger_mode": "continuous", "llm.enabled": False}) as h:
+            app = h["app"]
+            app._on_final_result("第一段")
+            app._on_final_result("第二段")
+            pasted = [call.args[0] for call in h["paster"].paste_async.call_args_list]
+            assert pasted == ["第一段", "第二段"]
 
     def test_result_outputs_directly_when_llm_disabled(self):
         with app_harness() as h:
@@ -242,6 +446,18 @@ class TestFinalResultFlow:
             h["polisher"].polish.assert_called()
             h["paster"].paste_async.assert_not_called()
 
+    def test_incomplete_polish_config_outputs_original_with_notice(self):
+        with app_harness({"llm.enabled": True}) as h:
+            app = h["app"]
+            h["recognizer"].is_ready = True
+            app._on_final_result("你好世界")
+            h["polisher"].polish.assert_not_called()
+            callback = h["paster"].paste_async.call_args[0][1]
+            callback("pasted")
+            h["floating"].show_info.assert_any_call(
+                "已发送（原文）", "请确认目标应用已接收"
+            )
+
 
 class TestBeginTranscription:
     def test_begin_transcription_calls_recognizer(self):
@@ -262,3 +478,15 @@ class TestBeginTranscription:
             app._begin_transcription(audio)
             assert app._is_transcribing is False
             assert len(app._segment_queue) == 1
+
+    def test_begin_transcription_requeues_when_not_ready(self):
+        with app_harness() as h:
+            app = h["app"]
+            h["recognizer"].is_ready = False
+            h["recognizer"].is_loading = False
+            audio = np.ones(1600, dtype=np.float32)
+            app._begin_transcription(audio)
+            assert app._is_transcribing is False
+            assert app._segment_queue == [audio]
+            h["recognizer"].transcribe_final.assert_not_called()
+            h["floating"].show_error.assert_called()

@@ -3,30 +3,37 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 log = logging.getLogger("voiceink")
 
 # Shared non-color tokens. Qt stylesheets accept one family, not a CSS-style
-# fallback list. Prefer Segoe UI Variable when installed; otherwise YaHei for
-# reliable CJK on Windows (product decision 1B).
+# fallback list. Prefer YaHei so common CJK stays visible; Latin-only
+# families such as Segoe UI Variable are skipped when a CJK family exists.
 FONT_STACK = (
-    "Segoe UI Variable",
     "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "Segoe UI Variable",
     "Segoe UI",
 )
+_CJK_SAMPLE = "设置听写"
 _DEFAULT_UI_FONT = "Microsoft YaHei UI"
 UI_FONT_FAMILY = _DEFAULT_UI_FONT
 FONT = f'"{_DEFAULT_UI_FONT}"'
 FONT_DISPLAY = FONT
-FONT_MONO = (
-    '"Cascadia Mono", "Consolas", "JetBrains Mono", monospace'
+# Qt stylesheets accept one family. Resolve at runtime; do not ship a CSS list.
+MONO_STACK = (
+    "Cascadia Mono",
+    "Consolas",
+    "JetBrains Mono",
 )
+_DEFAULT_MONO_FONT = "Cascadia Mono"
+FONT_MONO = f'"{_DEFAULT_MONO_FONT}"'
 
 # Typography size ladder (px in QSS; same ints passed to QFont where used today).
-TYPE_CAPTION = 11
-TYPE_FOOTNOTE = 12
-TYPE_BODY_SM = 13
+TYPE_CAPTION = 12
+TYPE_FOOTNOTE = 13
+TYPE_BODY_SM = 14
 TYPE_BODY = 14
 TYPE_TITLE_SM = 15
 TYPE_TITLE = 16
@@ -50,22 +57,66 @@ def _probe_system_font_families() -> tuple[str, ...]:
         return ()
 
 
+def _family_covers_cjk(family: str) -> bool:
+    """Return True when family can paint common Simplified Chinese, or if we cannot probe."""
+    try:
+        from PyQt6.QtGui import QFont, QFontDatabase, QFontMetrics
+        from PyQt6.QtWidgets import QApplication
+
+        if QApplication.instance() is None:
+            return True
+        installed = {name.casefold() for name in QFontDatabase.families()}
+        if family.casefold() not in installed:
+            return False
+        names = {str(system) for system in QFontDatabase.writingSystems(family)}
+        if any("Chinese" in name for name in names):
+            return True
+        metrics = QFontMetrics(QFont(family))
+        return all(metrics.inFont(ch) for ch in _CJK_SAMPLE)
+    except Exception as exc:  # noqa: BLE001 — probe must never crash startup
+        log.warning("检测字体中文覆盖失败 %s: %s", family, exc)
+        return True
+
+
 def resolve_ui_font_family(
     *,
     available_families: Optional[Sequence[str]] = None,
     preferred: Optional[Sequence[str]] = None,
+    covers_cjk: Optional[Callable[[str], bool]] = None,
 ) -> str:
-    """Pick the first preferred family present on the host."""
+    """Pick the first preferred family present on the host that can cover CJK."""
     stack = tuple(preferred) if preferred is not None else FONT_STACK
+    probed_system = available_families is None
+    if available_families is None:
+        available_families = _probe_system_font_families()
+    if covers_cjk is None and probed_system:
+        covers_cjk = _family_covers_cjk
+    available = {name.casefold(): name for name in available_families}
+    for name in stack:
+        hit = available.get(name.casefold())
+        if hit is None:
+            continue
+        if covers_cjk is not None and not covers_cjk(hit):
+            continue
+        return hit
+    return _DEFAULT_UI_FONT
+
+
+def resolve_mono_font_family(
+    *,
+    available_families: Optional[Sequence[str]] = None,
+    preferred: Optional[Sequence[str]] = None,
+) -> str:
+    """Pick one installed monospace family. QSS cannot use a fallback list."""
+    stack = tuple(preferred) if preferred is not None else MONO_STACK
     if available_families is None:
         available_families = _probe_system_font_families()
     available = {name.casefold(): name for name in available_families}
     for name in stack:
         hit = available.get(name.casefold())
         if hit is not None:
-            # Prefer QFontDatabase's canonical spelling when it differs from the stack label.
             return hit
-    return _DEFAULT_UI_FONT
+    return _DEFAULT_MONO_FONT
 
 
 def refresh_ui_font(
@@ -73,15 +124,17 @@ def refresh_ui_font(
     available_families: Optional[Sequence[str]] = None,
     preferred: Optional[Sequence[str]] = None,
 ) -> str:
-    """Resolve and publish FONT / FONT_DISPLAY / UI_FONT_FAMILY for QSS and QFont."""
-    global UI_FONT_FAMILY, FONT, FONT_DISPLAY
+    """Resolve and publish FONT / FONT_DISPLAY / FONT_MONO for QSS and QFont."""
+    global UI_FONT_FAMILY, FONT, FONT_DISPLAY, FONT_MONO
     family = resolve_ui_font_family(
         available_families=available_families,
         preferred=preferred,
     )
+    mono = resolve_mono_font_family(available_families=available_families)
     UI_FONT_FAMILY = family
     FONT = f'"{family}"'
     FONT_DISPLAY = FONT
+    FONT_MONO = f'"{mono}"'
     return family
 
 RADIUS_XS = 4
@@ -89,6 +142,7 @@ RADIUS_SM = 6
 RADIUS_MD = 8
 RADIUS_LG = 10
 RADIUS_PILL = 999
+WINDOW_RADIUS = 12
 
 SPACE_XS = 8
 SPACE_SM = 12
@@ -97,8 +151,8 @@ SPACE_LG = 24
 SPACE_XL = 32
 PAGE_MARGIN_H = 20
 PAGE_MARGIN_V = 16
-CONTENT_MAX_WIDTH = 9999
-SIDEBAR_WIDTH = 248
+CONTENT_MAX_WIDTH = 900
+SIDEBAR_WIDTH = 184
 
 # Wide enough for values like「5500 场」plus a 22px flat stepper column.
 CONTROL_NUMERIC_WIDTH = 120
@@ -111,9 +165,11 @@ CONTROL_BTN_SM_PAD_H = 14
 CONTROL_BTN_SM_FONT_PX = TYPE_BODY_SM
 
 NAV_SELECTED_BAR_PX = 3
-TRAY_MENU_RADIUS = 4
-TRAY_MENU_PAD_V = 8
-TRAY_MENU_PAD_H = 18
+TRAY_MENU_RADIUS = 8
+# 13px rows. Left inset is the check glyph plus a 4px gap, not a wide gutter.
+TRAY_MENU_PAD_V = 5
+TRAY_MENU_PAD_H = 22
+TRAY_MENU_FONT = TYPE_FOOTNOTE
 
 TOGGLE_OFF_TRACK = (60, 60, 67, 48)
 TOGGLE_OFF_TRACK_HOVER = (60, 60, 67, 72)
@@ -127,23 +183,24 @@ _LIGHT: dict[str, Any] = {
     "ACCENT_ON_DARK": "#FFFFFF",
     "ACCENT_BG": "#DBEAFE",
     "ACCENT_SOFT": "rgba(37, 99, 235, 0.08)",
-    "PRIMARY_CONTAINER": "#2563EB",
-    "PRIMARY_CONTAINER_HOVER": "#1D4ED8",
-    "PRIMARY_CONTAINER_PRESSED": "#1E40AF",
+    "PRIMARY_CONTAINER": "#0D0D0D",
+    "PRIMARY_CONTAINER_HOVER": "#262626",
+    "PRIMARY_CONTAINER_PRESSED": "#404040",
+    "PRIMARY_ON": "#FFFFFF",
     "SECONDARY_CONTAINER": "#E5E7EB",
-    "BG": "#F3F4F6",
-    "NAV_BG": "#F3F4F6",
+    "BG": "#FFFFFF",
+    "NAV_BG": "#F6F7F8",
     "SURFACE": "#FFFFFF",
-    "SURFACE_PEARL": "#F9FAFB",
-    "BORDER": "#E5E7EB",
-    "HAIRLINE": "#E5E7EB",
+    "SURFACE_PEARL": "#F7F7F7",
+    "BORDER": "rgba(13,13,13,0.08)",
+    "HAIRLINE": "rgba(13,13,13,0.08)",
     "OUTLINE_VARIANT": "#D1D5DB",
     "DIVIDER_SOFT": "#E5E7EB",
-    "ROW_SELECTED": "#EFF6FF",
+    "ROW_SELECTED": "rgba(13,13,13,0.06)",
     "INPUT_BG": "#FFFFFF",
     "BAR_OFF": "#E5E7EB",
     "SETTINGS_SIDEBAR_BG": "#FFFFFF",
-    "NAV_SELECTED_BG": "rgba(37, 99, 235, 0.08)",
+    "NAV_SELECTED_BG": "rgba(13,13,13,0.06)",
     "TEXT": "#111827",
     "TEXT_SEC": "#4B5563",
     "TEXT_DIM": "#667085",
@@ -151,6 +208,7 @@ _LIGHT: dict[str, Any] = {
     # Keep AA contrast as small text on BG; visual weight of switches is
     # reduced via track size / shadow, not by lightening this green.
     "GREEN": "#15803D",
+    "GREEN_TEXT": "#166534",
     "GREEN_BG": "#DCFCE7",
     "RED": "#C81E1E",
     "RED_BG": "#FEE2E2",
@@ -175,9 +233,10 @@ _LIGHT: dict[str, Any] = {
     "TRAY_MENU_DISABLED": "#9CA3AF",
     "TRAY_MENU_CHECK": "#333333",
     "TRAY_MENU_ARROW": "#9CA3AF",
-    "FLOAT_BG": "rgba(243, 244, 246, 245)",
+    "ISLAND_MINT": "#0F7A4A",
+    "FLOAT_BG": "rgba(255, 255, 255, 236)",
     "FLOAT_TILE": "#FFFFFF",
-    "FLOAT_BORDER": "rgba(17, 24, 39, 0.12)",
+    "FLOAT_BORDER": "rgba(17, 24, 39, 0.10)",
     "FLOAT_BORDER_INNER": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG_HOVER": "rgba(17, 24, 39, 0.16)",
@@ -197,29 +256,31 @@ _DARK: dict[str, Any] = {
     "ACCENT_ON_DARK": "#FFFFFF",
     "ACCENT_BG": "#1E3A5F",
     "ACCENT_SOFT": "rgba(59, 130, 246, 0.16)",
-    "PRIMARY_CONTAINER": "#2563EB",
-    "PRIMARY_CONTAINER_HOVER": "#1D4ED8",
-    "PRIMARY_CONTAINER_PRESSED": "#1E40AF",
+    "PRIMARY_CONTAINER": "#FFFFFF",
+    "PRIMARY_CONTAINER_HOVER": "#E8E8E8",
+    "PRIMARY_CONTAINER_PRESSED": "#D0D0D0",
+    "PRIMARY_ON": "#0D0D0D",
     "SECONDARY_CONTAINER": "#374151",
-    "BG": "#111827",
-    "NAV_BG": "#111827",
-    "SURFACE": "#1F2937",
-    "SURFACE_PEARL": "#374151",
-    "BORDER": "#374151",
-    "HAIRLINE": "#374151",
+    "BG": "#181818",
+    "NAV_BG": "#141618",
+    "SURFACE": "#181818",
+    "SURFACE_PEARL": "#222528",
+    "BORDER": "rgba(255,255,255,0.08)",
+    "HAIRLINE": "rgba(255,255,255,0.08)",
     "OUTLINE_VARIANT": "#4B5563",
     "DIVIDER_SOFT": "#374151",
-    "ROW_SELECTED": "rgba(59, 130, 246, 0.20)",
-    "INPUT_BG": "#1F2937",
+    "ROW_SELECTED": "rgba(255,255,255,0.06)",
+    "INPUT_BG": "#202326",
     "BAR_OFF": "#4B5563",
-    "SETTINGS_SIDEBAR_BG": "#1F2937",
-    "NAV_SELECTED_BG": "rgba(59, 130, 246, 0.16)",
+    "SETTINGS_SIDEBAR_BG": "#181818",
+    "NAV_SELECTED_BG": "rgba(255,255,255,0.06)",
     "TEXT": "#F9FAFB",
     "TEXT_SEC": "#D1D5DB",
     "TEXT_DIM": "#9CA3AF",
     "TEXT_MUTED_DARK": "#9CA3AF",
     # Mid green (not neon #22C55E) so dark-theme ON switches stay quieter.
     "GREEN": "#16A34A",
+    "GREEN_TEXT": "#86EFAC",
     "GREEN_BG": "#14532D",
     "RED": "#F87171",
     "RED_BG": "#7F1D1D",
@@ -242,9 +303,10 @@ _DARK: dict[str, Any] = {
     "TRAY_MENU_DISABLED": "#6B7280",
     "TRAY_MENU_CHECK": "#F9FAFB",
     "TRAY_MENU_ARROW": "#9CA3AF",
-    "FLOAT_BG": "rgba(39, 39, 41, 245)",
-    "FLOAT_TILE": "#272729",
-    "FLOAT_BORDER": "rgba(255, 255, 255, 0.10)",
+    "ISLAND_MINT": "#B8F0D2",
+    "FLOAT_BG": "rgba(24, 24, 24, 236)",
+    "FLOAT_TILE": "#181818",
+    "FLOAT_BORDER": "rgba(255, 255, 255, 0.12)",
     "FLOAT_BORDER_INNER": "rgba(210, 210, 215, 0.24)",
     "CHIP_BG": "rgba(210, 210, 215, 0.40)",
     "CHIP_BG_HOVER": "rgba(210, 210, 215, 0.55)",
@@ -270,8 +332,8 @@ def activate(effective: str) -> None:
     g = globals()
     for key in _COLOR_KEYS:
         g[key] = vals[key]
-    # Float state aliases that follow float text
-    g["STATE_LISTEN"] = vals["FLOAT_TEXT"]
+    # Float state aliases: listen uses semantic green; others follow float text
+    g["STATE_LISTEN"] = vals["GREEN"]
     g["STATE_RECOGNIZE"] = vals["FLOAT_TEXT"]
     g["STATE_POLISH"] = vals["FLOAT_TEXT"]
     g["STATE_SUCCESS"] = vals["FLOAT_TEXT"]
