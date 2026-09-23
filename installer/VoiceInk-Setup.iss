@@ -43,7 +43,8 @@ VersionInfoProductName=VoiceInk
 VersionInfoProductVersion={#AppVersionQuad}
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 语言包放在脚本旁边。当前安装的 Inno Setup 的 Languages 目录里没有简体中文。
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
