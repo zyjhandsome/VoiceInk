@@ -2,7 +2,7 @@
 
 本地离线语音转文字：采集**麦克风** / **电脑播放声** / **混合** → 本地 ASR 识别 →（可选）大模型润色 → 自动粘贴到光标位置。默认 **自动持续转写**（按住快捷键开始整场监听，停顿后自动出字）；也可切换为 **按住说话、松开识别**。
 
-版本号以 **`voiceink/version.py`** 中的 `__version__` 为准（当前 **2.0.5**）；安装包文件名、Inno 元数据与 Windows 下 `VoiceInk.exe` 属性均与之同步。
+版本号以 **`voiceink/version.py`** 中的 `__version__` 为准（当前 **2.0.6**）；安装包文件名、Inno 元数据与 Windows 下 `VoiceInk.exe` 属性均与之同步。
 
 **文档导航**
 
@@ -112,7 +112,7 @@ pip install -r requirements.txt   # PyQt6、sherpa-onnx、sounddevice、pynput �
 
 ### 安装（Windows，推荐）
 
-安装 **[Releases](https://github.com/zyjhandsome/VoiceInk/releases)** 中的 **`VoiceInk-Setup-2.0.5.exe`**（约 740 MB）。无安装包见 [从源码打包](#从源码打包)。
+安装 **[Releases](https://github.com/zyjhandsome/VoiceInk/releases)** 中的 **`VoiceInk-Setup-2.0.6.exe`**（约 740 MB）。无安装包见 [从源码打包](#从源码打包)。
 
 ### 从源码运行
 
