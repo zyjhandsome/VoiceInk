@@ -138,6 +138,7 @@ def build():
         "--windowed",
         "--noconfirm",
         "--clean",
+        "--noupx",
         f"--runtime-hook={win_dll_rthook}",
         f"--icon={SCRIPT_DIR / 'voiceink' / 'icon.ico'}",
         # Non-imported PNG steppers used by settings QSS (Path(__file__).parent/icons).
@@ -159,7 +160,13 @@ def build():
         "--hidden-import=httpx",
         "--hidden-import=httpcore",
         "--hidden-import=pyperclip",
-        "--hidden-import=pyautogui",
+        # Paste uses Win32 keybd_event. pyautogui pulls in Pillow, and the
+        # frozen app dies decompressing that Pillow module from the PYZ archive.
+        "--exclude-module=pyautogui",
+        "--exclude-module=pyscreeze",
+        "--exclude-module=PIL",
+        "--exclude-module=mouseinfo",
+        "--exclude-module=pytweening",
         "--hidden-import=win32gui",
         "--hidden-import=win32api",
         "--hidden-import=win32con",

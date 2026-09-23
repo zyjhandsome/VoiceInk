@@ -85,6 +85,7 @@ class TestPasteShortcut:
         from voiceink import text_paster
         assert hasattr(text_paster, "get_foreground_window_info")
         assert hasattr(text_paster, "_paste_shortcut")
+        assert not hasattr(text_paster, "pyautogui")
 
 
 class TestCrossPlatformSupport:

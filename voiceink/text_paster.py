@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Callable
 
 import pyperclip
-import pyautogui
 from PyQt6.QtCore import QTimer
 
 log = logging.getLogger("VoiceInk")
@@ -112,11 +111,44 @@ def get_foreground_process_name() -> str:
 
 
 def _paste_shortcut():
-    """Trigger the system paste shortcut, platform-aware."""
-    if sys.platform == "darwin":
-        pyautogui.hotkey("command", "v")
+    """Trigger the system paste shortcut, platform-aware.
+
+    Does not use pyautogui: that import loads Pillow, and the frozen app
+    crashes while decompressing a Pillow module from the PyInstaller archive.
+    """
+    if sys.platform == "win32":
+        _paste_shortcut_win32()
+    elif sys.platform == "darwin":
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                'tell application "System Events" to keystroke "v" using command down',
+            ],
+            timeout=2,
+            check=False,
+        )
     else:
-        pyautogui.hotkey("ctrl", "v")
+        subprocess.run(["xdotool", "key", "ctrl+v"], timeout=2, check=False)
+
+
+def _paste_shortcut_win32():
+    """Send Ctrl+V with the Win32 keyboard API."""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    vk_control = 0x11
+    vk_v = 0x56
+    key_up = 0x0002
+
+    def _tap(vk: int, flags: int) -> None:
+        scan = user32.MapVirtualKeyW(vk, 0)
+        user32.keybd_event(vk, scan, flags, 0)
+
+    _tap(vk_control, 0)
+    _tap(vk_v, 0)
+    _tap(vk_v, key_up)
+    _tap(vk_control, key_up)
 
 
 def _verify_paste_target(hwnd_before: int) -> bool:
