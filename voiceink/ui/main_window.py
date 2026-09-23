@@ -48,6 +48,8 @@ _STATUS_DOT_PX = 8
 _RESIZE_BORDER_PX = 6
 _WINDOW_W = 960
 _WINDOW_H = 640
+_MIN_W = 880
+_MIN_H = 580
 
 # Win32 messages used for native edge resizing and a stable maximize rect.
 _WM_NCHITTEST = 0x0084
@@ -148,7 +150,30 @@ class MainWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.resize(_WINDOW_W, _WINDOW_H)
-        self.setMinimumSize(880, 580)
+        self._fit_to_available_screen()
+
+    def _fit_to_available_screen(self) -> None:
+        """Small or highly scaled screens may offer less than the preferred size."""
+        screen = self.screen()
+        if screen is None:
+            return
+        avail = screen.availableGeometry()
+        if avail.isEmpty():
+            return
+        # Never below what the pages need, or controls get clipped instead.
+        layout = self.layout()
+        floor = layout.minimumSize() if layout is not None else None
+        floor_w = floor.width() if floor is not None else 0
+        floor_h = floor.height() if floor is not None else 0
+        self.setMinimumSize(
+            min(_MIN_W, max(avail.width(), floor_w)),
+            min(_MIN_H, max(avail.height(), floor_h)),
+        )
+        if self.isMaximized():
+            return
+        width, height = min(self.width(), avail.width()), min(self.height(), avail.height())
+        if (width, height) != (self.width(), self.height()):
+            self.resize(width, height)
 
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -288,6 +313,7 @@ class MainWindow(QWidget):
         self._settings.hotkey_capture_ended.connect(lambda: self._enable_shortcuts(True))
 
         self.resize(_WINDOW_W, _WINDOW_H)
+        self._fit_to_available_screen()
         root.activate()
 
     def _enable_shortcuts(self, enabled: bool) -> None:
@@ -329,7 +355,7 @@ class MainWindow(QWidget):
         )
 
     def _refresh_usage_summary(self, *_args) -> None:
-        source = {"microphone": "麦克风", "system": "电脑声", "mixed": "混合音频"}.get(
+        source = {"microphone": "麦克风", "system": "电脑播放", "mixed": "混合音频"}.get(
             self._config.get("audio.input_source", "microphone"), "麦克风")
         continuous = self._config.get("audio.trigger_mode", "continuous") == "continuous"
         self._mode_label.setText(f"{source} · {'持续转写' if continuous else '按住说话'}")
@@ -350,6 +376,7 @@ class MainWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self._fit_to_available_screen()
         self._apply_window_shape()
         # Park focus on the window itself: otherwise Qt hands it to the first
         # tab stop and a nav button shows a focus ring nobody asked for. Tab

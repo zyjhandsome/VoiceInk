@@ -21,9 +21,59 @@ def _make_main_window(tmp_path, monkeypatch):
     win = MainWindow(Config(config_dir=tmp_path), store)
     return win, store
 
+def _use_screen(monkeypatch, width, height):
+    from PyQt6.QtCore import QRect
+    from voiceink.ui.main_window import MainWindow
+
+    class _Screen:
+        def availableGeometry(self):
+            return QRect(0, 0, width, height)
+
+    screen = _Screen()
+    monkeypatch.setattr(MainWindow, "screen", lambda self: screen)
+
+
+def test_small_scaled_screen_lowers_minimum_to_fit(qapp, tmp_path, monkeypatch):
+    # 1366×768 at 150% leaves about 910×472 logical pixels above the taskbar.
+    _use_screen(monkeypatch, 910, 472)
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        win.show()
+        assert win.minimumHeight() <= 472
+        assert win.height() <= 472
+        assert win.width() <= 910
+    finally:
+        win.close()
+        store.close()
+
+
+def test_narrow_screen_does_not_clip_below_layout_minimum(qapp, tmp_path, monkeypatch):
+    _use_screen(monkeypatch, 800, 800)
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        win.show()
+        win.show_page("history")
+        QApplication.processEvents()
+        assert win.width() >= win.layout().minimumSize().width()
+    finally:
+        win.close()
+        store.close()
+
+
+def test_large_screen_keeps_preferred_minimum(qapp, tmp_path, monkeypatch):
+    _use_screen(monkeypatch, 1920, 1040)
+    win, store = _make_main_window(tmp_path, monkeypatch)
+    try:
+        assert (win.minimumWidth(), win.minimumHeight()) == (880, 580)
+    finally:
+        win.close()
+        store.close()
+
+
 def test_chrome_size_and_nav(qapp, tmp_path, monkeypatch):
     from voiceink.ui.main_window import NAV_LABELS
     from voiceink.ui import design_tokens as tok
+    _use_screen(monkeypatch, 1920, 1040)
     win, store = _make_main_window(tmp_path, monkeypatch)
     try:
         assert win.width() == 960

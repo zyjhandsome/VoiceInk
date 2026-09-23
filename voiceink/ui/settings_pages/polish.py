@@ -66,7 +66,7 @@ def build_polish_page(win) -> QWidget:
     win._llm_key_edit = QLineEdit()
     win._llm_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
     win._llm_key_edit.setAccessibleName("API 密钥")
-    win._llm_key_edit.setPlaceholderText("sk-...")
+    win._llm_key_edit.setPlaceholderText("sk-...（本机或局域网服务可留空）")
     win._llm_key_edit.setMinimumHeight(36)
     win._llm_key_toggle = QPushButton("显示")
     win._style_llm_action_btn(win._llm_key_toggle)

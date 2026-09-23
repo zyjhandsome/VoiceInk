@@ -170,6 +170,8 @@ def build():
         "--hidden-import=win32gui",
         "--hidden-import=win32api",
         "--hidden-import=win32con",
+        "--hidden-import=win32cred",
+        "--hidden-import=PyQt6.QtNetwork",
         "--hidden-import=sherpa_onnx",
     ])
 

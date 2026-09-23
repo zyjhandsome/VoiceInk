@@ -65,6 +65,12 @@ def app_harness(config_overrides: dict | None = None):
         from voiceink.app import App
 
         app = App()
+        # start() schedules these with QTimer; if they fired during a later
+        # test's processEvents, a modal dialog or a real network check would
+        # block the suite.
+        app._show_first_run_welcome = lambda: None
+        app._ask_history_onboarding_enabled = lambda: False
+        app._maybe_auto_check_for_update = lambda: None
         harness = {
             "app": app,
             "config": config_mock,

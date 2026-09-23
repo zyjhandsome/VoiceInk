@@ -1,4 +1,5 @@
 import logging
+import sys
 import threading
 import time
 
@@ -30,6 +31,45 @@ KEY_MAP = {
     "win": keyboard.Key.cmd,
     "cmd": keyboard.Key.cmd,
 }
+
+
+_WM_KEYDOWN = 0x0100
+_WM_KEYUP = 0x0101
+_WM_SYSKEYDOWN = 0x0104
+_WM_SYSKEYUP = 0x0105
+_LLKHF_INJECTED = 0x10
+# Unassigned VK used by AutoHotkey as a "menu mask": an event between Alt/Win
+# down and up stops Windows from opening the menu bar / Start on release.
+_VK_MENU_MASK = 0xE8
+
+# Async-state VKs that satisfy each canonical modifier of a hotkey.
+_MODIFIER_VKS = {
+    keyboard.Key.alt_l: (0x12,),
+    keyboard.Key.ctrl_l: (0x11,),
+    keyboard.Key.shift_l: (0x10,),
+    keyboard.Key.cmd: (0x5B, 0x5C),
+}
+_MASKED_MODIFIERS = (keyboard.Key.alt_l, keyboard.Key.cmd)
+
+
+def _main_key_vk(key) -> int | None:
+    if isinstance(key, keyboard.Key):
+        return getattr(key.value, "vk", None)
+    vk = getattr(key, "vk", None)
+    if vk:
+        return int(vk)
+    char = getattr(key, "char", None)
+    if not char or sys.platform != "win32":
+        return None
+    import ctypes
+
+    vk_key_scan = ctypes.windll.user32.VkKeyScanW
+    vk_key_scan.argtypes = [ctypes.c_wchar]
+    vk_key_scan.restype = ctypes.c_short
+    scan = vk_key_scan(char[0])
+    if scan == -1:
+        return None
+    return scan & 0xFF
 
 
 def parse_hotkey(hotkey_str: str) -> set:
@@ -84,14 +124,101 @@ class HotKeyManager(QObject):
         self._hold_pending = False
         self._hold_activated = False
         self._hold_started_at = 0.0
+        self._suppressed_vks: set[int] = set()
+        self._main_keys_by_vk: dict[int, object] = {}
+        self._hotkey_modifiers: tuple = ()
+        self._rebuild_suppress_plan()
         self._arm_hold_on_main.connect(self._start_hold_timer_on_main_thread)
+
+    def _rebuild_suppress_plan(self) -> None:
+        """Caller holds ``self._lock`` or is still in __init__."""
+        modifiers = tuple(k for k in self._hotkey_keys if k in _MODIFIER_VKS)
+        mains: dict[int, object] = {}
+        if modifiers:
+            for key in self._hotkey_keys:
+                if key in _MODIFIER_VKS:
+                    continue
+                vk = _main_key_vk(key)
+                if vk:
+                    mains[vk] = key
+        self._hotkey_modifiers = modifiers
+        self._main_keys_by_vk = mains
+        self._suppressed_vks = set()
+
+    @staticmethod
+    def _async_key_down(vk: int) -> bool:
+        import ctypes
+
+        return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+
+    def _modifiers_held(self, modifiers: tuple) -> bool:
+        return all(
+            any(self._async_key_down(vk) for vk in _MODIFIER_VKS[mod])
+            for mod in modifiers
+        )
+
+    @staticmethod
+    def _send_menu_mask() -> None:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        user32.keybd_event(_VK_MENU_MASK, 0, 0, 0)
+        user32.keybd_event(_VK_MENU_MASK, 0, 0x0002, 0)
+
+    def _win32_event_filter(self, msg, data):
+        """Keep the hotkey's main key (and its auto-repeat) out of the focused app.
+
+        Suppressing an event also skips pynput's own on_press/on_release, so
+        this path feeds the hotkey state machine directly.
+        """
+        try:
+            if data.flags & _LLKHF_INJECTED:
+                return True
+            vk = int(data.vkCode)
+            with self._lock:
+                if self._paused:
+                    return True
+                main_key = self._main_keys_by_vk.get(vk)
+                modifiers = self._hotkey_modifiers
+                already = vk in self._suppressed_vks
+            if main_key is None:
+                return True
+            if msg in (_WM_KEYDOWN, _WM_SYSKEYDOWN):
+                if not already and not self._modifiers_held(modifiers):
+                    return True
+                with self._lock:
+                    self._suppressed_vks.add(vk)
+                for mod in modifiers:
+                    self._on_press(mod)
+                self._on_press(main_key)
+                if not already and any(m in _MASKED_MODIFIERS for m in modifiers):
+                    self._send_menu_mask()
+            elif msg in (_WM_KEYUP, _WM_SYSKEYUP):
+                if not already:
+                    return True
+                with self._lock:
+                    self._suppressed_vks.discard(vk)
+                self._on_release(main_key)
+            else:
+                return True
+        except Exception:
+            log.exception("快捷键过滤失败，按键照常传给前台应用")
+            return True
+        listener = self._listener
+        if listener is not None:
+            listener.suppress_event()
+        return True
 
     def start(self):
         if self._listener is not None:
             return
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["win32_event_filter"] = self._win32_event_filter
         self._listener = keyboard.Listener(
             on_press=self._on_press,
             on_release=self._on_release,
+            **kwargs,
         )
         self._listener.daemon = True
         try:
@@ -129,18 +256,21 @@ class HotKeyManager(QObject):
         with self._lock:
             self._paused = True
             self._pressed_keys.clear()
+            self._suppressed_vks.clear()
 
     def resume(self):
         self._cancel_hold_pending()
         with self._lock:
             self._paused = False
             self._pressed_keys.clear()
+            self._suppressed_vks.clear()
 
     def update_hotkey(self, hotkey_str: str):
         self._cancel_hold_pending()
         with self._lock:
             self._hotkey_str = hotkey_str
             self._hotkey_keys = parse_hotkey(hotkey_str)
+            self._rebuild_suppress_plan()
             self._pressed_keys.clear()
         log.info("快捷键已更新: %s", hotkey_str)
 
@@ -213,8 +343,15 @@ class HotKeyManager(QObject):
             return keyboard.Key.shift_l
         return key
 
+    @staticmethod
+    def _is_menu_mask(key) -> bool:
+        return getattr(key, "vk", None) == _VK_MENU_MASK
+
     def _on_press(self, key):
+        if self._is_menu_mask(key):
+            return
         normalized = self._normalize_key(key)
+        newly_armed = False
 
         with self._lock:
             if self._paused:
@@ -237,10 +374,15 @@ class HotKeyManager(QObject):
                 self._hold_pending = True
                 self._hold_activated = False
                 self._hold_started_at = time.monotonic()
-        if self._hold_pending:
+                newly_armed = True
+        # Auto-repeat keeps calling here; restarting the timer on every repeat
+        # could postpone the hold threshold forever.
+        if newly_armed:
             self._arm_hold_on_main.emit()
 
     def _on_release(self, key):
+        if self._is_menu_mask(key):
+            return
         normalized = self._normalize_key(key)
         emit_stop = False
         sync_hold_timer = False
@@ -251,8 +393,10 @@ class HotKeyManager(QObject):
                 return
             self._pressed_keys.discard(normalized)
             self._pressed_keys.discard(key)
+            # Only letting go of part of the hotkey ends a pending hold.
+            releases_hotkey = normalized in self._hotkey_keys or key in self._hotkey_keys
 
-            if self._hold_pending:
+            if self._hold_pending and releases_hotkey:
                 self._hold_pending = False
                 sync_hold_timer = True
                 if not self._hold_activated:

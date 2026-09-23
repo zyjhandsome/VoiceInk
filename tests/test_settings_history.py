@@ -159,3 +159,15 @@ class TestHistoryOnboarding:
         assert events["default"] is buttons[0][2]
         assert events["title"] == "开启语音历史？"
         assert "随时可以在设置关闭" in events["text"]
+
+
+def test_first_run_welcome_is_scheduled_once_even_if_ready_and_fallback_both_fire():
+    from unittest.mock import patch
+
+    with app_harness(config_overrides={"first_run_welcome_seen": False}) as h:
+        app = h["app"]
+        with patch("voiceink.app.QTimer.singleShot") as single_shot:
+            app._show_first_run_welcome_once()
+            app._show_first_run_welcome_once()
+        scheduled = [c for c in single_shot.call_args_list if c.args[1] == app._show_first_run_welcome]
+        assert len(scheduled) == 1

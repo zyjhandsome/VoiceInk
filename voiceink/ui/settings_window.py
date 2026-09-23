@@ -19,6 +19,7 @@ from voiceink.config import (
     Config,
     DEFAULT_HOTKEY,
     format_hotkey,
+    is_reserved_hotkey,
     TRIGGER_MODE_CONTINUOUS,
     TRIGGER_MODE_HOTKEY,
 )
@@ -57,6 +58,11 @@ from voiceink.runtime_status import RuntimeState, coerce_runtime_status
 _CONTROL_NUMERIC_WIDTH = _tok.CONTROL_NUMERIC_WIDTH
 # Shared width so 显示 / 测试连接 / 恢复默认 share one right-edge column.
 _LLM_ACTION_BTN_WIDTH = 88
+
+
+def _device_index(data) -> int:
+    """Combo item data → device index; 0 is a real device, only None means automatic."""
+    return -1 if data is None else int(data)
 
 # ── Settings Window ──────────────────────────────────────────────
 
@@ -106,30 +112,8 @@ class SettingsWindow(QWidget):
             reapply_subtree,
         )
 
-        from voiceink.ui.island_chrome import island_container_css
-
         self.setStyleSheet(_settings_styles.WINDOW_CSS)
         self._paint_model_hero_status()
-        if hasattr(self, "_sheet"):
-            self._sheet.setStyleSheet(island_container_css())
-        if hasattr(self, "_island_nav"):
-            for btn in self._island_nav:
-                btn.setStyleSheet(
-                    f"QPushButton {{ background: transparent; color: {tok.TEXT_SEC};"
-                    f" border: none; border-radius: 14px; padding: 0 12px; }}"
-                    f"QPushButton:checked {{ background: {tok.CHIP_BG}; color: {tok.TEXT}; }}"
-                )
-        if hasattr(self, "_island_title"):
-            self._island_title.setStyleSheet(
-                f"color: {tok.TEXT}; font-size: {_tok.TYPE_TITLE}px; font-weight: 700;"
-                f" background: transparent;"
-            )
-        if hasattr(self, "_close_btn"):
-            self._close_btn.setStyleSheet(
-                f"QPushButton {{ background: {tok.CHIP_BG}; color: {tok.TEXT};"
-                f" border: none; border-radius: 14px; font-size: {tok.TYPE_BODY_SM}px; }}"
-                f"QPushButton:hover {{ background: {tok.CHIP_BG_HOVER}; }}"
-            )
         if hasattr(self, "_content_wrap"):
             self._content_wrap.setStyleSheet("background: transparent;")
         if hasattr(self, "_pages_host"):
@@ -480,7 +464,10 @@ class SettingsWindow(QWidget):
         if model_id in self._dl_workers:
             return
         from voiceink.speech_recognizer import ModelDownloadWorker
-        worker = ModelDownloadWorker(model_id)
+        worker = ModelDownloadWorker(
+            model_id,
+            source=self._config.get("stt.download_source", "auto"),
+        )
         self._dl_workers[model_id] = worker
         card = self._model_cards.get(model_id)
         if card:
@@ -526,7 +513,15 @@ class SettingsWindow(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         active_id = self._config.get("stt.model_id", "")
-        delete_model(model_id)
+        if not delete_model(model_id):
+            QMessageBox.warning(
+                self,
+                "删除模型",
+                f"未能删除「{name}」。它可能是安装包自带的模型、正被占用，"
+                "或所在目录没有写入权限。",
+            )
+            self._rebuild_model_cards()
+            return
         if active_id == model_id:
             from voiceink.speech_recognizer import get_downloaded_models
             remaining = get_downloaded_models()
@@ -573,14 +568,25 @@ class SettingsWindow(QWidget):
         self._flush_llm_fields()
 
     def _llm_missing_fields(self) -> list[str]:
-        fields = (
-            ("接口地址", self._llm_url_edit.text().strip()),
-            ("API 密钥", self._llm_key_edit.text().strip()),
-            ("模型名称", self._llm_model_edit.text().strip()),
-        )
-        return [label for label, value in fields if not value]
+        from voiceink.text_polisher import api_key_required
+
+        url = self._llm_url_edit.text().strip()
+        missing = []
+        if not url:
+            missing.append("接口地址")
+        if not self._llm_key_edit.text().strip() and api_key_required(url):
+            missing.append("API 密钥")
+        if not self._llm_model_edit.text().strip():
+            missing.append("模型名称")
+        return missing
 
     def _update_llm_configuration_status(self) -> None:
+        if getattr(self._config, "secret_persist_failed", False) is True:
+            self._llm_test_status.setText(
+                "API 密钥未能存入 Windows 凭据管理器，仅本次运行有效，"
+                "也没有写入配置文件；重启后需重新填写。"
+            )
+            return
         if not self._llm_enable_row.isChecked():
             self._llm_test_status.setText("")
             return
@@ -651,10 +657,13 @@ class SettingsWindow(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
 
+        from voiceink.text_polisher import polish_settings_complete
+
         llm_enabled = self._config.get("llm.enabled", False)
-        llm_configured = all(
-            self._config.get(key, "")
-            for key in ("llm.api_url", "llm.api_key", "llm.model_name")
+        llm_configured = polish_settings_complete(
+            self._config.get("llm.api_url", ""),
+            self._config.get("llm.api_key", ""),
+            self._config.get("llm.model_name", ""),
         )
         runtime_items = [
             ("当前模型", active_name),
@@ -681,10 +690,11 @@ class SettingsWindow(QWidget):
             ("已下载", f"{len(downloaded)} 个 · 约 {total_mb} MB"),
             ("模型目录", str(self._config.models_dir)),
             ("配置文件", str(self._config.config_dir / "config.json")),
+            ("日志目录", str(self._config.config_dir / "logs")),
         ]
         for key, val in path_items:
             self._about_paths_lay.addWidget(group_divider())
-            if key in ("模型目录", "配置文件"):
+            if key in ("模型目录", "配置文件", "日志目录"):
                 self._about_paths_lay.addWidget(kv_row_elided(key, val, max_len=42))
             else:
                 self._about_paths_lay.addWidget(kv_row(key, val))
@@ -802,6 +812,13 @@ class SettingsWindow(QWidget):
         self._sound_row.setChecked(self._config.get("sound_enabled", True))
         self._restore_clipboard_row.setChecked(
             self._config.get("output.restore_clipboard", False)
+        )
+        self._esc_stop_row.setChecked(
+            bool(self._config.get("audio.esc_stops_continuous", True))
+        )
+        self._set_combo_by_data(
+            self._download_source_combo,
+            self._config.get("stt.download_source", "auto"),
         )
         self._refresh_hotkey_hint()
         self._history_enabled_row.setChecked(self._config.get("history.enabled", True))
@@ -1049,10 +1066,10 @@ class SettingsWindow(QWidget):
         self._config.set("audio.trigger_mode", self._selected_trigger_mode())
         self._config.set(
             "audio.mic_device_index",
-            int(self._mic_device_combo.currentData() or -1),
+            _device_index(self._mic_device_combo.currentData()),
         )
         sys_idx = sanitize_system_device_index(
-            int(self._system_device_combo.currentData() or -1)
+            _device_index(self._system_device_combo.currentData())
         )
         self._config.set("audio.system_device_index", sys_idx)
         if sys_idx < 0:
@@ -1065,9 +1082,11 @@ class SettingsWindow(QWidget):
     def _refresh_hotkey_hint(self) -> None:
         if not hasattr(self, "_hotkey_hint"):
             return
+        esc_stops = bool(self._config.get("audio.esc_stops_continuous", True))
+        stop_hint = "Esc 或听写条「结束」停止整场。" if esc_stops else "听写条「结束」停止整场。"
         self._hotkey_hint.setText(
             "按住约 0.30 秒开始，松开后继续听；说话停顿约 1 秒后自动输入，不用点结束。"
-            "Esc 或听写条「结束」停止整场。"
+            + stop_hint
             if self._selected_trigger_mode() == TRIGGER_MODE_CONTINUOUS else
             "按住约 0.18 秒开始录音，松开后识别并输入；录音中按 Esc 取消。"
         )
@@ -1091,6 +1110,18 @@ class SettingsWindow(QWidget):
             return
         self._config.set("sound_enabled", checked)
         self.sound_enabled_changed.emit(checked)
+
+    def _on_download_source_changed(self, _index: int = 0):
+        if self._loading:
+            return
+        value = self._download_source_combo.currentData() or "auto"
+        self._config.set("stt.download_source", value)
+
+    def _on_esc_stop_toggled(self, checked: bool):
+        if self._loading:
+            return
+        self._config.set("audio.esc_stops_continuous", bool(checked))
+        self._refresh_hotkey_hint()
 
     def _on_restore_clipboard_toggled(self, checked: bool):
         if self._loading:
@@ -1117,8 +1148,16 @@ class SettingsWindow(QWidget):
         has_modifier = any(
             p.strip() in ("ctrl", "alt", "shift", "win", "cmd") for p in parts
         )
+        problem = ""
         if not has_modifier:
-            QMessageBox.warning(self, "提示", "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。")
+            problem = "快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift）。"
+        elif is_reserved_hotkey(hotkey):
+            problem = (
+                f"{format_hotkey(hotkey)} 是系统或常用软件的快捷键，"
+                "占用后它在其他软件里会失效。请换一个组合，例如 Alt + Z。"
+            )
+        if problem:
+            QMessageBox.warning(self, "提示", problem)
             self._loading = True
             self._hotkey_edit.set_value(self._config.get("hotkey", DEFAULT_HOTKEY))
             self._loading = False
@@ -1173,7 +1212,7 @@ class SettingsWindow(QWidget):
             QMessageBox.warning(
                 self,
                 "提示",
-                "远程 API 须使用 HTTPS；本地 localhost / 127.0.0.1 可用 HTTP。",
+                "远程 API 须使用 HTTPS；本机或局域网地址（localhost、192.168.x.x 等）可用 HTTP。",
             )
             self._loading = True
             self._llm_url_edit.setText(self._config.get("llm.api_url", ""))
@@ -1198,7 +1237,9 @@ class SettingsWindow(QWidget):
         url = self._llm_url_edit.text().strip()
         key = self._llm_key_edit.text().strip()
         model = self._llm_model_edit.text().strip()
-        if not all([url, key, model]):
+        from voiceink.text_polisher import polish_settings_complete
+
+        if not polish_settings_complete(url, key, model):
             self._llm_test_status.setText("请填写完整的接口信息。")
             return
 

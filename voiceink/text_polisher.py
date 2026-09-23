@@ -11,29 +11,56 @@ log = logging.getLogger("VoiceInk")
 _LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
 
 INSECURE_URL_ERROR = (
-    "安全错误: 远程 API URL 必须使用 HTTPS 协议（本地 localhost / 127.0.0.1 可用 HTTP）"
+    "安全错误: 远程 API URL 必须使用 HTTPS 协议"
+    "（本机或局域网地址，如 localhost、192.168.x.x，可用 HTTP）"
 )
 
 
-def is_secure_or_local_url(url: str) -> bool:
-    """Allow HTTPS anywhere, and plain HTTP only for loopback/local endpoints.
+def is_local_endpoint(url: str) -> bool:
+    """True for this machine or the home/office LAN (localhost, 192.168.x.x, *.local…)."""
+    host = (urlparse((url or "").strip()).hostname or "").strip("[]").lower()
+    if not host:
+        return False
+    if host in _LOCAL_HOSTNAMES or host.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
 
-    This reconciles the "强制 HTTPS" security policy with the product promise of
-    supporting local OpenAI-compatible servers such as Ollama
-    (``http://localhost:11434/v1``).
+
+def is_secure_or_local_url(url: str) -> bool:
+    """Allow HTTPS anywhere; plain HTTP only for this machine or the home/office LAN.
+
+    Covers local OpenAI-compatible servers such as Ollama on
+    ``http://localhost:11434/v1`` or on another PC at ``http://192.168.1.20:11434/v1``.
+    Public addresses must use HTTPS because the API key travels in the header.
     """
     url = (url or "").strip()
     if url.startswith("https://"):
         return True
     if url.startswith("http://"):
-        host = (urlparse(url).hostname or "").strip("[]")
-        if host in _LOCAL_HOSTNAMES:
-            return True
-        try:
-            return ipaddress.ip_address(host).is_loopback
-        except ValueError:
-            return False
+        return is_local_endpoint(url)
     return False
+
+
+def api_key_required(url: str) -> bool:
+    """Local servers such as Ollama often run without authentication."""
+    return not is_local_endpoint(url)
+
+
+def polish_settings_complete(api_url: str, api_key: str, model_name: str) -> bool:
+    if not (api_url or "").strip() or not (model_name or "").strip():
+        return False
+    return bool((api_key or "").strip()) or not api_key_required(api_url)
+
+
+def _request_headers(api_key: str) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 POLISH_PROMPT = (
     "你是一个纯文本润色工具，不是对话助手。\n"
@@ -112,10 +139,7 @@ class PolishWorker(QThread):
             log.info("正在调用 LLM %s (%s)...", self._action_label, self._model_name)
             log.debug("原文长度: %d 字符", len(self._text))
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._api_key}"
-            }
+            headers = _request_headers(self._api_key)
 
             payload = {
                 "model": self._model_name,
@@ -236,10 +260,7 @@ class TextPolisher(QObject):
             if not url.endswith("/chat/completions"):
                 url = url.rstrip("/") + "/chat/completions"
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
+            headers = _request_headers(api_key)
 
             payload = {
                 "model": model_name,

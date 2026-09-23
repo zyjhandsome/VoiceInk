@@ -438,11 +438,60 @@ class TestHotkeyBinding:
 
 
 class TestAdvancedDevices:
+    def test_first_device_index_zero_is_kept(self, settings_window, config):
+        combo = settings_window._mic_device_combo
+        settings_window._loading = True
+        combo.clear()
+        combo.addItem("自动选择", -1)
+        combo.addItem("麦克风 (设备 0)", 0)
+        combo.setCurrentIndex(1)
+        settings_window._loading = False
+
+        settings_window._persist_runtime_settings()
+
+        assert config.get("audio.mic_device_index") == 0
+
+    def test_automatic_device_still_saves_minus_one(self, settings_window, config):
+        combo = settings_window._mic_device_combo
+        settings_window._loading = True
+        combo.clear()
+        combo.addItem("自动选择", -1)
+        combo.setCurrentIndex(0)
+        settings_window._loading = False
+
+        settings_window._persist_runtime_settings()
+
+        assert config.get("audio.mic_device_index") == -1
+
     def test_device_link_expands_panel(self, settings_window):
         assert settings_window._advanced_audio_panel.isHidden()
         settings_window._toggle_advanced_audio(True)
         assert not settings_window._advanced_audio_panel.isHidden()
         assert "收起" in settings_window._advanced_audio_btn.text()
+
+
+class TestPolishConfigurationStatus:
+    def _fill(self, win, url, key, model):
+        win._llm_enable_row.setChecked(True)
+        win._llm_url_edit.setText(url)
+        win._llm_key_edit.setText(key)
+        win._llm_model_edit.setText(model)
+        win._update_llm_configuration_status()
+
+    def test_local_endpoint_without_key_is_complete(self, settings_window):
+        self._fill(settings_window, "http://localhost:11434/v1", "", "qwen2.5")
+        assert settings_window._llm_missing_fields() == []
+        assert "未配置" not in settings_window._llm_test_status.text()
+
+    def test_remote_endpoint_without_key_reports_missing_key(self, settings_window):
+        self._fill(settings_window, "https://api.deepseek.com/v1", "", "deepseek-chat")
+        assert settings_window._llm_missing_fields() == ["API 密钥"]
+
+    def test_unsaved_credential_is_reported(self, settings_window, config):
+        config._secret_persist_failed = True
+        self._fill(settings_window, "https://api.deepseek.com/v1", "sk-x", "deepseek-chat")
+        text = settings_window._llm_test_status.text()
+        assert "凭据管理器" in text and "重启后需重新填写" in text
 
 
 class TestMicProbe:

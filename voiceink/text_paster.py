@@ -12,6 +12,9 @@ log = logging.getLogger("VoiceInk")
 
 PASTE_DELAY_MS = 150
 VERIFY_AFTER_PASTE_MS = 120
+# Some apps read the clipboard lazily after Ctrl+V; restoring sooner can paste
+# the user's old clipboard instead of the transcript.
+RESTORE_CLIPBOARD_DELAY_MS = 500
 
 
 @dataclass(frozen=True)
@@ -102,7 +105,89 @@ def _process_name_from_window_info(info: tuple) -> str:
                 pass
         return os.path.basename(path) if path else ""
     except Exception:
+        return _process_name_limited(info)
+
+
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_TOKEN_QUERY = 0x0008
+_TOKEN_INTEGRITY_LEVEL = 25
+
+
+def _process_name_limited(info: tuple) -> str:
+    """Elevated processes refuse VM_READ but allow a limited image-name query."""
+    if sys.platform != "win32" or len(info) < 3 or not info[2]:
         return ""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(info[2]))
+        if not handle:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(len(buf))
+            if not kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                return ""
+            return os.path.basename(buf.value)
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return ""
+
+
+def _integrity_rid(pid: int) -> int | None:
+    """Mandatory integrity RID of a process; -1 when its token is off limits."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32
+    advapi32 = ctypes.windll.advapi32
+    advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+    advapi32.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+    advapi32.GetSidSubAuthority.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    advapi32.GetSidSubAuthorityCount.argtypes = [ctypes.c_void_p]
+
+    process = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not process:
+        return None
+    token = wintypes.HANDLE()
+    try:
+        if not advapi32.OpenProcessToken(process, _TOKEN_QUERY, ctypes.byref(token)):
+            return -1
+        try:
+            needed = wintypes.DWORD()
+            advapi32.GetTokenInformation(token, _TOKEN_INTEGRITY_LEVEL, None, 0, ctypes.byref(needed))
+            buf = ctypes.create_string_buffer(needed.value or 64)
+            if not advapi32.GetTokenInformation(
+                token, _TOKEN_INTEGRITY_LEVEL, buf, len(buf), ctypes.byref(needed)
+            ):
+                return None
+            sid = ctypes.cast(buf, ctypes.POINTER(ctypes.c_void_p))[0]
+            count = advapi32.GetSidSubAuthorityCount(sid)[0]
+            return int(advapi32.GetSidSubAuthority(sid, count - 1)[0])
+        finally:
+            kernel32.CloseHandle(token)
+    finally:
+        kernel32.CloseHandle(process)
+
+
+def target_rejects_synthetic_input(info: tuple) -> bool:
+    """True when Windows UIPI will silently drop our Ctrl+V (target is elevated).
+
+    Unknown cases return False so paste behaves as before.
+    """
+    if sys.platform != "win32" or len(info) < 3 or not info[2]:
+        return False
+    try:
+        own = _integrity_rid(os.getpid())
+        target = _integrity_rid(int(info[2]))
+    except Exception:
+        return False
+    if own is None or own < 0 or target is None:
+        return False
+    return target < 0 or target > own
 
 
 def get_foreground_process_name() -> str:
@@ -226,7 +311,32 @@ class TextPaster:
             callback(PasteResult("clipboard"))
             return
 
+        if target_rejects_synthetic_input(info):
+            log.info("目标窗口以更高权限运行，系统会拦截模拟粘贴；已复制到剪贴板")
+            callback(PasteResult("clipboard", target_app=target_app, detail="elevated"))
+            return
+
+        def _restore_clipboard():
+            try:
+                if pyperclip.paste() == text:
+                    pyperclip.copy(old_clipboard)
+            except Exception:
+                pass
+
+        def _keep_for_manual_paste(detail: str = ""):
+            try:
+                pyperclip.copy(text)
+            except Exception:
+                pass
+            callback(PasteResult("clipboard", target_app=target_app, detail=detail))
+
         def _do_paste():
+            # Keystrokes cannot be recalled once sent, so a focus change during
+            # the delay must stop the shortcut rather than be reported afterwards.
+            if not _verify_paste_target(hwnd):
+                log.info("粘贴前焦点已切换到其他窗口，未发送粘贴键；已保留剪贴板内容")
+                _keep_for_manual_paste("focus_changed")
+                return
             try:
                 _paste_shortcut()
             except Exception as e:
@@ -237,18 +347,13 @@ class TextPaster:
 
         def _verify():
             if _verify_paste_target(hwnd):
-                if self.restore_clipboard and old_clipboard is not None:
-                    try:
-                        pyperclip.copy(old_clipboard)
-                    except Exception:
-                        pass
+                # pyperclip only reads text; an empty read may be an image we
+                # cannot put back, so leave the transcript rather than wipe it.
+                if self.restore_clipboard and old_clipboard:
+                    QTimer.singleShot(RESTORE_CLIPBOARD_DELAY_MS, _restore_clipboard)
                 callback(PasteResult("sent", target_app=target_app))
             else:
                 log.info("粘贴校验未通过（焦点已切换或目标不可粘贴），保留剪贴板内容")
-                try:
-                    pyperclip.copy(text)
-                except Exception:
-                    pass
-                callback(PasteResult("clipboard", target_app=target_app))
+                _keep_for_manual_paste()
 
         QTimer.singleShot(PASTE_DELAY_MS, _do_paste)

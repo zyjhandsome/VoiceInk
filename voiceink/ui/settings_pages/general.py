@@ -71,6 +71,13 @@ def build_general_page(win) -> QWidget:
     )
     record_lay.addWidget(stacked_field_row("录音快捷键", win._hotkey_edit))
     record_lay.addWidget(win._hotkey_hint)
+    record_lay.addWidget(group_divider())
+    win._esc_stop_row = ToggleOptionRow(
+        "Esc 结束持续转写",
+        "关闭后，在其他软件里按 Esc 不会中断监听；用听写条「结束」停止",
+    )
+    win._esc_stop_row.toggled.connect(win._on_esc_stop_toggled)
+    record_lay.addWidget(win._esc_stop_row)
     page.add(settings_section("录音", record_card))
 
     # ── 音频 ──
@@ -158,7 +165,7 @@ def build_general_page(win) -> QWidget:
     win._system_device_combo.setFixedWidth(tok.CONTROL_DEVICE_COMBO_WIDTH)
     adv_lay.addWidget(labeled_row("麦克风", win._mic_device_combo))
     adv_lay.addWidget(group_divider())
-    adv_lay.addWidget(labeled_row("电脑声", win._system_device_combo))
+    adv_lay.addWidget(labeled_row("电脑播放", win._system_device_combo))
 
     dev_btn_row = QHBoxLayout()
     dev_btn_row.setContentsMargins(16, 8, 16, 12)

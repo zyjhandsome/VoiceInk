@@ -79,6 +79,71 @@ class TestDrainMixedMono:
         rec._drain_mixed_mono()
         assert rec._drain_mixed_mono() is None  # nothing new second time
 
+    def test_drain_releases_blocks_so_long_sessions_stay_bounded(self):
+        rec = AudioRecorder()
+        lane = _make_lane()
+        rec._lanes = [lane]
+        for _ in range(600):  # one minute of 100 ms blocks
+            lane.chunks.append(np.ones(1600, dtype=np.float32))
+            rec._drain_mixed_mono()
+        assert lane.chunks == []
+
+
+class _FakeStream:
+    def __init__(self, active=True):
+        self.active = active
+
+
+class TestLostDevice:
+    def _recording(self, lane, continuous=True):
+        rec = AudioRecorder()
+        rec._lanes = [lane]
+        rec._is_recording = True
+        rec._continuous_mode = continuous
+        rec._segment_live = not continuous
+        rec._segmenter = _FakeSegmenter()
+        return rec
+
+    def test_microphone_lane_without_callbacks_is_reported(self):
+        lane = _make_lane()
+        lane.stream = _FakeStream()
+        lane.last_chunk_at -= AudioRecorder.LANE_STALL_SEC + 1
+        rec = self._recording(lane)
+        errors = []
+        rec.error.connect(errors.append)
+
+        rec._on_continuous_tick()
+
+        assert errors and "音频设备已断开" in errors[0]
+        assert rec.is_recording is False
+
+    def test_silent_loopback_lane_is_not_reported(self):
+        lane = _make_lane(role="system")
+        lane.stream = _FakeStream()
+        lane.last_chunk_at -= AudioRecorder.LANE_STALL_SEC + 10
+        rec = self._recording(lane)
+        errors = []
+        rec.error.connect(errors.append)
+
+        rec._on_continuous_tick()
+
+        assert errors == []
+        assert rec.is_recording is True
+
+    def test_inactive_stream_stops_hold_recording(self):
+        lane = _make_lane(role="system")
+        lane.stream = _FakeStream(active=False)
+        rec = self._recording(lane, continuous=False)
+        errors = []
+        finished = []
+        rec.error.connect(errors.append)
+        rec.recording_finished.connect(finished.append)
+
+        rec._on_continuous_tick()
+
+        assert errors and rec.is_recording is False
+        assert finished == []
+
 
 class TestContinuousFlush:
     """FR-VAD-05: trailing speech must be flushed on stop, not lost."""

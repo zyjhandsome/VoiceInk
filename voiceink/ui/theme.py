@@ -69,6 +69,20 @@ def current_effective_theme() -> EffectiveTheme:
     return _current_effective
 
 
+def watch_system_color_scheme(callback) -> bool:
+    """Call ``callback()`` when Windows switches light/dark (Qt 6.5+)."""
+    from PyQt6.QtGui import QGuiApplication
+
+    app = QGuiApplication.instance()
+    hints = app.styleHints() if app is not None else None
+    signal = getattr(hints, "colorSchemeChanged", None)
+    if signal is None:
+        log.info("当前 Qt 不支持系统配色变化通知，「跟随系统」仅在启动和切换时生效")
+        return False
+    signal.connect(lambda *_args: callback())
+    return True
+
+
 def _application_palette(effective: EffectiveTheme) -> QPalette:
     """Build a native Qt palette for dialogs not owned by a styled surface."""
     t = dt.tokens_for(effective)

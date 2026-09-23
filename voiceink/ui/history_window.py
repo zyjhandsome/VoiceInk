@@ -443,7 +443,7 @@ class HistoryWindow(QWidget):
                 QListWidget {{
                     background: transparent;
                     color: transparent;
-                    border: none;
+                    border: 2px solid transparent;
                     padding: 0;
                     outline: none;
                 }}
@@ -468,7 +468,7 @@ class HistoryWindow(QWidget):
                     border: none;
                     outline: none;
                 }}
-                QListWidget:focus {{ border: none; outline: none; }}
+                QListWidget:focus {{ border: {tok.FOCUS_RING}; outline: none; }}
                 QScrollBar:vertical {{
                     background: transparent;
                     width: 6px;
@@ -667,6 +667,22 @@ class HistoryWindow(QWidget):
             self._copy_raw_btn.setStyleSheet(ss.BTN_PRIMARY)
             self._copy_polished_btn.setStyleSheet(ss.BTN_GHOST_SM)
         self._copy_polished_btn.setVisible(has_polished)
+        self._sync_copy_tooltips(has_polished)
+
+    def _copy_follows_raw_view(self, has_polished: bool) -> bool:
+        return not has_polished or not self._view_polished
+
+    def _sync_copy_tooltips(self, has_polished: bool) -> None:
+        """Ctrl+C copies what is on screen; only the matching button advertises it."""
+        shortcut = " · Ctrl+C"
+        if len(self._selected_session_ids()) > 1:
+            self._copy_raw_btn.setToolTip(
+                "按时间合并复制所选会话的最终文本（有润色时用润色版）" + shortcut
+            )
+            return
+        raw_view = self._copy_follows_raw_view(has_polished)
+        self._copy_raw_btn.setToolTip("复制识别原文" + (shortcut if raw_view else ""))
+        self._copy_polished_btn.setToolTip("复制润色后的全文" + ("" if raw_view else shortcut))
 
     # ── layout ────────────────────────────────────────────────────
 
@@ -723,7 +739,9 @@ class HistoryWindow(QWidget):
         self._session_list = _SessionList()
         self._session_list.setObjectName("historyTimeStream")
         self._session_list.setAccessibleName("转写会话列表")
-        self._session_list.setToolTip("Ctrl / Shift 可多选；Delete 删除；Ctrl+C 复制")
+        self._session_list.setToolTip(
+            "Ctrl / Shift 可多选；Delete 删除；Ctrl+C 复制当前查看的版本（多选时复制各项最终文本）"
+        )
         self._session_list.setFrameShape(QFrame.Shape.NoFrame)
         self._session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._session_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -1043,6 +1061,7 @@ class HistoryWindow(QWidget):
         item = self._single_selected_item()
         if item is not None:
             self._expand_session(item)
+        self._sync_copy_tooltips(self._current_selection_has_polished())
 
     def _single_selected_item(self) -> QListWidgetItem | None:
         selected = [it for it in self._session_list.selectedItems() if it.data(Qt.ItemDataRole.UserRole)]
@@ -1226,10 +1245,10 @@ class HistoryWindow(QWidget):
         if len(sessions) > 1:
             self._copy_joined_effective(sessions)
             return
-        if self._current_selection_has_polished():
-            self._copy_selected_polished()
-        else:
+        if self._copy_follows_raw_view(self._current_selection_has_polished()):
             self._copy_selected_raw()
+        else:
+            self._copy_selected_polished()
 
     def _show_feedback(self, text: str) -> None:
         self._transient_active = True
@@ -1276,6 +1295,11 @@ class HistoryWindow(QWidget):
         self._pending_delete = []
         self._toast.hide()
         self.refresh()
+
+    def flush_pending_delete(self) -> None:
+        """Apply a delete still inside its undo window, e.g. before quitting."""
+        self._undo_timer.stop()
+        self._commit_pending_delete()
 
     def _commit_pending_delete(self) -> None:
         if not self._pending_delete:

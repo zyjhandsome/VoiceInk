@@ -9,7 +9,12 @@ from typing import Any
 from PyQt6.QtCore import QTimer
 
 from voiceink.version import __version__ as VERSION
-from voiceink.speech_recognizer import DEFAULT_MODEL_ID, LEGACY_DEFAULT_MODEL_IDS
+from voiceink.secret_store import default_secret_store
+from voiceink.speech_recognizer import (
+    DEFAULT_MODEL_ID,
+    LEGACY_DEFAULT_MODEL_IDS,
+    default_models_dir,
+)
 
 log = logging.getLogger("VoiceInk")
 
@@ -21,19 +26,7 @@ _TEST_POLLUTION_KEYS = frozenset({"test_key", "atomic_test"})
 
 
 def _get_default_models_dir() -> Path:
-    """Return default models directory. Packaged exe uses install dir."""
-    # Packaged exe: try install directory first
-    if hasattr(sys, '_MEIPASS'):
-        install_models = Path(sys._MEIPASS).parent / "models"
-        if install_models.exists():
-            return install_models
-        try:
-            install_models.mkdir(parents=True, exist_ok=True)
-            return install_models
-        except OSError:
-            pass  # Permission denied, use user dir
-    # Development or fallback: user directory
-    return Path.home() / ".voiceink" / "models"
+    return default_models_dir()
 
 
 def format_hotkey(hotkey: str) -> str:
@@ -45,6 +38,23 @@ def format_hotkey(hotkey: str) -> str:
         p = p.strip()
         out.append(p.capitalize() if len(p) > 1 else p.upper())
     return " + ".join(out)
+
+# The hotkey's main key is swallowed while held, so these would stop working.
+RESERVED_HOTKEYS = frozenset(
+    frozenset(combo.split("+"))
+    for combo in (
+        "alt+tab", "alt+f4", "alt+esc",
+        "ctrl+a", "ctrl+c", "ctrl+v", "ctrl+x", "ctrl+z", "ctrl+y", "ctrl+s",
+        "ctrl+esc", "ctrl+tab", "win+l", "win+d", "win+tab", "win+v",
+    )
+)
+
+
+def is_reserved_hotkey(hotkey: str) -> bool:
+    parts = frozenset(p.strip().lower() for p in (hotkey or "").split("+") if p.strip())
+    parts = frozenset("win" if p == "cmd" else p for p in parts)
+    return parts in RESERVED_HOTKEYS
+
 
 TRIGGER_MODE_HOTKEY = "hotkey"
 TRIGGER_MODE_CONTINUOUS = "continuous"
@@ -64,11 +74,13 @@ DEFAULT_CONFIG = {
         "trigger_mode": "continuous",
         "mic_device_index": -1,
         "system_device_index": -1,
+        "esc_stops_continuous": True,
     },
     "stt": {
         "model_id": DEFAULT_MODEL_ID,
         "num_threads": 4,
         "models_dir": "",
+        "download_source": "auto",
     },
     "llm": {
         "enabled": False,
@@ -94,12 +106,22 @@ DEFAULT_CONFIG = {
 }
 
 
+SECRET_KEY = "llm.api_key"
+
+
 class Config:
-    def __init__(self, config_dir: Path | str | None = None):
+    def __init__(self, config_dir: Path | str | None = None, secret_store=None):
         if config_dir is not None:
             self._config_dir = Path(config_dir)
         else:
             self._config_dir = Path.home() / ".voiceink"
+        # Only the real profile uses Credential Manager; isolated dirs (tests,
+        # portable copies) keep everything in their own config.json.
+        if secret_store is None and config_dir is None:
+            secret_store = default_secret_store()
+        self._secrets = secret_store
+        self._secret_value: str | None = None
+        self._secret_persist_failed = False
         self._config_file = self._config_dir / "config.json"
         self._models_dir = _get_default_models_dir()
         self._config: dict = {}
@@ -127,8 +149,13 @@ class Config:
             try:
                 with open(self._config_file, "r", encoding="utf-8") as f:
                     raw = json.load(f)
-            except (json.JSONDecodeError, OSError) as e:
-                log.warning("配置文件读取失败，使用默认配置: %s", e)
+                if not isinstance(raw, dict):
+                    raise ValueError("顶层不是对象")
+            except (json.JSONDecodeError, ValueError, OSError) as e:
+                backup = self._backup_unreadable_config()
+                log.warning(
+                    "配置文件读取失败，使用默认配置（原文件已备份到 %s）: %s", backup, e
+                )
                 raw = {}
         self._extra_keys = {k: v for k, v in raw.items() if k not in DEFAULT_CONFIG}
         self._config = self._merge_defaults(DEFAULT_CONFIG, raw)
@@ -138,6 +165,44 @@ class Config:
         if not config_existed:
             self._config["first_run_welcome_seen"] = False
         self._migrate_stt_model()
+        self._load_secret()
+
+    def _load_secret(self) -> None:
+        store = getattr(self, "_secrets", None)
+        if store is None:
+            return
+        in_file = str(self._config.get("llm", {}).get("api_key", "") or "")
+        stored = store.read()
+        if stored is None:
+            # Credential Manager unreadable: an older plaintext key still works
+            # this run, but a newly entered key must not land in config.json.
+            self._secret_value = in_file
+            return
+        if in_file and store.write(in_file):
+            log.info("已将 API Key 从配置文件迁移到 Windows 凭据管理器")
+            stored = in_file
+            self._config.setdefault("llm", {})["api_key"] = ""
+            self.save_immediate()
+        elif in_file:
+            stored = in_file
+        self._secret_value = stored
+
+    @property
+    def secret_persist_failed(self) -> bool:
+        """True when the last API key change is held in memory only."""
+        return self._secret_persist_failed
+
+    def _backup_unreadable_config(self) -> Path | None:
+        """Keep the unreadable file so the next save cannot erase API keys etc."""
+        import time
+
+        backup = self._config_dir / f"config.corrupt-{time.strftime('%Y%m%d-%H%M%S')}.json"
+        try:
+            os.replace(self._config_file, backup)
+            return backup
+        except OSError as e:
+            log.error("无法备份损坏的配置文件: %s", e)
+            return None
 
     def _strip_test_pollution(self) -> bool:
         """Remove keys accidentally written by un-isolated tests."""
@@ -208,6 +273,7 @@ class Config:
     def save(self):
         """Atomic write: write to temp file then rename to prevent corruption."""
         data = {**self._config, **self._extra_keys}
+        tmp_path = None
         try:
             fd, tmp_path = tempfile.mkstemp(
                 dir=str(self._config_dir), suffix=".tmp", prefix="config_"
@@ -217,12 +283,15 @@ class Config:
             os.replace(tmp_path, str(self._config_file))
         except OSError as e:
             log.error("配置文件保存失败: %s", e)
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     def get(self, key: str, default: Any = None) -> Any:
+        if key == SECRET_KEY and getattr(self, "_secrets", None) is not None:
+            return self._secret_value or ""
         keys = key.split(".")
         value = self._config
         for i, k in enumerate(keys):
@@ -238,6 +307,21 @@ class Config:
         return value
 
     def set(self, key: str, value: Any):
+        store = getattr(self, "_secrets", None)
+        if key == SECRET_KEY and store is not None:
+            secret = str(value or "")
+            if secret == (self._secret_value or "") and not self._secret_persist_failed:
+                return
+            self._secret_value = secret
+            self._secret_persist_failed = not store.write(secret)
+            if self._secret_persist_failed:
+                log.warning("API Key 未能存入凭据管理器，仅在本次运行中有效，未写入配置文件")
+            llm = self._config.setdefault("llm", {})
+            if llm.get("api_key"):
+                # A replaced legacy plaintext key must not outlive the change.
+                llm["api_key"] = ""
+                self._save_timer.start(500)
+            return
         if "." not in key and key not in DEFAULT_CONFIG:
             self._extra_keys[key] = value
             self._save_timer.start(500)

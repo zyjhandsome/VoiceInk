@@ -125,7 +125,7 @@ Effective theme is always `light` or `dark`.
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `SPACE_XS` / `--space-sm` | `8px` | Tight gaps |
+| `SPACE_XS` | `8px` | Tight gaps (the web prototype called this `--space-sm`) |
 | `SPACE_SM` | `12px` | Inline |
 | `SPACE_MD` / `--space-md` | `16px` | Standard padding |
 | `SPACE_LG` / `--space-lg` | `24px` | Section padding |
@@ -146,10 +146,9 @@ Effective theme is always `light` or `dark`.
 
 ### Shadows
 
-| Level | Light | Dark |
-|-------|-------|------|
-| sm | `0 1px 2px rgba(0,0,0,0.05)` | `0 1px 2px rgba(0,0,0,0.35)` |
-| md | `0 4px 6px rgba(0,0,0,0.10)` | `0 4px 8px rgba(0,0,0,0.45)` |
+None. Qt style sheets do not render `box-shadow`, and the desktop surfaces are
+flat: depth comes from `HAIRLINE` borders and surface colour steps. Do not add
+shadow tokens to `design_tokens.py` unless a surface actually paints one.
 
 ---
 

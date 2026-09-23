@@ -204,7 +204,6 @@ _LIGHT: dict[str, Any] = {
     "TEXT": "#111827",
     "TEXT_SEC": "#4B5563",
     "TEXT_DIM": "#667085",
-    "TEXT_MUTED_DARK": "#CCCCCC",
     # Keep AA contrast as small text on BG; visual weight of switches is
     # reduced via track size / shadow, not by lightening this green.
     "GREEN": "#15803D",
@@ -230,20 +229,16 @@ _LIGHT: dict[str, Any] = {
     "TRAY_MENU_BORDER": "#E5E7EB",
     "TRAY_MENU_SEPARATOR": "#E5E7EB",
     "TRAY_MENU_HOVER": "#F3F4F6",
-    "TRAY_MENU_DISABLED": "#9CA3AF",
     "TRAY_MENU_CHECK": "#333333",
     "TRAY_MENU_ARROW": "#9CA3AF",
-    "ISLAND_MINT": "#0F7A4A",
     "FLOAT_BG": "rgba(255, 255, 255, 236)",
     "FLOAT_TILE": "#FFFFFF",
     "FLOAT_BORDER": "rgba(17, 24, 39, 0.10)",
-    "FLOAT_BORDER_INNER": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG": "rgba(17, 24, 39, 0.08)",
     "CHIP_BG_HOVER": "rgba(17, 24, 39, 0.16)",
     "CHIP_BG_PRESS": "rgba(17, 24, 39, 0.12)",
     "FLOAT_TEXT": "#111827",
     "FLOAT_TEXT_SEC": "#4B5563",
-    "FLOAT_SHADOW": "rgba(0, 0, 0, 0.18)",
     "STATE_RECORD": "#DC2626",
 }
 
@@ -277,7 +272,6 @@ _DARK: dict[str, Any] = {
     "TEXT": "#F9FAFB",
     "TEXT_SEC": "#D1D5DB",
     "TEXT_DIM": "#9CA3AF",
-    "TEXT_MUTED_DARK": "#9CA3AF",
     # Mid green (not neon #22C55E) so dark-theme ON switches stay quieter.
     "GREEN": "#16A34A",
     "GREEN_TEXT": "#86EFAC",
@@ -300,20 +294,16 @@ _DARK: dict[str, Any] = {
     "TRAY_MENU_BORDER": "#374151",
     "TRAY_MENU_SEPARATOR": "#4B5563",
     "TRAY_MENU_HOVER": "#374151",
-    "TRAY_MENU_DISABLED": "#6B7280",
     "TRAY_MENU_CHECK": "#F9FAFB",
     "TRAY_MENU_ARROW": "#9CA3AF",
-    "ISLAND_MINT": "#B8F0D2",
     "FLOAT_BG": "rgba(24, 24, 24, 236)",
     "FLOAT_TILE": "#181818",
     "FLOAT_BORDER": "rgba(255, 255, 255, 0.12)",
-    "FLOAT_BORDER_INNER": "rgba(210, 210, 215, 0.24)",
     "CHIP_BG": "rgba(210, 210, 215, 0.40)",
     "CHIP_BG_HOVER": "rgba(210, 210, 215, 0.55)",
     "CHIP_BG_PRESS": "rgba(210, 210, 215, 0.48)",
     "FLOAT_TEXT": "#FFFFFF",
     "FLOAT_TEXT_SEC": "rgba(235, 235, 245, 0.72)",
-    "FLOAT_SHADOW": "rgba(0, 0, 0, 0.38)",
     "STATE_RECORD": "#F87171",
 }
 

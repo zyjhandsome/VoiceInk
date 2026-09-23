@@ -148,7 +148,7 @@ def test_download_is_disabled_immediately_and_error_can_retry(main_window, monke
             "languages": "中文", "accuracy": 3, "speed": 3}
     card = ModelCard(info, False, False)
     worker = MagicMock()
-    monkeypatch.setattr("voiceink.speech_recognizer.ModelDownloadWorker", lambda _mid: worker)
+    monkeypatch.setattr("voiceink.speech_recognizer.ModelDownloadWorker", lambda _mid, **_kw: worker)
     monkeypatch.setattr("voiceink.ui.settings_window.QMessageBox.warning",
                         lambda *args: pytest.fail("Download error should stay on the card"))
     win._model_cards["preview"] = card

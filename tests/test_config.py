@@ -178,3 +178,178 @@ class TestConfigModelsDir:
 class TestConfigRegistrySync:
     def test_registry_sync_handles_errors(self, config):
         assert config.get("auto_start") is not None
+
+
+def test_reserved_hotkeys_are_detected_regardless_of_order():
+    from voiceink.config import is_reserved_hotkey
+
+    assert is_reserved_hotkey("ctrl+c")
+    assert is_reserved_hotkey("C+Ctrl")
+    assert is_reserved_hotkey("cmd+l")
+    assert not is_reserved_hotkey("alt+z")
+    assert not is_reserved_hotkey("alt+space")
+
+
+def test_esc_stops_continuous_defaults_on(config):
+    assert config.get("audio.esc_stops_continuous") is True
+
+
+def test_unreadable_config_is_backed_up_before_defaults_are_saved(config_home):
+    from voiceink.config import Config
+
+    broken = '{"llm": {"api_key": "sk-keep-me"'
+    (config_home / "config.json").write_text(broken, encoding="utf-8")
+
+    cfg = Config(config_dir=config_home)
+    cfg.save_immediate()
+
+    backups = list(config_home.glob("config.corrupt-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == broken
+    assert cfg.get("llm.api_key") == ""
+
+
+def test_non_object_config_is_treated_as_unreadable(config_home):
+    from voiceink.config import Config
+
+    (config_home / "config.json").write_text("[1, 2]", encoding="utf-8")
+    cfg = Config(config_dir=config_home)
+    assert cfg.get("hotkey") == "alt+z"
+    assert list(config_home.glob("config.corrupt-*.json"))
+
+
+def test_save_survives_mkstemp_failure(config, monkeypatch):
+    import tempfile
+
+    def _fail(**_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tempfile, "mkstemp", _fail)
+    config.save()
+
+
+class _FakeSecrets:
+    def __init__(self, value="", fail_write=False, unreadable=False):
+        self.value = value
+        self.fail_write = fail_write
+        self.unreadable = unreadable
+        self.writes = []
+
+    def read(self):
+        return None if self.unreadable else self.value
+
+    def write(self, value):
+        self.writes.append(value)
+        if self.fail_write:
+            return False
+        self.value = value
+        return True
+
+
+def _write_config(config_home, data):
+    import json
+
+    (config_home / "config.json").write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_api_key_in_file_is_migrated_to_credential_store(config_home):
+    import json
+    from voiceink.config import Config
+
+    _write_config(config_home, {"llm": {"api_key": "sk-old"}})
+    secrets = _FakeSecrets()
+    cfg = Config(config_dir=config_home, secret_store=secrets)
+
+    assert cfg.get("llm.api_key") == "sk-old"
+    assert secrets.value == "sk-old"
+    on_disk = json.loads((config_home / "config.json").read_text(encoding="utf-8"))
+    assert on_disk["llm"]["api_key"] == ""
+
+
+def test_setting_api_key_writes_store_not_file(config_home):
+    import json
+    from voiceink.config import Config
+
+    secrets = _FakeSecrets()
+    cfg = Config(config_dir=config_home, secret_store=secrets)
+    cfg.set("llm.api_key", "sk-new")
+    cfg.save_immediate()
+
+    assert cfg.get("llm.api_key") == "sk-new"
+    on_disk = json.loads((config_home / "config.json").read_text(encoding="utf-8"))
+    assert on_disk["llm"]["api_key"] == ""
+
+
+def _key_on_disk(config_home) -> str:
+    import json
+
+    return json.loads((config_home / "config.json").read_text(encoding="utf-8"))["llm"]["api_key"]
+
+
+def test_store_write_failure_keeps_key_in_memory_only(config_home):
+    from voiceink.config import Config
+
+    secrets = _FakeSecrets(fail_write=True)
+    cfg = Config(config_dir=config_home, secret_store=secrets)
+    cfg.set("llm.api_key", "sk-memory-only")
+    cfg.save_immediate()
+
+    assert cfg.get("llm.api_key") == "sk-memory-only"
+    assert cfg.secret_persist_failed is True
+    assert _key_on_disk(config_home) == ""
+    assert "sk-memory-only" not in (config_home / "config.json").read_text(encoding="utf-8")
+
+
+def test_store_write_retried_after_failure_clears_warning(config_home):
+    from voiceink.config import Config
+
+    secrets = _FakeSecrets(fail_write=True)
+    cfg = Config(config_dir=config_home, secret_store=secrets)
+    cfg.set("llm.api_key", "sk-retry")
+    secrets.fail_write = False
+    cfg.set("llm.api_key", "sk-retry")
+
+    assert cfg.secret_persist_failed is False
+    assert secrets.value == "sk-retry"
+
+
+def test_unreadable_store_keeps_file_key(config_home):
+    from voiceink.config import Config
+
+    _write_config(config_home, {"llm": {"api_key": "sk-file"}})
+    cfg = Config(config_dir=config_home, secret_store=_FakeSecrets(unreadable=True))
+    assert cfg.get("llm.api_key") == "sk-file"
+
+
+def test_unreadable_store_never_writes_new_key_to_file(config_home):
+    from voiceink.config import Config
+
+    secrets = _FakeSecrets(unreadable=True, fail_write=True)
+    cfg = Config(config_dir=config_home, secret_store=secrets)
+    cfg.set("llm.api_key", "sk-new")
+    cfg.save_immediate()
+
+    assert cfg.get("llm.api_key") == "sk-new"
+    assert _key_on_disk(config_home) == ""
+
+
+def test_replacing_legacy_file_key_removes_plaintext_even_if_store_fails(config_home):
+    from voiceink.config import Config
+
+    _write_config(config_home, {"llm": {"api_key": "sk-legacy"}})
+    cfg = Config(config_dir=config_home, secret_store=_FakeSecrets(fail_write=True))
+    assert cfg.get("llm.api_key") == "sk-legacy"
+
+    cfg.set("llm.api_key", "sk-replacement")
+    cfg.save_immediate()
+
+    assert cfg.get("llm.api_key") == "sk-replacement"
+    assert _key_on_disk(config_home) == ""
+
+
+def test_isolated_config_dir_does_not_use_credential_store(config_home, monkeypatch):
+    from voiceink.config import Config
+
+    monkeypatch.setattr("voiceink.config.default_secret_store", lambda: _FakeSecrets("sk-real"))
+    cfg = Config(config_dir=config_home)
+    assert cfg.get("llm.api_key") == ""

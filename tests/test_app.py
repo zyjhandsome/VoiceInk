@@ -40,8 +40,10 @@ class TestIslandUserCopy:
     def test_error_hints_point_to_engine_not_model_nav(self):
         for hint in App.ERROR_HINTS.values():
             assert "设置 → 模型" not in hint
-        assert "设置 → 引擎" in App.ERROR_HINTS["模型未就绪"]
-        assert "设置 → 引擎" in App.ERROR_HINTS["模型未下载"]
+        for key in ("模型未就绪", "模型未下载"):
+            assert "打开 VoiceInk" in App.ERROR_HINTS[key]
+            assert "→ 引擎" in App.ERROR_HINTS[key]
+            assert "右键托盘图标 → 设置" not in App.ERROR_HINTS[key]
 
     def test_model_load_progress_copy_is_single_line(self):
         with app_harness() as h:
@@ -69,16 +71,18 @@ class TestIslandUserCopy:
             h["recognizer"].is_loading = False
             h["app"]._show_model_not_ready()
             msg = h["tray"].showMessage.call_args[0][1]
-            assert "设置 → 引擎" in msg
+            assert "打开 VoiceInk" in msg and "→ 引擎" in msg
+            assert "右键托盘图标 → 设置" not in msg
             assert "设置 → 模型" not in msg
 
     def test_model_load_failure_publishes_unavailable_state(self):
         with app_harness() as h:
-            settings = h["app"]._settings_win = type(
+            settings = type(
                 "SettingsSpy",
                 (),
                 {"set_runtime_status": lambda self, state, label: setattr(self, "value", (state, label))},
             )()
+            h["app"]._main = type("MainSpy", (), {"_settings": settings})()
             h["app"]._on_model_load_progress("模型加载失败: boom")
             assert settings.value == (RuntimeState.UNAVAILABLE, "模型载入失败")
             h["tray"].set_status_summary.assert_any_call("模型载入失败")
@@ -121,7 +125,7 @@ class TestAppInit:
             app = h["app"]
             assert hasattr(app, "_floating")
             assert hasattr(app, "_tray")
-            assert hasattr(app, "_settings_win")
+            assert app._main is None
 
 
 class TestAppSignals:

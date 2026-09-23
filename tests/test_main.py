@@ -89,6 +89,85 @@ class TestWindowsMutex:
         assert closed == [222]
 
 
+class TestLogging:
+    def test_setup_logging_writes_rotating_file_and_crash_log(self, tmp_path):
+        root = logging.getLogger()
+        saved = root.handlers[:]
+        try:
+            path = main.setup_logging(str(tmp_path))
+            logging.getLogger("VoiceInk").info("落盘测试")
+            for handler in root.handlers:
+                handler.flush()
+            assert path is not None
+            assert "落盘测试" in (tmp_path / "voiceink.log").read_text(encoding="utf-8")
+            assert (tmp_path / "crash.log").exists()
+        finally:
+            import faulthandler
+
+            faulthandler.disable()
+            for handler in root.handlers:
+                if handler not in saved:
+                    handler.close()
+            root.handlers[:] = saved
+            if main._crash_file is not None:
+                main._crash_file.close()
+                main._crash_file = None
+
+    def test_setup_logging_without_console_stream(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(main.sys, "stderr", None)
+        root = logging.getLogger()
+        saved = root.handlers[:]
+        try:
+            main.setup_logging(str(tmp_path))
+            assert all(
+                not isinstance(h, logging.StreamHandler) or hasattr(h, "baseFilename")
+                for h in root.handlers
+            )
+        finally:
+            import faulthandler
+
+            faulthandler.disable()
+            for handler in root.handlers:
+                if handler not in saved:
+                    handler.close()
+            root.handlers[:] = saved
+            if main._crash_file is not None:
+                main._crash_file.close()
+                main._crash_file = None
+
+
+class TestActivation:
+    def test_second_instance_reaches_running_server(self, _qapp_session, monkeypatch):
+        monkeypatch.setattr(main, "activation_server_name", lambda: "VoiceInk-activate-test")
+        calls = []
+        server = main.start_activation_server(lambda: calls.append("show"))
+        assert server is not None
+        try:
+            import threading
+
+            result = {}
+            worker = threading.Thread(
+                target=lambda: result.setdefault("ok", main._activate_running_instance())
+            )
+            worker.start()
+            from PyQt6.QtCore import QDeadlineTimer
+
+            deadline = QDeadlineTimer(3000)
+            while worker.is_alive() and not deadline.hasExpired():
+                _qapp_session.processEvents()
+            worker.join(1)
+            for _ in range(20):
+                _qapp_session.processEvents()
+            assert result.get("ok") is True
+            assert calls == ["show"]
+        finally:
+            server.close()
+
+    def test_no_running_server_returns_false(self, _qapp_session, monkeypatch):
+        monkeypatch.setattr(main, "activation_server_name", lambda: "VoiceInk-activate-none")
+        assert main._activate_running_instance() is False
+
+
 class TestExceptionHooks:
     def test_hooks_installed(self):
         log = logging.getLogger("VoiceInk-test-hooks")

@@ -206,6 +206,50 @@ class TestGetModelsDir:
         from pathlib import Path
         assert isinstance(result, Path)
 
+    def test_frozen_read_only_install_dir_falls_back_to_user_dir(self, tmp_path, monkeypatch):
+        import sys
+        import voiceink.speech_recognizer as sr
+
+        install = tmp_path / "Program Files" / "VoiceInk"
+        (install / "models").mkdir(parents=True)
+        monkeypatch.setattr(sys, "_MEIPASS", str(install / "_internal"), raising=False)
+        monkeypatch.setattr(sr, "is_dir_writable", lambda _path: False)
+        assert sr.default_models_dir() == sr.user_models_dir()
+
+    def test_frozen_writable_install_dir_is_used(self, tmp_path, monkeypatch):
+        import sys
+        import voiceink.speech_recognizer as sr
+
+        install = tmp_path / "VoiceInk"
+        monkeypatch.setattr(sys, "_MEIPASS", str(install / "_internal"), raising=False)
+        assert sr.default_models_dir() == install / "models"
+
+    def test_is_dir_writable_true_for_temp_dir(self, tmp_path):
+        from voiceink.speech_recognizer import is_dir_writable
+        assert is_dir_writable(tmp_path) is True
+
+
+class TestDeleteModelResult:
+    def test_reports_failure_when_directory_survives(self, tmp_path, monkeypatch):
+        import voiceink.speech_recognizer as sr
+
+        info = sr.get_model_info("sensevoice")
+        model_dir = tmp_path / info["dir_name"]
+        model_dir.mkdir()
+        monkeypatch.setattr(sr, "_get_models_dir", lambda: tmp_path)
+        monkeypatch.setattr(sr, "_get_portable_model_dir", lambda _mid: None)
+        monkeypatch.setattr(sr.shutil, "rmtree", lambda *_a, **_k: None)
+        assert sr.delete_model("sensevoice") is False
+
+    def test_reports_success_when_directory_removed(self, tmp_path, monkeypatch):
+        import voiceink.speech_recognizer as sr
+
+        info = sr.get_model_info("sensevoice")
+        (tmp_path / info["dir_name"]).mkdir()
+        monkeypatch.setattr(sr, "_get_models_dir", lambda: tmp_path)
+        monkeypatch.setattr(sr, "_get_portable_model_dir", lambda _mid: None)
+        assert sr.delete_model("sensevoice") is True
+
 
 class TestGetModelDir:
     def test_unknown_model_raises(self):
@@ -741,3 +785,142 @@ class TestSpeechRecognizerBehavior:
         assert rec.is_ready is False
         assert rec.is_loading is False
         assert rec.current_model_id == ""
+
+
+class _FakeLoadWorker:
+    instances: list = []
+
+    def __init__(self, model_id, num_threads):
+        from unittest.mock import MagicMock
+
+        self.model_id = model_id
+        self.running = False
+        self.loaded = MagicMock()
+        self.error = MagicMock()
+        self.finished = MagicMock()
+        _FakeLoadWorker.instances.append(self)
+
+    def start(self):
+        self.running = True
+
+    def isRunning(self):
+        return self.running
+
+    def wait(self, _ms=0):
+        return True
+
+    def complete(self, recognizer):
+        self.running = False
+        self.loaded.connect.call_args[0][0](recognizer)
+        self.finished.connect.call_args[0][0]()
+
+
+class TestSwitchModelDuringLoad:
+    def _recognizer(self, monkeypatch):
+        import voiceink.speech_recognizer as sr
+
+        _FakeLoadWorker.instances = []
+        monkeypatch.setattr(sr, "ModelLoadWorker", _FakeLoadWorker)
+        monkeypatch.setattr(sr, "is_model_downloaded", lambda _mid: True)
+        return sr.SpeechRecognizer()
+
+    def test_newer_choice_is_loaded_after_the_running_load(self, monkeypatch):
+        rec = self._recognizer(monkeypatch)
+        ready = []
+        rec.ready.connect(lambda: ready.append(rec.current_model_id))
+
+        rec.configure("sensevoice", 4)
+        rec.configure("paraformer-zh", 4)
+        assert len(_FakeLoadWorker.instances) == 1
+
+        _FakeLoadWorker.instances[0].complete("sensevoice-engine")
+        assert rec.is_ready is False
+        assert ready == []
+        assert [w.model_id for w in _FakeLoadWorker.instances] == ["sensevoice", "paraformer-zh"]
+
+        _FakeLoadWorker.instances[1].complete("paraformer-engine")
+        assert rec.is_ready is True
+        assert rec._recognizer == "paraformer-engine"
+        assert ready == ["paraformer-zh"]
+
+    def test_switching_back_does_not_reload_twice(self, monkeypatch):
+        rec = self._recognizer(monkeypatch)
+        rec.configure("sensevoice", 4)
+        rec.configure("paraformer-zh", 4)
+        rec.configure("sensevoice", 4)
+
+        _FakeLoadWorker.instances[0].complete("sensevoice-engine")
+
+        assert rec.is_ready is True
+        assert rec._recognizer == "sensevoice-engine"
+        assert len(_FakeLoadWorker.instances) == 1
+
+
+class _FakeHttpStream:
+    def __init__(self, body: bytes, length: int | None = None, fail: Exception | None = None):
+        self._body = body
+        self._fail = fail
+        self.headers = {"content-length": str(len(body) if length is None else length)}
+
+    def __enter__(self):
+        if self._fail is not None:
+            raise self._fail
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_bytes(self, chunk_size=0):
+        yield self._body
+
+
+class TestModelDownloadSources:
+    def _worker(self, monkeypatch, tmp_path, responses, source="auto"):
+        import httpx
+        import voiceink.speech_recognizer as sr
+
+        info = {"id": "tiny", "name": "Tiny", "hf_repo": "org/tiny", "dir_name": "tiny", "files": ["a.bin"]}
+        monkeypatch.setattr(sr, "get_model_info", lambda _mid: info)
+        monkeypatch.setattr(sr, "_get_models_dir", lambda: tmp_path)
+        monkeypatch.setattr(sr, "is_model_downloaded", lambda _mid: (tmp_path / "tiny" / "a.bin").exists())
+        urls = []
+
+        def _stream(_method, url, **_kw):
+            urls.append(url)
+            return responses.pop(0)
+
+        monkeypatch.setattr(httpx, "stream", _stream)
+        worker = sr.ModelDownloadWorker("tiny", source=source)
+        done, errors = [], []
+        worker.finished_ok.connect(done.append)
+        worker.error.connect(errors.append)
+        return worker, urls, done, errors
+
+    def test_auto_falls_back_to_mirror_when_official_unreachable(self, monkeypatch, tmp_path):
+        import httpx
+
+        responses = [_FakeHttpStream(b"", fail=httpx.ConnectError("blocked")), _FakeHttpStream(b"weights")]
+        worker, urls, done, errors = self._worker(monkeypatch, tmp_path, responses)
+        worker.run()
+        assert urls[0].startswith("https://huggingface.co/")
+        assert urls[1].startswith("https://hf-mirror.com/")
+        assert done == ["tiny"] and errors == []
+        assert (tmp_path / "tiny" / "a.bin").read_bytes() == b"weights"
+
+    def test_truncated_file_is_not_kept(self, monkeypatch, tmp_path):
+        responses = [_FakeHttpStream(b"half", length=100)]
+        worker, _urls, done, errors = self._worker(monkeypatch, tmp_path, responses, source="huggingface")
+        worker.run()
+        assert done == []
+        assert errors and "不完整" in errors[0]
+        assert not (tmp_path / "tiny" / "a.bin").exists()
+        assert not (tmp_path / "tiny" / "a.bin.tmp").exists()
+
+    def test_download_endpoints_default_to_auto(self):
+        from voiceink.speech_recognizer import download_endpoints, HF_URL, HF_MIRROR_URL
+
+        assert download_endpoints("") == (HF_URL, HF_MIRROR_URL)
+        assert download_endpoints("hf-mirror") == (HF_MIRROR_URL,)

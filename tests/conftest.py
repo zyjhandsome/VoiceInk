@@ -58,6 +58,12 @@ def _isolate_registry_auto_start(monkeypatch):
         monkeypatch.setattr(winreg, "QueryValueEx", _no_entry)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_credential_manager(monkeypatch):
+    """Never read or write the developer's real Windows credentials."""
+    monkeypatch.setattr("voiceink.config.default_secret_store", lambda: None)
+
+
 @pytest.fixture
 def config_home(tmp_path):
     """Isolated ~/.voiceink directory for config tests."""

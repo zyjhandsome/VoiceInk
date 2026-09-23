@@ -110,18 +110,116 @@ def _install_exception_hooks(log: logging.Logger):
     threading.excepthook = _threading_excepthook
 
 
+def activation_server_name() -> str:
+    import getpass
+
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "default"
+    # Named pipes are machine-wide; the single-instance mutex is per session.
+    return f"VoiceInk-activate-{user}"
+
+
+def _activate_running_instance() -> bool:
+    """Ask the running instance to show its window instead of exiting silently."""
+    try:
+        from PyQt6.QtCore import QCoreApplication
+        from PyQt6.QtNetwork import QLocalSocket
+
+        _app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+        sock = QLocalSocket()
+        sock.connectToServer(activation_server_name())
+        if not sock.waitForConnected(1000):
+            return False
+        sock.write(b"show\n")
+        sock.flush()
+        sock.waitForBytesWritten(1000)
+        sock.disconnectFromServer()
+        return True
+    except Exception:
+        return False
+
+
+def start_activation_server(on_activate):
+    from PyQt6.QtNetwork import QLocalServer
+
+    server = QLocalServer()
+    name = activation_server_name()
+    QLocalServer.removeServer(name)
+    if not server.listen(name):
+        _log.warning("唤起服务启动失败: %s", server.errorString())
+        return None
+
+    def _on_connection():
+        while server.hasPendingConnections():
+            conn = server.nextPendingConnection()
+            if conn is None:
+                break
+            conn.readyRead.connect(conn.readAll)
+            conn.disconnected.connect(conn.deleteLater)
+            on_activate()
+
+    server.newConnection.connect(_on_connection)
+    return server
+
+
+LOG_FILE_MAX_BYTES = 1_000_000
+LOG_FILE_BACKUPS = 3
+_crash_file = None
+
+
+def log_dir() -> str:
+    return os.path.join(os.path.expanduser("~"), ".voiceink", "logs")
+
+
+def setup_logging(directory: str | None = None) -> str | None:
+    """Log to a rotating file; the windowed build has no console to read."""
+    import faulthandler
+    from logging.handlers import RotatingFileHandler
+
+    global _crash_file
+    directory = directory or log_dir()
+    fmt = logging.Formatter(
+        "[%(asctime)s] %(levelname)s %(threadName)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handlers: list[logging.Handler] = []
+    log_path = None
+    try:
+        os.makedirs(directory, exist_ok=True)
+        log_path = os.path.join(directory, "voiceink.log")
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=LOG_FILE_MAX_BYTES,
+            backupCount=LOG_FILE_BACKUPS,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(fmt)
+        handlers.append(file_handler)
+        # Native crashes (ONNX Runtime, PortAudio) never reach excepthook.
+        _crash_file = open(os.path.join(directory, "crash.log"), "a", encoding="utf-8")
+        faulthandler.enable(file=_crash_file, all_threads=True)
+    except OSError as exc:
+        log_path = None
+        if sys.stderr is not None:
+            print(f"VoiceInk: 无法写入日志目录 {directory}: {exc}", file=sys.stderr)
+    if sys.stderr is not None:
+        console = logging.StreamHandler(sys.stderr)
+        console.setFormatter(logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S"))
+        handlers.append(console)
+    logging.basicConfig(level=logging.INFO, handlers=handlers, force=True)
+    return log_path
+
+
 def main():
     if not check_single_instance():
-        print("VoiceInk 已在运行中。")
+        _activate_running_instance()
         sys.exit(0)
 
     atexit.register(cleanup_lock)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    setup_logging()
     log = logging.getLogger("VoiceInk")
     _install_exception_hooks(log)
     log.info("VoiceInk 启动中...")
@@ -155,6 +253,7 @@ def main():
     from voiceink.app import App
     voice_ink = App()
     voice_ink.start()
+    _activation_server = start_activation_server(voice_ink.show_main_window)
 
     exit_code = app.exec()
     cleanup_lock()

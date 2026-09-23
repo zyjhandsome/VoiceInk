@@ -40,6 +40,18 @@ class ReleaseInfo:
     version: str
     asset_name: str
     asset_url: str
+    size: int = 0
+    sha256: str = ""
+
+
+def asset_sha256(asset: dict) -> str:
+    """GitHub publishes ``digest: "sha256:<hex>"`` for release assets."""
+    digest = str(asset.get("digest") or "").strip().lower()
+    if digest.startswith("sha256:"):
+        value = digest.split(":", 1)[1]
+        if re.fullmatch(r"[0-9a-f]{64}", value):
+            return value
+    return ""
 
 
 def version_key(text: str) -> tuple[int, int, int]:
@@ -96,10 +108,16 @@ def release_from_payload(payload: dict, *, current: str) -> ReleaseInfo | None:
     asset = pick_installer_asset(list(payload.get("assets") or []), version)
     if asset is None:
         return None
+    try:
+        size = int(asset.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
     return ReleaseInfo(
         version=version,
         asset_name=str(asset.get("name") or ""),
         asset_url=str(asset.get("browser_download_url") or ""),
+        size=max(0, size),
+        sha256=asset_sha256(asset),
     )
 
 
@@ -131,22 +149,66 @@ def launch_installer(path: str) -> None:
     subprocess.Popen([path], **kwargs)
 
 
-def download_installer(url: str, dest: Path, urlopen, on_progress=None) -> None:
+class InstallerVerificationError(ValueError):
+    pass
+
+
+class MissingDigestError(InstallerVerificationError):
+    """The release publishes no SHA-256, so the installer cannot be verified."""
+
+
+MISSING_DIGEST_MESSAGE = "该版本未提供安装包校验值，为安全起见不自动安装，请到 GitHub 发布页手动下载"
+
+
+def download_installer(
+    url: str,
+    dest: Path,
+    urlopen,
+    on_progress=None,
+    *,
+    expected_size: int = 0,
+    sha256: str = "",
+) -> None:
+    """Download to ``<dest>.part`` and only rename after size/hash checks pass.
+
+    A published SHA-256 is mandatory: without it nothing is downloaded.
+    """
+    import hashlib
+    import os
+
     if not is_trusted_installer_url(url):
         raise ValueError("安装包地址不受信任")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", sha256 or ""):
+        raise MissingDigestError("发布未提供有效的 SHA-256 校验值")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with urlopen(_request(url), timeout=60) as response:
-        total = int(response.headers.get("Content-Length") or 0)
-        got = 0
-        with dest.open("wb") as handle:
-            while True:
-                chunk = response.read(256 * 1024)
-                if not chunk:
-                    break
-                handle.write(chunk)
-                got += len(chunk)
-                if on_progress is not None:
-                    on_progress(got, total)
+    part = dest.with_name(dest.name + ".part")
+    hasher = hashlib.sha256()
+    try:
+        with urlopen(_request(url), timeout=60) as response:
+            total = int(response.headers.get("Content-Length") or 0) or expected_size
+            got = 0
+            with part.open("wb") as handle:
+                while True:
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    hasher.update(chunk)
+                    got += len(chunk)
+                    if on_progress is not None:
+                        on_progress(got, total)
+        want = expected_size or total
+        if want and got != want:
+            raise InstallerVerificationError(f"安装包不完整（{got} / {want} 字节）")
+        if hasher.hexdigest() != sha256.lower():
+            raise InstallerVerificationError("安装包校验值不符")
+        os.replace(part, dest)
+    except BaseException:
+        try:
+            part.unlink()
+        except OSError:
+            pass
+        raise
 
 
 class UpdateCheckWorker(QThread):
@@ -172,10 +234,20 @@ class UpdateDownloadWorker(QThread):
     finished_path = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, url: str, dest: Path, parent=None):
+    def __init__(
+        self,
+        url: str,
+        dest: Path,
+        parent=None,
+        *,
+        expected_size: int = 0,
+        sha256: str = "",
+    ):
         super().__init__(parent)
         self._url = url
         self._dest = dest
+        self._expected_size = expected_size
+        self._sha256 = sha256
 
     def run(self) -> None:
         from urllib.request import urlopen
@@ -186,8 +258,16 @@ class UpdateDownloadWorker(QThread):
                 self._dest,
                 urlopen,
                 on_progress=lambda got, total: self.progress.emit(got, total),
+                expected_size=self._expected_size,
+                sha256=self._sha256,
             )
             self.finished_path.emit(str(self._dest))
+        except MissingDigestError as exc:
+            log.warning("更新包缺少校验值: %s", exc)
+            self.failed.emit(MISSING_DIGEST_MESSAGE)
+        except InstallerVerificationError as exc:
+            log.warning("更新包校验失败: %s", exc)
+            self.failed.emit("下载的安装包不完整或已损坏，请重试")
         except Exception as exc:
             log.info("下载更新失败: %s", exc)
             self.failed.emit("下载失败，请稍后再试")

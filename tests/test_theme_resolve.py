@@ -707,3 +707,24 @@ class TestFourSurfaceThemeAwareProtocol:
         apply_theme(mode="light", surfaces=(boom, tracker))
         assert tracker.called
         assert any("表面换肤失败" in record.message for record in caplog.records)
+
+
+def test_watch_system_color_scheme_connects_to_style_hints():
+    from PyQt6.QtGui import QGuiApplication
+    from voiceink.ui.theme import watch_system_color_scheme
+
+    assert hasattr(QGuiApplication.styleHints(), "colorSchemeChanged")
+    calls = []
+    assert watch_system_color_scheme(lambda: calls.append(1)) is True
+
+
+def test_system_scheme_change_reapplies_only_in_system_mode():
+    from unittest.mock import patch
+    from tests.helpers.app_harness import app_harness
+
+    for mode, expected in (("system", 1), ("dark", 0), ("light", 0)):
+        with app_harness({"appearance.theme_mode": mode}) as h:
+            app = h["app"]
+            with patch.object(app, "apply_appearance_theme") as apply:
+                app._on_system_color_scheme_changed()
+            assert apply.call_count == expected

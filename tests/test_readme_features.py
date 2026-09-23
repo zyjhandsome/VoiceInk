@@ -305,12 +305,42 @@ class TestReadmeIslandCopy:
         assert "双击托盘会唤醒空间岛" not in text
 
 
+class TestReadmeReliabilityPromises:
+    """README states the guarantees covered by the reliability regression tests."""
+
+    def _readme(self) -> str:
+        from pathlib import Path
+
+        return (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+
+    def test_output_and_polish_guarantees_are_documented(self):
+        text = self._readme()
+        assert "就不发送粘贴键" in text
+        assert "回退它自己的原文" in text
+        assert "改动了原话里的阿拉伯数字" in text
+        assert "Key 可留空" in text
+
+    def test_storage_and_update_guarantees_are_documented(self):
+        text = self._readme()
+        assert "只在本次运行中有效、同样不写入 `config.json`" in text
+        assert "没有公布该安装包 SHA-256 时，VoiceInk 不会下载或自动安装" in text
+        assert "长时间监听只在内存中保留当前这句话" not in text
+        assert "自动暂停监听" in text
+
+    def test_unverified_claims_are_marked(self):
+        text = self._readme()
+        assert "准确率最高" not in text
+        assert "（实验性）" in text
+        assert "尚未做系统验证" in text
+
+
 class TestReadmeSettingsLifecycle:
     """README: 修改触发方式/音频来源后保存生效；关闭设置恢复快捷键。"""
 
     def test_settings_closed_resumes_hotkey_listener(self):
         with app_harness({"audio.trigger_mode": "hotkey"}) as h:
-            h["app"]._settings_win = type("W", (), {"cancel_hotkey_capture": lambda self: None})()
+            settings = type("W", (), {"cancel_hotkey_capture": lambda self: None})()
+            h["app"]._main = type("M", (), {"_settings": settings})()
             h["hotkey"].pause()
             h["app"]._on_settings_closed()
             h["hotkey"].resume.assert_called_once()

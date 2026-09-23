@@ -1,6 +1,8 @@
 import logging
+import re
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -40,6 +42,7 @@ from voiceink.history_store import HistoryStore, SegmentRecord
 from voiceink.text_polisher import (
     LLM_MODE_POLISH,
     TextPolisher,
+    polish_settings_complete,
 )
 from voiceink.text_paster import PasteResult, TextPaster
 from voiceink.sound_manager import SoundManager
@@ -52,6 +55,82 @@ log = logging.getLogger("VoiceInk")
 
 MIN_AUDIO_SAMPLES = 1600  # 0.1s at 16kHz — ignore recordings shorter than this
 SHORT_TAP_TRAY_COOLDOWN_S = 300  # 托盘「按过短」提示最少间隔，避免输入法反复弹窗
+OUTPUT_WATCHDOG_MS = 45_000  # 润色超时 15s + 粘贴校验，远小于此值
+# Queued speech beyond this pauses continuous listening (≈11 MB of float32);
+# captured audio is never dropped, only further capture stops.
+MAX_BACKLOG_AUDIO_SECONDS = 180
+# Top-level key: Config drops unknown keys nested under defaults like "stt".
+LOAD_SECONDS_KEY = "stt_load_seconds"
+
+
+_THOUSANDS_SEP_RE = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+# Words containing a negation character without negating anything.
+_NON_NEGATING_WORDS = (
+    "非常", "无论", "不过", "不仅", "不但", "未来", "无线",
+    "特别", "区别", "分别", "类别", "级别", "告别", "识别", "性别", "别人", "别的",
+)
+_NEGATION_CHARS = frozenset("不没别未无非勿莫")
+_EN_NEGATION_RE = re.compile(
+    r"\b(?:not|no|never|none|cannot)\b|n't\b", re.IGNORECASE | re.ASCII
+)
+_LATIN_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+
+def _numbers(text: str) -> set[str]:
+    values = set()
+    for match in _NUMBER_RE.findall(_THOUSANDS_SEP_RE.sub("", text)):
+        whole, _, frac = match.partition(".")
+        value = (whole.lstrip("0") or "0") + (f".{frac.rstrip('0')}" if frac.rstrip("0") else "")
+        if value != "0":
+            values.add(value)
+    return values
+
+
+def _has_negation(text: str) -> bool:
+    for word in _NON_NEGATING_WORDS:
+        text = text.replace(word, "")
+    return any(ch in _NEGATION_CHARS for ch in text) or bool(_EN_NEGATION_RE.search(text))
+
+
+def _proper_nouns(text: str) -> set[str]:
+    """Latin names worth keeping verbatim: GitHub, iPhone, API, GPT4."""
+    names = set()
+    for token in _LATIN_TOKEN_RE.findall(text):
+        camel = any(c.isupper() for c in token[1:]) and any(c.islower() for c in token)
+        acronym = len(token) >= 3 and token.isupper()
+        alnum = any(c.isdigit() for c in token)
+        if camel or acronym or alnum:
+            names.add(token.casefold())
+    return names
+
+
+def polish_rejection_reason(raw: str, polished: str) -> str:
+    """Why a polish reply must not replace the raw text; empty when it may.
+
+    Only clear-cut changes are caught: converting 一百 → 100 or rewording
+    Chinese names passes, so this is a guard, not a fidelity proof.
+    """
+    raw = unicodedata.normalize("NFKC", raw or "").strip()
+    polished = unicodedata.normalize("NFKC", polished or "").strip()
+    if not raw:
+        return ""
+    if len(polished) > len(raw) * 2 + 40:
+        return "长度异常"
+    raw_numbers = _numbers(raw)
+    if raw_numbers and _numbers(polished) - raw_numbers:
+        return "数字被改动"
+    if _has_negation(raw) and not _has_negation(polished):
+        return "否定词丢失"
+    folded = re.sub(r"\s+", "", polished.casefold())
+    if any(name not in folded for name in _proper_nouns(raw)):
+        return "英文专名丢失"
+    return ""
+
+
+def polish_looks_plausible(raw: str, polished: str) -> bool:
+    """Reject replies that answer or change the text instead of lightly editing it."""
+    return not polish_rejection_reason(raw, polished)
 
 @dataclass
 class _PendingHistoryRecord:
@@ -67,6 +146,16 @@ class _PendingHistoryRecord:
     speaker_route: str = ""
 
 
+@dataclass
+class _SegmentContext:
+    """Continuous-session identity fixed when a segment is captured, not when it is recognized."""
+
+    session_id: str
+    seq: int
+    source: str
+    speakers: SpeakerSession
+
+
 class App(QObject):
     """Central orchestrator that connects all modules."""
 
@@ -74,13 +163,14 @@ class App(QObject):
 
     # 友好化错误信息映射
     ERROR_HINTS = {
+        "已断开": "音频设备已断开\n请重新连接设备，或在设置 → 通用 → 声音收录 中刷新并选择其他设备",
         "麦克风": "无法访问麦克风\n请检查：1) 麦克风是否已连接\n2) 是否被其他应用占用\n3) 系统隐私设置",
-        "模型未就绪": "语音模型未就绪\n请右键托盘图标 → 设置 → 引擎 → 下载模型",
-        "模型未下载": "语音模型未下载\n请右键托盘图标 → 设置 → 引擎 → 下载模型",
+        "模型未就绪": "语音模型未就绪\n请打开 VoiceInk（双击托盘图标）→ 引擎 → 下载模型",
+        "模型未下载": "语音模型未下载\n请打开 VoiceInk（双击托盘图标）→ 引擎 → 下载模型",
         "录音过短": "录音过短\n请按住快捷键说话，时长至少 0.1 秒",
         "未识别": "未识别到语音内容\n请确保音频来源与设备正确，并靠近麦克风或播放电脑声音",
         "音频设备": "无法打开音频设备\n请在设置 → 通用 → 声音收录 中刷新并选择设备",
-        "系统声音": "无法采集系统声音\nWindows 可启用立体声混音或安装 PyAudioWPatch；混合模式需配置电脑声设备",
+        "系统声音": "无法采集系统声音\nWindows 可启用立体声混音或安装 PyAudioWPatch；混合模式需配置电脑播放设备",
         "润色失败": "润色失败，已输出原文\n请检查 API 配置是否正确",
         "输出失败": "输出失败\n请确保目标窗口可接收文本输入",
     }
@@ -107,13 +197,24 @@ class App(QObject):
         self._update_check_worker = None
         self._update_download_worker = None
         self._is_transcribing = False
+        # One segment at a time from ASR through paste: the pending history
+        # record and the polisher each hold a single in-flight segment.
+        self._output_busy = False
+        self._output_token = 0
+        # Raw text of the segment currently being output. A new hold recording
+        # may start meanwhile and reset _current_transcription.
+        self._output_raw_text = ""
         self._segment_queue: list[np.ndarray] = []
         self._segment_routes: list[str] = []
+        self._segment_contexts: list[_SegmentContext | None] = []
         self._speakers = SpeakerSession()
         self._continuous_user_stopped = False
         self._current_session_id: str | None = None
         self._current_seq = 0
         self._pending_record: _PendingHistoryRecord | None = None
+        self._welcome_scheduled = False
+        self._load_started_at: float | None = None
+        self._loading_model_id = ""
         self._short_tap_tray_last_at = 0.0
         self._hotkey_conflict_warned = False
 
@@ -148,8 +249,6 @@ class App(QObject):
         self._tray = TrayIcon()
         self._main: MainWindow | None = None
         self._restore_main_after_menu = False
-        self._settings_win = None
-        self._history_win = None
 
         self._tray.set_auto_start(self._config.get("auto_start", False))
         self._tray.show()
@@ -159,6 +258,14 @@ class App(QObject):
         # Re-apply after surfaces exist so cold-start dark/system is not stuck
         # on import-time light snapshots for inline-styled widgets.
         self.apply_appearance_theme()
+        from voiceink.ui.theme import watch_system_color_scheme
+
+        watch_system_color_scheme(self._on_system_color_scheme_changed)
+
+    def _on_system_color_scheme_changed(self) -> None:
+        if self._config.get("appearance.theme_mode", "dark") == "system":
+            log.info("系统浅/深色外观已变化，重新换肤")
+            self.apply_appearance_theme()
 
     def _is_continuous_mode(self) -> bool:
         return self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS) == TRIGGER_MODE_CONTINUOUS
@@ -281,7 +388,7 @@ class App(QObject):
             )
             if needs_load and not self._recognizer.is_loading:
                 self._floating.show_model_loading(
-                    f"正在将 {name} 载入内存，请稍候（约 10–40 秒）…"
+                    f"正在将 {name} 载入内存，请稍候（{self._load_eta_text(model_id)}）…"
                 )
                 self._tray.set_activity_tooltip("loading")
                 self._sync_settings_runtime_status()
@@ -318,17 +425,22 @@ class App(QObject):
         self._floating.show_error(hint)
         self._tray.showMessage(
             "VoiceInk",
-            f"{hint} Windows 可双击托盘打开主窗口，再到设置 → 引擎。",
+            hint,
             QSystemTrayIcon.MessageIcon.Warning,
             6000,
         )
 
     def _pending_segment_count(self) -> int:
-        return len(self._segment_queue) + (1 if self._is_transcribing else 0)
+        in_flight = self._is_transcribing or self._output_busy
+        return len(self._segment_queue) + (1 if in_flight else 0)
+
+    def _pipeline_busy(self) -> bool:
+        return self._is_transcribing or self._output_busy
 
     def _on_esc_pressed(self):
         if self._continuous_session_active():
-            self._stop_continuous_user_session()
+            if self._config.get("audio.esc_stops_continuous", True):
+                self._stop_continuous_user_session()
             return
         if self._recorder.is_recording and not self._is_continuous_mode():
             self._on_recording_cancel()
@@ -344,8 +456,25 @@ class App(QObject):
         )
         self._floating.show_error(message or "快捷键监听未能启动")
 
+    def _load_eta_text(self, model_id: str) -> str:
+        seconds = (self._config.get(LOAD_SECONDS_KEY, {}) or {}).get(model_id)
+        if isinstance(seconds, (int, float)) and seconds > 0:
+            return f"上次用时约 {max(1, round(seconds))} 秒"
+        return "约 10–40 秒"
+
+    def _remember_load_duration(self) -> None:
+        started = self._load_started_at
+        model_id = self._loading_model_id
+        self._load_started_at = None
+        if started is None or not model_id:
+            return
+        durations = dict(self._config.get(LOAD_SECONDS_KEY, {}) or {})
+        durations[model_id] = round(time.monotonic() - started, 1)
+        self._config.set(LOAD_SECONDS_KEY, durations)
+
     def _on_model_load_progress(self, msg: str):
         if "就绪" in msg:
+            self._remember_load_duration()
             self._floating.clear_model_loading_lock()
             self._sync_settings_runtime_status()
             return
@@ -360,6 +489,11 @@ class App(QObject):
         if self._recorder.is_continuous:
             log.info("模型重新加载，暂停持续监听")
             self._stop_continuous_listening()
+        model_id = self._recognizer.current_model_id
+        if isinstance(model_id, str) and model_id:
+            self._load_started_at = time.monotonic()
+            self._loading_model_id = model_id
+            msg = f"{msg}（{self._load_eta_text(model_id)}）"
         self._floating.show_model_loading(f"{msg} · 完成前请勿录音")
         self._tray.set_activity_tooltip("loading")
         self._sync_settings_runtime_status()
@@ -452,7 +586,8 @@ class App(QObject):
         self._continuous_user_stopped = False
         self._current_session_id = None
         self._current_seq = 0
-        self._speakers.reset()
+        # Segments still queued from the previous session keep its speaker numbering.
+        self._speakers = SpeakerSession()
         self._clear_live_transcript()
         self._start_continuous_listening()
 
@@ -573,12 +708,10 @@ class App(QObject):
         route: str = "",
         *,
         front: bool,
+        context: _SegmentContext | None = None,
     ) -> None:
         """Keep captured audio until the model can transcribe it."""
-        if front:
-            self._enqueue_audio(audio, route, front=True)
-        else:
-            self._enqueue_audio(audio, route)
+        self._enqueue_audio(audio, route, front=front, context=context)
         if self._recognizer.is_loading:
             log.debug("模型加载中，语音段已排队（队列 %d）", len(self._segment_queue))
             self._floating.show_model_loading(
@@ -595,37 +728,96 @@ class App(QObject):
         route = consume()
         return route if isinstance(route, str) else ""
 
-    def _enqueue_audio(self, audio: np.ndarray, route: str = "", *, front: bool = False) -> None:
+    def _enqueue_audio(
+        self,
+        audio: np.ndarray,
+        route: str = "",
+        *,
+        front: bool = False,
+        context: _SegmentContext | None = None,
+    ) -> None:
         if front:
             self._segment_queue.insert(0, audio)
             self._segment_routes.insert(0, route)
+            self._segment_contexts.insert(0, context)
             return
         self._segment_queue.append(audio)
         self._segment_routes.append(route)
+        self._segment_contexts.append(context)
+        self._pause_if_backlog_too_long()
 
-    def _pop_queued_audio(self) -> tuple[np.ndarray, str]:
+    def _pop_queued_audio(self) -> tuple[np.ndarray, str, _SegmentContext | None]:
         audio = self._segment_queue.pop(0)
-        if len(self._segment_routes) == len(self._segment_queue) + 1:
-            return audio, self._segment_routes.pop(0)
-        self._segment_routes.clear()
-        return audio, ""
+        remaining = len(self._segment_queue)
+        route = ""
+        if len(self._segment_routes) == remaining + 1:
+            route = self._segment_routes.pop(0)
+        else:
+            self._segment_routes.clear()
+        context = None
+        if len(self._segment_contexts) == remaining + 1:
+            context = self._segment_contexts.pop(0)
+        else:
+            self._segment_contexts.clear()
+        return audio, route, context
 
     def _clear_queued_audio(self) -> None:
         self._segment_queue.clear()
         self._segment_routes.clear()
+        self._segment_contexts.clear()
+
+    def _queued_audio_seconds(self) -> float:
+        return sum(int(audio.size) for audio in self._segment_queue) / TARGET_SAMPLE_RATE
+
+    def _pause_if_backlog_too_long(self) -> None:
+        if not self._continuous_session_active():
+            return
+        if self._queued_audio_seconds() <= MAX_BACKLOG_AUDIO_SECONDS:
+            return
+        log.warning(
+            "识别积压 %d 段（约 %.0f 秒），暂停持续监听",
+            len(self._segment_queue), self._queued_audio_seconds(),
+        )
+        self._stop_continuous_user_session()
+        pending = self._pending_segment_count()
+        self._floating.show_continuous_stopped(
+            f"识别跟不上，已暂停监听 · 剩余 {pending} 段处理中"
+        )
+        self._tray.showMessage(
+            "VoiceInk",
+            "识别或润色跟不上说话速度，已暂停监听。已录下的内容会继续处理，"
+            "处理完后可再次按快捷键开始。",
+            QSystemTrayIcon.MessageIcon.Warning,
+            8000,
+        )
+
+    def _capture_segment_context(self) -> _SegmentContext | None:
+        if not self._is_continuous_mode():
+            return None
+        if self._current_session_id is None:
+            self._current_session_id = uuid4().hex
+        context = _SegmentContext(
+            session_id=self._current_session_id,
+            seq=self._current_seq,
+            source=self._history_source(),
+            speakers=self._speakers,
+        )
+        self._current_seq += 1
+        return context
 
     def _on_segment_ready(self, audio: np.ndarray):
         route = self._segment_route_from_recorder()
         if audio.size < MIN_AUDIO_SAMPLES:
             return
+        context = self._capture_segment_context()
         if not self._recognizer.is_ready:
-            self._hold_audio_until_ready(audio, route, front=False)
+            self._hold_audio_until_ready(audio, route, front=False, context=context)
             return
-        if self._is_transcribing:
-            self._enqueue_audio(audio, route)
+        if self._pipeline_busy():
+            self._enqueue_audio(audio, route, context=context)
             log.debug("转写排队，队列长度 %d", len(self._segment_queue))
             return
-        self._begin_transcription(audio, route=route)
+        self._begin_transcription(audio, route=route, context=context)
 
     # ── Recognition ───────────────────────────────────
 
@@ -642,14 +834,24 @@ class App(QObject):
             self._reset_recording_ui_after_abort()
             self._floating.show_error(self._friendly_error("录音过短"))
             return
+        if self._pipeline_busy():
+            self._enqueue_audio(full_audio)
+            return
         self._begin_transcription(full_audio)
 
-    def _begin_transcription(self, audio: np.ndarray, route: str = ""):
+    def _begin_transcription(
+        self,
+        audio: np.ndarray,
+        route: str = "",
+        context: _SegmentContext | None = None,
+    ):
         if not self._recognizer.is_ready:
-            self._hold_audio_until_ready(audio, route, front=True)
+            self._hold_audio_until_ready(audio, route, front=True, context=context)
             return
-        self._pending_record = self._build_pending_history_record(audio)
-        speaker_id, speaker_route = self._label_speaker(audio, route)
+        if context is None:
+            context = self._capture_segment_context()
+        self._pending_record = self._build_pending_history_record(audio, context)
+        speaker_id, speaker_route = self._label_speaker(audio, route, context)
         self._pending_record.speaker_id = speaker_id
         self._pending_record.speaker_route = speaker_route
         if not self._is_continuous_mode():
@@ -662,27 +864,24 @@ class App(QObject):
             self._floating.show_recognizing()
         self._recognizer.transcribe_final(audio)
 
-    def _build_pending_history_record(
-        self,
-        audio: np.ndarray,
-    ) -> _PendingHistoryRecord:
-        trigger_mode = self._config.get("audio.trigger_mode", TRIGGER_MODE_CONTINUOUS)
-        if trigger_mode == TRIGGER_MODE_CONTINUOUS:
-            if self._current_session_id is None:
-                self._current_session_id = uuid4().hex
-            session_id = self._current_session_id
-            seq = self._current_seq
-            self._current_seq += 1
-        else:
-            trigger_mode = TRIGGER_MODE_HOTKEY
-            session_id = uuid4().hex
-            seq = 0
-
-        source = {
+    def _history_source(self) -> str:
+        return {
             INPUT_SOURCE_MICROPHONE: "mic",
             INPUT_SOURCE_SYSTEM: "system",
             INPUT_SOURCE_MIXED: "mixed",
         }.get(getattr(self._recorder, "input_source", INPUT_SOURCE_MICROPHONE), "mic")
+
+    def _build_pending_history_record(
+        self,
+        audio: np.ndarray,
+        context: _SegmentContext | None = None,
+    ) -> _PendingHistoryRecord:
+        if context is not None:
+            trigger_mode = TRIGGER_MODE_CONTINUOUS
+            session_id, seq, source = context.session_id, context.seq, context.source
+        else:
+            trigger_mode = TRIGGER_MODE_HOTKEY
+            session_id, seq, source = uuid4().hex, 0, self._history_source()
 
         return _PendingHistoryRecord(
             session_id=session_id,
@@ -805,7 +1004,22 @@ class App(QObject):
             self._floating.show_error(self._friendly_error("未识别"))
         self._pump_segment_queue()
 
+    def _mark_output_busy(self) -> None:
+        self._output_busy = True
+        self._output_token += 1
+        token = self._output_token
+        QTimer.singleShot(OUTPUT_WATCHDOG_MS, lambda: self._release_stuck_output(token))
+
+    def _release_stuck_output(self, token: int) -> None:
+        if not self._output_busy or token != self._output_token:
+            return
+        log.error("输出流程超时未回调，释放队列以免后续语音卡住")
+        self._output_busy = False
+        self._pump_segment_queue()
+
     def _deliver_recognized_text(self, text: str) -> None:
+        self._mark_output_busy()
+        self._output_raw_text = text
         llm_enabled = self._config.get("llm.enabled", False)
         api_url = self._config.get("llm.api_url", "")
         api_key = self._config.get("llm.api_key", "")
@@ -813,7 +1027,11 @@ class App(QObject):
         prompt = self._config.get("llm.prompt", "")
         mode = (self._config.get("llm.mode", LLM_MODE_POLISH) or LLM_MODE_POLISH).strip().lower()
 
-        if llm_enabled and mode == LLM_MODE_POLISH and api_url and api_key and model_name:
+        if (
+            llm_enabled
+            and mode == LLM_MODE_POLISH
+            and polish_settings_complete(api_url, api_key, model_name)
+        ):
             self._tray.set_activity_tooltip("polishing")
             if self._continuous_user_stopped:
                 self._floating.show_continuous_stopped("正在处理剩余内容 · 正在润色")
@@ -859,14 +1077,14 @@ class App(QObject):
             QTimer.singleShot(1500, self._start_continuous_listening)
 
     def _pump_segment_queue(self):
-        if self._is_transcribing or not self._segment_queue:
-            if self._continuous_session_active() and not self._is_transcribing:
+        if self._pipeline_busy() or not self._segment_queue:
+            if self._continuous_session_active() and not self._pipeline_busy():
                 self._floating.show_listening()
             return
         if not self._recognizer.is_ready:
             return
-        next_audio, next_route = self._pop_queued_audio()
-        self._begin_transcription(next_audio, route=next_route)
+        next_audio, next_route, next_context = self._pop_queued_audio()
+        self._begin_transcription(next_audio, route=next_route, context=next_context)
 
     def _on_stt_ready(self):
         self._floating.clear_model_loading_lock()
@@ -880,9 +1098,14 @@ class App(QObject):
             # Loading HUD stays visible until replaced/dismissed; continuous mode
             # no longer shows idle float, so dismiss explicitly after ready.
             self._floating.dismiss_if_idle()
+            stop = (
+                "按 Esc 或听写条「结束」停止整场。"
+                if self._config.get("audio.esc_stops_continuous", True)
+                else "用听写条「结束」停止整场。"
+            )
             tray_msg = (
                 f"持续转写已就绪。按住 {hotkey} 开始监听，说话停顿约 1 秒后自动输入，不用点结束；"
-                "按 Esc 或听写条「结束」停止整场。"
+                + stop
             )
         else:
             log.info("✓ 语音识别模型已就绪，按 %s 开始语音输入", hotkey)
@@ -898,12 +1121,21 @@ class App(QObject):
     # ── Polishing ─────────────────────────────────────
 
     def _on_polish_complete(self, polished_text: str):
+        raw = self._output_raw_text
+        reason = polish_rejection_reason(raw, polished_text) if raw else ""
+        if reason:
+            log.warning(
+                "润色结果未通过保真检查（%s；原文 %d 字，结果 %d 字），改为输出原文",
+                reason, len(raw), len(polished_text),
+            )
+            self._output_text(raw, degraded_from_polish=True)
+            return
         self._output_text(polished_text)
 
     def _on_polish_error(self, error_msg: str):
         log.warning("后处理失败，降级输出原文: %s", error_msg)
         self._output_text(
-            self._current_transcription,
+            self._output_raw_text,
             degraded_from_polish=True,
         )
 
@@ -913,6 +1145,7 @@ class App(QObject):
         self._is_transcribing = False
         text = normalize_asr_output(text)
         if not text.strip():
+            self._output_busy = False
             self._tray.set_activity_tooltip(
                 "listening" if self._continuous_session_active() else None
             )
@@ -965,14 +1198,19 @@ class App(QObject):
             speaker_route=pending.speaker_route or "",
         )
 
-    def _label_speaker(self, audio: np.ndarray, route: str) -> tuple[int, str]:
-        """Number this segment inside the current continuous session only."""
-        if not self._is_continuous_mode():
+    def _label_speaker(
+        self,
+        audio: np.ndarray,
+        route: str,
+        context: _SegmentContext | None,
+    ) -> tuple[int, str]:
+        """Number this segment inside its own continuous session only."""
+        if context is None:
             return 0, ""
         stored_route = ""
-        if self._config.get("audio.input_source") == INPUT_SOURCE_MIXED and route in ("mic", "system"):
+        if context.source == "mixed" and route in ("mic", "system"):
             stored_route = route
-        return self._speakers.assign(voice_embedding(audio), stored_route), stored_route
+        return context.speakers.assign(voice_embedding(audio), stored_route), stored_route
 
     def _handle_paste_result(
         self,
@@ -981,6 +1219,7 @@ class App(QObject):
         degraded_from_polish: bool = False,
         record: SegmentRecord | None = None,
     ):
+        self._output_busy = False
         if isinstance(result, PasteResult):
             status = result.status
             target_app = result.target_app
@@ -1114,11 +1353,7 @@ class App(QObject):
     def _sync_settings_runtime_status(self, status: RuntimeStatus | None = None) -> None:
         status = status or self._runtime_status()
         self._sync_tray_status_summary(status)
-        settings = None
-        if self._main is not None:
-            settings = getattr(self._main, "_settings", None)
-        if settings is None:
-            settings = self._settings_win
+        settings = self._settings_widget()
         if settings is None:
             return
         settings.set_runtime_status(status.state, status.label)
@@ -1176,6 +1411,9 @@ class App(QObject):
         if app is not None and app.overrideCursor() is not None:
             app.restoreOverrideCursor()
 
+    def show_main_window(self) -> None:
+        self._show_main_window(None)
+
     def _show_settings(self):
         self._show_main_window(None)
 
@@ -1188,11 +1426,7 @@ class App(QObject):
         return super().eventFilter(obj, event)
 
     def _on_settings_closed(self):
-        settings = None
-        if self._main is not None:
-            settings = getattr(self._main, "_settings", None)
-        if settings is None:
-            settings = self._settings_win
+        settings = self._settings_widget()
         if settings is not None:
             settings.cancel_hotkey_capture()
         self._hotkey_mgr.resume()
@@ -1233,7 +1467,7 @@ class App(QObject):
 
         surfaces = [
             surface
-            for attr in ("_main", "_settings_win", "_history_win", "_floating", "_tray")
+            for attr in ("_main", "_floating", "_tray")
             if (surface := _attr(attr)) is not None
         ]
         main = _attr("_main")
@@ -1325,18 +1559,14 @@ class App(QObject):
         if self._recorder.is_recording:
             self._recorder.cancel()
 
-        settings = None
-        if self._main is not None:
-            settings = getattr(self._main, "_settings", None)
-        if settings is None:
-            settings = self._settings_win
+        settings = self._settings_widget()
         if settings is not None:
             settings.cancel_all_downloads()
         if self._main is not None:
             self._main.hide()
-        elif self._settings_win is not None:
-            self._settings_win.close()
 
+        if self._main is not None:
+            self._main._history.flush_pending_delete()
         self._recognizer.shutdown()
         self._polisher.cancel()
         self._tray.hide()
@@ -1446,7 +1676,7 @@ class App(QObject):
         from pathlib import Path
         import tempfile
 
-        from voiceink.updater import UpdateDownloadWorker
+        from voiceink.updater import MISSING_DIGEST_MESSAGE, UpdateDownloadWorker
 
         release = self._pending_release
         if release is None:
@@ -1454,12 +1684,23 @@ class App(QObject):
         worker = self._update_download_worker
         if worker is not None and worker.isRunning():
             return
+        if not release.sha256:
+            settings = self._settings_widget()
+            if settings is not None:
+                settings.set_update_status(MISSING_DIGEST_MESSAGE, action="check")
+            return
         dest = Path(tempfile.gettempdir()) / "VoiceInk" / release.asset_name
         self._update_check_state = "downloading"
         settings = self._settings_widget()
         if settings is not None:
             settings.set_update_status("正在下载…", action="busy")
-        worker = UpdateDownloadWorker(release.asset_url, dest, self)
+        worker = UpdateDownloadWorker(
+            release.asset_url,
+            dest,
+            self,
+            expected_size=release.size,
+            sha256=release.sha256,
+        )
         worker.progress.connect(self._on_update_download_progress)
         worker.finished_path.connect(self._on_update_downloaded)
         worker.failed.connect(self._on_update_download_failed)
@@ -1499,8 +1740,11 @@ class App(QObject):
         self._quit()
 
     def _show_first_run_welcome_once(self):
-        if self._config.get("first_run_welcome_seen", True):
+        # Both model-ready and the 15 s fallback land here; the seen flag is
+        # only written after the modal closes, so guard the scheduling itself.
+        if self._config.get("first_run_welcome_seen", True) or self._welcome_scheduled:
             return
+        self._welcome_scheduled = True
         try:
             self._recognizer.ready.disconnect(self._show_first_run_welcome_once)
         except TypeError:

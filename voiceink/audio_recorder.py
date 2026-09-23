@@ -30,7 +30,7 @@ class _CaptureLane:
     def __init__(self, endpoint: StreamEndpoint):
         self.endpoint = endpoint
         self.chunks: list[np.ndarray] = []
-        self.drain_idx = 0
+        self.last_chunk_at = time.monotonic()
         self.sample_rate = TARGET_SAMPLE_RATE
         self.stream: Optional[sd.InputStream] = None
         self.pawp_stream: object | None = None
@@ -47,6 +47,7 @@ class AudioRecorder(QObject):
     no_speech_warning = pyqtSignal()
 
     NO_SPEECH_WARN_SEC = 30.0
+    LANE_STALL_SEC = 3.0
 
     SAMPLE_RATE = TARGET_SAMPLE_RATE
     CHANNELS = 1
@@ -107,6 +108,7 @@ class AudioRecorder(QObject):
             self.volume_changed.emit(vol)
             with self._lock:
                 lane.chunks.append(block)
+                lane.last_chunk_at = time.monotonic()
         return _callback
 
     def _ensure_pawp(self):
@@ -307,10 +309,10 @@ class AudioRecorder(QObject):
         parts: list[tuple[np.ndarray, int, str]] = []
         with self._lock:
             for lane in self._lanes:
-                if lane.drain_idx >= len(lane.chunks):
-                    continue
-                new = lane.chunks[lane.drain_idx :]
-                lane.drain_idx = len(lane.chunks)
+                # Hand drained blocks to the segmenter and drop them here, so a
+                # long session holds only the current utterance in memory.
+                new = lane.chunks
+                lane.chunks = []
                 if not new:
                     continue
                 parts.append((np.concatenate(new), lane.sample_rate, lane.endpoint.role))
@@ -340,10 +342,39 @@ class AudioRecorder(QObject):
         self._last_speech_at = now
         self._no_speech_warned = False
 
+    def _lost_lane(self) -> Optional[_CaptureLane]:
+        """A capture lane whose device went away mid-session."""
+        now = time.monotonic()
+        for lane in self._lanes:
+            if lane.pawp_thread is not None and not lane.pawp_thread.is_alive():
+                return lane
+            stream = lane.stream
+            if stream is not None and getattr(stream, "active", True) is False:
+                return lane
+            # Loopback capture delivers nothing while the PC is silent, so only
+            # the microphone lane is expected to call back every block.
+            if lane.endpoint.role != "system" and stream is not None:
+                if now - lane.last_chunk_at > self.LANE_STALL_SEC:
+                    return lane
+        return None
+
+    def _handle_lost_device(self, lane: _CaptureLane) -> None:
+        name = lane.endpoint.device.name
+        log.warning("音频设备已断开: %s", name)
+        if self._continuous_mode:
+            self.stop_continuous()
+        else:
+            self.cancel()
+        self.error.emit(f"音频设备已断开：{name}")
+
     def _on_continuous_tick(self):
         if not self._is_recording or self._is_cancelled:
             return
         if not self._continuous_mode and not self._segment_live:
+            return
+        lost = self._lost_lane()
+        if lost is not None:
+            self._handle_lost_device(lost)
             return
         block = self._drain_mixed_mono()
         if block is None or block.size == 0:
@@ -423,8 +454,6 @@ class AudioRecorder(QObject):
             if not opened:
                 raise RuntimeError("未打开任何音频采集通道")
             self._lanes = opened
-            for lane in self._lanes:
-                lane.drain_idx = 0
             self._continuous_timer.start()
             if continuous:
                 log.info("持续监听已开启（来源: %s）", self.input_source_display)
@@ -524,7 +553,7 @@ class AudioRecorder(QObject):
         if "网易" in msg or "netease" in lower or "虚拟" in msg:
             return (
                 "无法打开该虚拟扬声器采集电脑播放声。"
-                "请在「设备设置」中将「电脑声」改为系统默认 Realtek 扬声器，或启用「立体声混音」。"
+                "请在「手动选择音频设备」中将「电脑播放」改为系统默认 Realtek 扬声器，或启用「立体声混音」。"
             )
         return f"音频设备启动失败: {msg}"
 

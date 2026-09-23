@@ -117,6 +117,7 @@ def paste_env(monkeypatch):
 
     monkeypatch.setattr(tp, "_paste_shortcut", _shortcut)
     monkeypatch.setattr(tp, "_process_name_from_window_info", lambda _info: "editor.exe")
+    monkeypatch.setattr(tp, "target_rejects_synthetic_input", lambda _info: False)
 
     def set_foreground(sequence):
         seq = list(sequence)
@@ -149,6 +150,34 @@ class TestPasteAsyncFlow:
         results = []
         paster.paste_async("文本", results.append)
         assert [result.status for result in results] == ["clipboard"]
+
+    def test_focus_switch_before_send_never_sends_shortcut_to_new_window(self, paste_env, monkeypatch):
+        foreground = [(111, "Target A", 11111)]
+        pending = []
+        sent_to = []
+        monkeypatch.setattr(tp, "get_foreground_window_info", lambda: foreground[0])
+        monkeypatch.setattr(tp.QTimer, "singleShot", lambda ms, fn: pending.append(fn))
+        monkeypatch.setattr(tp, "_paste_shortcut", lambda: sent_to.append(foreground[0][0]))
+        paster = TextPaster()
+        results = []
+
+        paster.paste_async("口述内容", results.append)
+        foreground[0] = (222, "Target B", 22222)
+        while pending:
+            pending.pop(0)()
+
+        assert sent_to == []
+        assert [(r.status, r.detail) for r in results] == [("clipboard", "focus_changed")]
+        assert paste_env["clipboard"] == "口述内容"
+
+    def test_focus_switch_after_send_is_reported_as_clipboard(self, paste_env):
+        paste_env["set_foreground"]([(1234, "Editor", 1), (1234, "Editor", 1), (9999, "Other", 2)])
+        paster = TextPaster()
+        results = []
+        paster.paste_async("文本", results.append)
+        assert paste_env["shortcut_calls"] == 1
+        assert [result.status for result in results] == ["clipboard"]
+        assert paste_env["clipboard"] == "文本"
 
     def test_own_window_skips_paste(self, paste_env):
         paste_env["set_foreground"]([(1, "VoiceInk", 1)])
@@ -187,6 +216,59 @@ class TestPasteAsyncFlow:
         assert [result.status for result in results] == ["sent"]
         # Original clipboard restored after a verified paste.
         assert paste_env["clipboard"] == "OLD"
+
+
+    def test_elevated_target_is_reported_as_clipboard_without_keys(self, paste_env, monkeypatch):
+        paste_env["set_foreground"]([(1234, "Administrator: cmd", 4242)])
+        monkeypatch.setattr(tp, "target_rejects_synthetic_input", lambda _info: True)
+        paster = TextPaster()
+        results = []
+        paster.paste_async("文本", results.append)
+        assert [result.status for result in results] == ["clipboard"]
+        assert results[0].target_app == "editor.exe"
+        assert paste_env["shortcut_calls"] == 0
+        assert paste_env["clipboard"] == "文本"
+
+    def test_empty_old_clipboard_is_not_restored(self, paste_env):
+        paste_env["clipboard"] = ""
+        paste_env["set_foreground"]([(1234, "Editor", 1)])
+        paster = TextPaster(restore_clipboard=True)
+        paster.paste_async("新文本", lambda _r: None)
+        assert paste_env["clipboard"] == "新文本"
+
+    def test_restore_skipped_when_user_copied_something_else(self, paste_env, monkeypatch):
+        paste_env["set_foreground"]([(1234, "Editor", 1)])
+        pending = []
+        monkeypatch.setattr(
+            tp.QTimer,
+            "singleShot",
+            lambda ms, fn: pending.append(fn) if ms == tp.RESTORE_CLIPBOARD_DELAY_MS else fn(),
+        )
+        paster = TextPaster(restore_clipboard=True)
+        paster.paste_async("新文本", lambda _r: None)
+        paste_env["clipboard"] = "用户刚复制的"
+        pending[0]()
+        assert paste_env["clipboard"] == "用户刚复制的"
+
+
+class TestIntegrityCheck:
+    def test_own_process_is_not_rejected(self):
+        import os
+
+        assert tp.target_rejects_synthetic_input((1, "self", os.getpid())) is False
+
+    def test_missing_pid_is_not_rejected(self):
+        assert tp.target_rejects_synthetic_input((1, "x", 0)) is False
+
+    def test_higher_integrity_target_is_rejected(self, monkeypatch):
+        import os
+
+        monkeypatch.setattr(tp.sys, "platform", "win32")
+        levels = {os.getpid(): 0x2000, 777: 0x3000, 778: -1, 779: None}
+        monkeypatch.setattr(tp, "_integrity_rid", lambda pid: levels[pid])
+        assert tp.target_rejects_synthetic_input((1, "a", 777)) is True
+        assert tp.target_rejects_synthetic_input((1, "b", 778)) is True
+        assert tp.target_rejects_synthetic_input((1, "c", 779)) is False
 
 
 class TestVerifyPasteTarget:

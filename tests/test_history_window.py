@@ -225,6 +225,34 @@ def test_delete_selected_sessions_commits_after_undo_timeout(qapp, monkeypatch):
     assert window._undo_bar.isHidden()
 
 
+def test_flush_pending_delete_commits_inside_undo_window(qapp):
+    store = FakeHistoryStore()
+    window = HistoryWindow(store)
+    window.session_items()[0].setSelected(True)
+    window._delete_selected_sessions()
+
+    window.flush_pending_delete()
+
+    assert store.deleted_sessions == [["newer"]]
+    assert not window._undo_timer.isActive()
+    window.flush_pending_delete()
+    assert store.deleted_sessions == [["newer"]]
+
+
+def test_quit_commits_pending_history_delete_before_closing_store() -> None:
+    from unittest.mock import MagicMock
+    from tests.helpers.app_harness import app_harness
+
+    with app_harness() as h:
+        app = h["app"]
+        events: list[str] = []
+        app._main = MagicMock()
+        app._main._history.flush_pending_delete.side_effect = lambda: events.append("flush")
+        h["history"].close.side_effect = lambda **_: events.append("close")
+        app._quit()
+        assert events == ["flush", "close"]
+
+
 def test_delete_without_selection_is_noop(qapp):
     store = FakeHistoryStore()
     window = HistoryWindow(store)
@@ -278,6 +306,64 @@ def test_copy_polished_disabled_when_session_has_no_polish(qapp):
         window._session_list.setCurrentItem(newer)
         window._on_selection_changed()
         assert window._copy_polished_btn.isEnabled()
+    finally:
+        window.close()
+
+
+def _select_polished_session(window):
+    newer, _older = window.session_items()
+    window._session_list.setCurrentItem(newer)
+    window._on_selection_changed()
+
+
+def test_ctrl_c_in_raw_view_copies_raw_text(qapp):
+    from PyQt6.QtTest import QTest
+
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        window.show()
+        window.activateWindow()
+        _select_polished_session(window)
+        window._view_raw_btn.setChecked(True)
+        window._session_list.setFocus()
+        QApplication.processEvents()
+        QApplication.clipboard().setText("")
+
+        QTest.keyClick(window._session_list, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+
+        assert QApplication.clipboard().text() == "raw first\n\nraw second"
+        assert "原文" in window._feedback_label.text()
+    finally:
+        window.close()
+
+
+def test_ctrl_c_in_polished_view_copies_polished_text(qapp):
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        _select_polished_session(window)
+        window._view_polished_btn.setChecked(True)
+        window._copy_selected_effective()
+        assert QApplication.clipboard().text() == "polished first\n\nraw second"
+    finally:
+        window.close()
+
+
+def test_copy_tooltips_advertise_ctrl_c_on_the_version_being_viewed(qapp):
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        _select_polished_session(window)
+        assert "Ctrl+C" in window._copy_polished_btn.toolTip()
+        assert "Ctrl+C" not in window._copy_raw_btn.toolTip()
+
+        window._view_raw_btn.setChecked(True)
+        assert "Ctrl+C" in window._copy_raw_btn.toolTip()
+        assert "Ctrl+C" not in window._copy_polished_btn.toolTip()
+
+        for item in window.session_items():
+            item.setSelected(True)
+        window._on_selection_changed()
+        assert "最终文本" in window._copy_raw_btn.toolTip()
+        assert "Ctrl+C" in window._copy_raw_btn.toolTip()
     finally:
         window.close()
 
@@ -356,6 +442,18 @@ def test_selected_session_row_is_not_an_accent_capsule(qapp):
         item_css = window._session_list.styleSheet().split("QScrollBar")[0]
         assert "border-radius" not in item_css
         assert "outline: none" in item_css
+    finally:
+        window.close()
+
+
+def test_session_list_shows_keyboard_focus_ring(qapp):
+    from voiceink.ui import design_tokens as tok
+
+    window = HistoryWindow(FakeHistoryStore())
+    try:
+        css = window._session_list.styleSheet()
+        assert f"QListWidget:focus {{ border: {tok.FOCUS_RING};" in css
+        assert "border: 2px solid transparent" in css
     finally:
         window.close()
 

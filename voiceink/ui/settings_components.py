@@ -1235,7 +1235,7 @@ class AudioSourcePicker(QWidget):
 
         specs = [
             (mic_radio, "仅麦克风", "日常口述"),
-            (sys_radio, "仅电脑声", "会议回放"),
+            (sys_radio, "仅电脑播放", "会议回放"),
             (mixed_radio, "混合", "麦 + 系统"),
         ]
         for rb, title, sub in specs:

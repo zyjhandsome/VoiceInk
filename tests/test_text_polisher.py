@@ -22,6 +22,10 @@ class TestSecureOrLocalUrl:
             "http://127.0.0.1:11434/v1",
             "http://[::1]:11434/v1",
             "http://localhost/chat/completions",
+            "http://192.168.1.20:11434/v1",
+            "http://10.0.0.5:8000/v1",
+            "http://172.16.3.4/v1",
+            "http://ollama-box.local:11434/v1",
         ],
     )
     def test_allowed_urls(self, url):
@@ -32,6 +36,8 @@ class TestSecureOrLocalUrl:
         [
             "http://api.example.com/v1",
             "http://8.8.8.8/v1",
+            "http://172.32.0.1/v1",
+            "http://local.example.com/v1",
             "http://insecure-remote.com/chat/completions",
             "ftp://localhost/x",
             "",
@@ -298,6 +304,20 @@ class TestPolishWorkerRun:
         assert results == ["本地润色"]
         assert errors == []
 
+    def test_run_without_key_sends_no_authorization_header(self):
+        payload = {"choices": [{"message": {"content": "本地润色"}}]}
+        fake, client = _fake_httpx_module(_make_response(payload))
+        worker = PolishWorker("http://localhost:11434/v1", "", "m", "文本")
+        self._run_worker(worker, fake)
+        assert "Authorization" not in client.post.call_args.kwargs["headers"]
+
+    def test_run_with_key_sends_bearer_header(self):
+        payload = {"choices": [{"message": {"content": "ok"}}]}
+        fake, client = _fake_httpx_module(_make_response(payload))
+        worker = PolishWorker("https://api.example.com/v1", "sk-x", "m", "文本")
+        self._run_worker(worker, fake)
+        assert client.post.call_args.kwargs["headers"]["Authorization"] == "Bearer sk-x"
+
     def test_run_rejects_remote_http(self):
         fake, client = _fake_httpx_module(_make_response({}))
         worker = PolishWorker("http://api.example.com/v1", "k", "m", "文本")
@@ -344,6 +364,41 @@ class TestPolishWorkerRun:
         results, errors = self._run_worker(worker, fake)
         assert results == []
         assert errors and "润色失败" in errors[0]
+
+
+class TestPolishSettingsComplete:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:1234/v1",
+            "http://192.168.1.20:11434/v1",
+            "http://gpu-box.local:8000/v1",
+        ],
+    )
+    def test_local_endpoints_work_without_key(self, url):
+        from voiceink.text_polisher import polish_settings_complete
+
+        assert polish_settings_complete(url, "", "local-model") is True
+
+    def test_remote_endpoint_still_requires_key(self):
+        from voiceink.text_polisher import polish_settings_complete
+
+        assert polish_settings_complete("https://api.deepseek.com/v1", "", "deepseek-chat") is False
+        assert polish_settings_complete("https://api.deepseek.com/v1", "sk", "deepseek-chat") is True
+
+    def test_url_and_model_always_required(self):
+        from voiceink.text_polisher import polish_settings_complete
+
+        assert polish_settings_complete("", "sk", "m") is False
+        assert polish_settings_complete("http://localhost:11434/v1", "", "") is False
+
+    def test_keyless_connection_test_omits_authorization(self):
+        fake, client = _fake_httpx_module(_make_response({}))
+        with patch.dict(sys.modules, {"httpx": fake}):
+            ok, _ = TextPolisher.test_connection("http://localhost:11434/v1", "", "m")
+        assert ok is True
+        assert "Authorization" not in client.post.call_args.kwargs["headers"]
 
 
 class TestTestConnectionRun:

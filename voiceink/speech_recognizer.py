@@ -197,6 +197,22 @@ def merge_slice_texts(parts: list[str], max_overlap_chars: int = 12) -> str:
 
 
 HF_URL = "https://huggingface.co"
+HF_MIRROR_URL = "https://hf-mirror.com"
+DOWNLOAD_SOURCE_AUTO = "auto"
+DOWNLOAD_SOURCES = {
+    DOWNLOAD_SOURCE_AUTO: (HF_URL, HF_MIRROR_URL),
+    "huggingface": (HF_URL,),
+    "hf-mirror": (HF_MIRROR_URL,),
+}
+DOWNLOAD_SOURCE_LABELS = (
+    (DOWNLOAD_SOURCE_AUTO, "自动（官方优先，连不上换镜像）"),
+    ("huggingface", "Hugging Face 官方"),
+    ("hf-mirror", "hf-mirror 国内镜像"),
+)
+
+
+def download_endpoints(source: str) -> tuple[str, ...]:
+    return DOWNLOAD_SOURCES.get(source or DOWNLOAD_SOURCE_AUTO, DOWNLOAD_SOURCES[DOWNLOAD_SOURCE_AUTO])
 
 # ── Model Registry ────────────────────────────────────────────────
 
@@ -217,7 +233,7 @@ MODEL_REGISTRY = [
     {
         "id": "paraformer-zh",
         "name": "Paraformer 中文",
-        "description": "高精度中英文识别",
+        "description": "中英文识别，体积小",
         "accuracy": 4,
         "speed": 4,
         "languages": "中/英",
@@ -230,7 +246,7 @@ MODEL_REGISTRY = [
     {
         "id": "fireredasr2-ctc",
         "name": "FireRedASR2",
-        "description": "中文准确率最高，含方言",
+        "description": "侧重中文，含方言，速度适中",
         "accuracy": 5,
         "speed": 3,
         "languages": "中/英/方言",
@@ -256,7 +272,7 @@ MODEL_REGISTRY = [
     {
         "id": "fireredasr2-aed",
         "name": "FireRedASR2 AED",
-        "description": "最高准确率，含方言（较慢）",
+        "description": "FireRedASR2 编解码版，含方言（较慢）",
         "accuracy": 5,
         "speed": 2,
         "languages": "中/英/方言",
@@ -282,7 +298,7 @@ MODEL_REGISTRY = [
     {
         "id": "qwen3-asr-0.6b",
         "name": "Qwen3-ASR 0.6B",
-        "description": "阿里大模型ASR，高精度",
+        "description": "阿里大模型 ASR，多语种",
         "accuracy": 5,
         "speed": 2,
         "languages": "中/英/多语种",
@@ -302,7 +318,7 @@ MODEL_REGISTRY = [
     {
         "id": "qwen3-asr-1.7b",
         "name": "Qwen3-ASR 1.7B",
-        "description": "阿里大模型ASR旗舰版，精度更高（较慢）",
+        "description": "阿里大模型 ASR 大参数版，多语种（较慢）",
         "accuracy": 5,
         "speed": 1,
         "languages": "中/英/多语种",
@@ -322,7 +338,7 @@ MODEL_REGISTRY = [
     {
         "id": "funasr-nano",
         "name": "Fun-ASR-Nano",
-        "description": "FunASR 旗舰，SenseVoice 编码 + Qwen3",
+        "description": "FunASR 端到端模型，SenseVoice 编码 + Qwen3",
         "accuracy": 5,
         "speed": 2,
         "languages": "中/英/日/方言",
@@ -359,27 +375,42 @@ def set_models_dir(path: Path | None):
         path.mkdir(parents=True, exist_ok=True)
 
 
-def _get_models_dir() -> Path:
-    """Return models directory. Packaged exe uses install dir, dev uses user dir."""
+def is_dir_writable(path: Path) -> bool:
+    """Probe by writing a file: os.access ignores ACLs on Windows."""
+    import tempfile
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(dir=str(path)):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def user_models_dir() -> Path:
+    return Path.home() / ".voiceink" / "models"
+
+
+def default_models_dir() -> Path:
+    """Where downloads go when the user has not picked a folder.
+
+    The installer puts the bundled model under Program Files, which a normal
+    user cannot write; that copy is still found by _get_portable_model_dir.
+    """
     import sys
 
-    if _custom_models_dir:
-        return _custom_models_dir
-
-    # Packaged exe: try install directory first
     if hasattr(sys, '_MEIPASS'):
         install_models = Path(sys._MEIPASS).parent / "models"
-        if install_models.exists():
+        if is_dir_writable(install_models):
             return install_models
-        # Install dir not writable? Fall back to user dir
-        try:
-            install_models.mkdir(parents=True, exist_ok=True)
-            return install_models
-        except OSError:
-            pass  # Permission denied, use user dir
+    return user_models_dir()
 
-    # Development or fallback: user directory
-    return Path.home() / ".voiceink" / "models"
+
+def _get_models_dir() -> Path:
+    if _custom_models_dir:
+        return _custom_models_dir
+    return default_models_dir()
 
 
 def _get_portable_model_dir(model_id: str) -> Path | None:
@@ -460,33 +491,80 @@ def delete_model(model_id: str) -> bool:
     if not info:
         return False
     d = _get_models_dir() / info["dir_name"]
+    if not d.exists():
+        return False
+    shutil.rmtree(d, ignore_errors=True)
     if d.exists():
-        shutil.rmtree(d, ignore_errors=True)
-        return True
-    return False
+        log.warning("模型目录未能完全删除（可能被占用或无权限）: %s", d)
+        return False
+    return True
 
 
 # ── Workers ───────────────────────────────────────────────────────
 
+class _DownloadCancelled(Exception):
+    pass
+
+
+class IncompleteDownloadError(IOError):
+    pass
+
+
 class ModelDownloadWorker(QThread):
-    """Downloads model files from HuggingFace."""
+    """Downloads model files from HuggingFace (or a mirror)."""
     progress = pyqtSignal(int)
     finished_ok = pyqtSignal(str)  # model_id
     error = pyqtSignal(str)
 
-    def __init__(self, model_id: str):
+    def __init__(self, model_id: str, source: str = DOWNLOAD_SOURCE_AUTO):
         super().__init__()
         self._model_id = model_id
+        self._endpoints = download_endpoints(source)
         self._cancelled = False
+        self._last_emit_pct = -1
 
     def cancel(self):
         """Set cancellation flag to stop download."""
         self._cancelled = True
 
+    def _emit_pct(self, pct: int) -> None:
+        if pct > self._last_emit_pct:
+            self._last_emit_pct = pct
+            self.progress.emit(pct)
+
+    def _download_file(self, url: str, target: Path, index: int, total_files: int) -> None:
+        import httpx
+
+        tmp_path = target.with_name(target.name + ".tmp")
+        try:
+            with httpx.stream("GET", url, timeout=60.0, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                total = int(resp.headers.get("content-length", 0))
+                downloaded = 0
+                with open(tmp_path, "wb") as f:
+                    for chunk in resp.iter_bytes(chunk_size=1024 * 256):
+                        if self._cancelled:
+                            raise _DownloadCancelled()
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total > 0:
+                            self._emit_pct(int((index + downloaded / total) / total_files * 100))
+            if total > 0 and downloaded != total:
+                raise IncompleteDownloadError(
+                    f"{target.name} 不完整（{downloaded} / {total} 字节）"
+                )
+            if downloaded == 0:
+                raise IncompleteDownloadError(f"{target.name} 为空文件")
+            tmp_path.replace(target)
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
     def run(self):
         try:
-            import httpx
-
             info = get_model_info(self._model_id)
             if not info:
                 self.error.emit(f"未知模型: {self._model_id}")
@@ -494,61 +572,35 @@ class ModelDownloadWorker(QThread):
 
             model_dir = _get_models_dir() / info["dir_name"]
             model_dir.mkdir(parents=True, exist_ok=True)
-            hf_url = f"{HF_URL}/{info['hf_repo']}/resolve/main/"
 
             files = info["files"]
             total_files = len(files)
 
-            last_emit_pct = -1
-
             for i, filename in enumerate(files):
                 if self._cancelled:
-                    log.info("模型下载已取消")
-                    self.error.emit("下载已取消")
-                    return
+                    raise _DownloadCancelled()
 
                 target = model_dir / filename
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():
-                    current_pct = int((i + 1) / total_files * 100)
-                    if current_pct > last_emit_pct:
-                        last_emit_pct = current_pct
-                        self.progress.emit(current_pct)
+                    self._emit_pct(int((i + 1) / total_files * 100))
                     continue
 
-                url = hf_url + filename
-                log.info("下载: %s", url)
-
-                tmp_path = target.with_suffix(".tmp")
-                try:
-                    # 缩短超时时间，添加取消检查
-                    with httpx.stream("GET", url, timeout=60.0, follow_redirects=True) as resp:
-                        resp.raise_for_status()
-                        total = int(resp.headers.get("content-length", 0))
-                        downloaded = 0
-
-                        with open(tmp_path, "wb") as f:
-                            for chunk in resp.iter_bytes(chunk_size=1024 * 256):
-                                if self._cancelled:
-                                    resp.close()
-                                    tmp_path.unlink()
-                                    log.info("模型下载已取消")
-                                    self.error.emit("下载已取消")
-                                    return
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                if total > 0:
-                                    file_pct = downloaded / total
-                                    overall_pct = int((i + file_pct) / total_files * 100)
-                                    if overall_pct > last_emit_pct:
-                                        last_emit_pct = overall_pct
-                                        self.progress.emit(overall_pct)
-
-                    tmp_path.rename(target)
-                except Exception:
-                    if tmp_path.exists():
-                        tmp_path.unlink()
-                    raise
+                last_err: Exception | None = None
+                for endpoint in self._endpoints:
+                    url = f"{endpoint}/{info['hf_repo']}/resolve/main/{filename}"
+                    log.info("下载: %s", url)
+                    try:
+                        self._download_file(url, target, i, total_files)
+                        last_err = None
+                        break
+                    except _DownloadCancelled:
+                        raise
+                    except Exception as e:
+                        last_err = e
+                        log.warning("从 %s 下载失败: %s", endpoint, e)
+                if last_err is not None:
+                    raise last_err
 
             if self._cancelled:
                 return
@@ -559,9 +611,13 @@ class ModelDownloadWorker(QThread):
             else:
                 self.error.emit("模型文件不完整，请重试")
 
+        except _DownloadCancelled:
+            log.info("模型下载已取消")
+            self.error.emit("下载已取消")
         except Exception as e:
             log.error("模型下载失败: %s", e)
-            self.error.emit(f"下载失败: {e}")
+            hint = "" if len(self._endpoints) > 1 else "；可在「下载源」改用其他来源"
+            self.error.emit(f"下载失败: {e}{hint}")
 
 
 def _create_recognizer(model_id: str, num_threads: int):
@@ -753,6 +809,8 @@ class SpeechRecognizer(QObject):
         self._recognizer = None
         self._current_worker = None
         self._load_worker = None
+        self._reload_after_current = False
+        self._loaded_target: tuple[str, int] | None = None
         self._is_ready = False
         self._model_id = ""
         self._num_threads = 4
@@ -794,28 +852,57 @@ class SpeechRecognizer(QObject):
 
     def _load_model(self):
         if self._load_worker and self._load_worker.isRunning():
+            # A load thread cannot be interrupted; load the newer choice after it.
+            self._reload_after_current = True
             return
 
         info = get_model_info(self._model_id)
         name = info["name"] if info else self._model_id
         self._is_ready = False
+        self._reload_after_current = False
         self.model_load_progress.emit(f"正在加载 {name}…")
         worker = ModelLoadWorker(self._model_id, self._num_threads)
-        worker.loaded.connect(self._on_model_loaded)
-        worker.error.connect(self._on_model_load_error)
+        target = (self._model_id, self._num_threads)
+        worker.loaded.connect(lambda rec, t=target: self._on_model_loaded(rec, t))
+        worker.error.connect(lambda msg, t=target: self._on_model_load_error(msg, t))
+        worker.finished.connect(self._on_load_worker_finished)
         self._load_worker = worker
         worker.start()
 
-    def _on_model_loaded(self, recognizer):
+    def _is_current_target(self, target: tuple[str, int] | None) -> bool:
+        return target is None or target == (self._model_id, self._num_threads)
+
+    def _on_model_loaded(self, recognizer, target: tuple[str, int] | None = None):
+        if not self._is_current_target(target):
+            log.info("丢弃已过时的模型加载结果: %s", target[0])
+            return
         self._recognizer = recognizer
+        self._loaded_target = (self._model_id, self._num_threads)
         self._is_ready = True
         self.model_load_progress.emit("模型已就绪")
         self.ready.emit()
 
-    def _on_model_load_error(self, msg: str):
+    def _on_model_load_error(self, msg: str, target: tuple[str, int] | None = None):
+        if not self._is_current_target(target):
+            log.info("忽略已过时的模型加载错误: %s", msg)
+            return
         self._is_ready = False
         self.model_load_progress.emit(msg)
         self.error.emit(msg)
+
+    def _on_load_worker_finished(self) -> None:
+        worker = self._load_worker
+        if worker is not None:
+            worker.wait(2000)
+            self._load_worker = None
+        if not self._reload_after_current:
+            return
+        self._reload_after_current = False
+        current = (self._model_id, self._num_threads)
+        if self._is_ready and self._loaded_target == current:
+            return
+        if is_model_downloaded(self._model_id):
+            self._load_model()
 
     def transcribe_final(self, full_audio: np.ndarray):
         if not self._is_ready or self._recognizer is None:

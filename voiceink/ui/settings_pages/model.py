@@ -1,11 +1,13 @@
 """Model settings page: current engine, storage, downloadable cards."""
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from voiceink.speech_recognizer import DOWNLOAD_SOURCE_LABELS
 from voiceink.ui import design_tokens as tok
 from voiceink.ui import settings_styles
 from voiceink.ui.settings_components import (
     SettingsPage,
+    labeled_row,
     page_header,
     settings_group,
     settings_section,
@@ -38,6 +40,17 @@ def build_model_page(win) -> QWidget:
     chg.clicked.connect(win._change_model_dir)
     storage_lay.addWidget(chg)
     page.add(settings_section("存储", storage_group))
+
+    source_group = settings_group()
+    source_lay = QVBoxLayout(source_group)
+    source_lay.setContentsMargins(0, 0, 0, 0)
+    win._download_source_combo = QComboBox()
+    win._download_source_combo.setAccessibleName("模型下载源")
+    for value, label in DOWNLOAD_SOURCE_LABELS:
+        win._download_source_combo.addItem(label, value)
+    win._download_source_combo.currentIndexChanged.connect(win._on_download_source_changed)
+    source_lay.addWidget(labeled_row("下载源", win._download_source_combo))
+    page.add(settings_section("下载", source_group))
 
     win._dir_path_label = QLabel()
     win._dir_path_label.setVisible(False)

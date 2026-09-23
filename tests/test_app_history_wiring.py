@@ -192,6 +192,85 @@ def test_queued_segments_after_user_stop_keep_same_session() -> None:
         assert [r.seq for r in records] == [0, 1]
 
 
+def test_restart_keeps_queued_old_session_audio_in_old_session() -> None:
+    with app_harness({"audio.trigger_mode": "continuous", "audio.input_source": "mixed"}) as h:
+        app, paster, recorder = h["app"], h["paster"], h["recorder"]
+        recorder.consume_segment_route.return_value = ""
+        _start_continuous_user_session(app)
+        recorder.is_continuous = True
+        old_speakers = app._speakers
+
+        app._on_segment_ready(_audio())
+        app._on_segment_ready(_audio())
+        app._on_final_result("旧场第一句")
+        first_callback = paster.paste_async.call_args[0][1]
+
+        app._stop_continuous_user_session()
+        recorder.is_continuous = False
+        recorder.input_source = "microphone"
+        _start_continuous_user_session(app)
+        recorder.is_continuous = True
+        app._on_segment_ready(_audio())
+
+        assert app._segment_contexts[0].speakers is old_speakers
+        assert app._speakers is not old_speakers
+
+        first_callback("pasted")
+        for text in ("旧场第二句", "新场第一句"):
+            app._pump_segment_queue()
+            app._on_final_result(text)
+            paster.paste_async.call_args[0][1]("pasted")
+
+        records = _enqueued_records(h["history"])
+        assert [r.raw_text for r in records] == ["旧场第一句", "旧场第二句", "新场第一句"]
+        old_session, new_session = records[0].session_id, records[2].session_id
+        assert old_session != new_session
+        assert [(r.session_id, r.seq) for r in records] == [
+            (old_session, 0),
+            (old_session, 1),
+            (new_session, 0),
+        ]
+        assert [r.source for r in records] == ["mixed", "mixed", "mic"]
+
+
+def _backlog_session(h):
+    app, recorder = h["app"], h["recorder"]
+    recorder.consume_segment_route.return_value = ""
+    _start_continuous_user_session(app)
+    recorder.is_continuous = True
+    recorder.stop_continuous.side_effect = lambda: setattr(recorder, "is_continuous", False)
+    app._output_busy = True
+    return app
+
+
+def test_backlog_at_limit_keeps_listening() -> None:
+    from voiceink.app import MAX_BACKLOG_AUDIO_SECONDS
+
+    with app_harness({"audio.trigger_mode": "continuous"}) as h:
+        app = _backlog_session(h)
+        for _ in range(MAX_BACKLOG_AUDIO_SECONDS // 5):
+            app._on_segment_ready(_audio(5.0))
+
+        h["recorder"].stop_continuous.assert_not_called()
+        assert app._continuous_user_stopped is False
+
+
+def test_backlog_over_limit_pauses_listening_without_dropping_audio() -> None:
+    from voiceink.app import MAX_BACKLOG_AUDIO_SECONDS
+
+    with app_harness({"audio.trigger_mode": "continuous"}) as h:
+        app = _backlog_session(h)
+        count = MAX_BACKLOG_AUDIO_SECONDS // 5 + 1
+        for _ in range(count):
+            app._on_segment_ready(_audio(5.0))
+
+        h["recorder"].stop_continuous.assert_called_once()
+        assert app._continuous_user_stopped is True
+        assert len(app._segment_queue) == count
+        assert "跟不上" in h["tray"].showMessage.call_args[0][1]
+        assert "暂停监听" in h["floating"].show_continuous_stopped.call_args[0][0]
+
+
 def test_history_commit_refreshes_open_main_window() -> None:
     from PyQt6.QtWidgets import QApplication
     from unittest.mock import MagicMock
@@ -268,6 +347,49 @@ def test_hold_tail_and_polish_save_the_full_utterance() -> None:
         assert records[0].trigger_mode == "hotkey"
 
 
+def test_hold_next_recording_during_polish_keeps_each_utterance_raw_text() -> None:
+    overrides = {
+        "audio.trigger_mode": "hotkey",
+        "llm.enabled": True,
+        "llm.api_url": "https://api.example.test/v1",
+        "llm.api_key": "key",
+        "llm.model_name": "gpt-test",
+    }
+    with app_harness(overrides) as h:
+        app, paster, polisher = h["app"], h["paster"], h["polisher"]
+        h["recorder"].is_recording = True
+        app._begin_transcription(_audio(0.2))
+        app._on_final_result("A句原文")
+        h["recorder"].is_recording = False
+        app._on_recording_finished(np.zeros(1, dtype=np.float32))
+        assert polisher.polish.call_args[0][0] == "A句原文"
+
+        app._on_recording_start()
+        h["recorder"].start.assert_called_once_with(continuous=False)
+        h["recorder"].is_recording = True
+        app._on_segment_ready(_audio(0.3))
+        assert len(app._segment_queue) == 1
+
+        app._on_polish_error("network down")
+        assert [c.args[0] for c in paster.paste_async.call_args_list] == ["A句原文"]
+        paster.paste_async.call_args[0][1]("pasted")
+
+        app._pump_segment_queue()
+        app._on_final_result("B句原文")
+        h["recorder"].is_recording = False
+        app._on_recording_finished(np.zeros(1, dtype=np.float32))
+        assert polisher.polish.call_args[0][0] == "B句原文"
+        app._on_polish_complete("B句润色")
+        paster.paste_async.call_args[0][1]("pasted")
+
+        assert [c.args[0] for c in paster.paste_async.call_args_list] == ["A句原文", "B句润色"]
+        records = _enqueued_records(h["history"])
+        assert [(r.raw_text, r.polished_text) for r in records] == [
+            ("A句原文", "A句原文"),
+            ("B句原文", "B句润色"),
+        ]
+
+
 def test_hold_error_after_release_still_pastes_and_records_earlier_text() -> None:
     with app_harness({"audio.trigger_mode": "hotkey", "llm.enabled": False}) as h:
         app = h["app"]
@@ -300,6 +422,114 @@ def test_hold_cancel_does_not_paste_or_record() -> None:
         h["history"].enqueue.assert_not_called()
 
 
+_POLISH_ON = {
+    "audio.trigger_mode": "continuous",
+    "llm.enabled": True,
+    "llm.api_url": "https://api.example.test/v1",
+    "llm.api_key": "key",
+    "llm.model_name": "gpt-test",
+}
+
+
+def test_continuous_segment_waits_while_previous_segment_is_polishing() -> None:
+    with app_harness(_POLISH_ON) as h:
+        app = h["app"]
+        _start_continuous_user_session(app)
+        h["recorder"].is_continuous = True
+        h["recorder"].consume_segment_route.return_value = ""
+
+        app._on_segment_ready(_audio())
+        app._on_final_result("AAA")
+        app._on_segment_ready(_audio())
+
+        assert h["recognizer"].transcribe_final.call_count == 1
+        assert len(app._segment_queue) == 1
+        assert app._pending_segment_count() == 2
+        h["polisher"].polish.assert_called_once()
+
+        app._on_polish_complete("polished AAA")
+        h["paster"].paste_async.call_args[0][1]("pasted")
+        app._pump_segment_queue()
+        assert h["recognizer"].transcribe_final.call_count == 2
+        app._on_final_result("BBB")
+        app._on_polish_complete("polished BBB")
+        h["paster"].paste_async.call_args[0][1]("pasted")
+
+        pasted = [call.args[0] for call in h["paster"].paste_async.call_args_list]
+        assert pasted == ["polished AAA", "polished BBB"]
+        records = _enqueued_records(h["history"])
+        assert [(r.seq, r.raw_text, r.polished_text) for r in records] == [
+            (0, "AAA", "polished AAA"),
+            (1, "BBB", "polished BBB"),
+        ]
+
+
+def test_stuck_output_is_released_by_watchdog() -> None:
+    with app_harness(_POLISH_ON) as h:
+        app = h["app"]
+        app._begin_transcription(_audio())
+        app._on_final_result("AAA")
+        app._enqueue_audio(_audio())
+        assert app._output_busy is True
+
+        app._release_stuck_output(app._output_token)
+
+        assert app._output_busy is False
+        assert h["recognizer"].transcribe_final.call_count == 2
+
+
+def test_stale_watchdog_does_not_release_a_newer_output() -> None:
+    with app_harness(_POLISH_ON) as h:
+        app = h["app"]
+        app._mark_output_busy()
+        stale = app._output_token
+        app._mark_output_busy()
+
+        app._release_stuck_output(stale)
+
+        assert app._output_busy is True
+
+
+def test_polish_reply_far_longer_than_speech_falls_back_to_raw() -> None:
+    with app_harness(_POLISH_ON) as h:
+        app = h["app"]
+        app._begin_transcription(_audio())
+        app._on_final_result("今天开会")
+        app._on_polish_complete("好的！以下是关于开会的建议：" + "内容" * 60)
+        h["paster"].paste_async.call_args[0][1]("pasted")
+
+        assert h["paster"].paste_async.call_args[0][0] == "今天开会"
+        record = _enqueued_records(h["history"])[0]
+        assert record.polished_text == "今天开会"
+
+
+def test_local_polish_service_without_key_is_used() -> None:
+    overrides = {
+        "llm.enabled": True,
+        "llm.api_url": "http://localhost:11434/v1",
+        "llm.api_key": "",
+        "llm.model_name": "local-model",
+    }
+    with app_harness(overrides) as h:
+        h["app"]._deliver_recognized_text("本地润色")
+        h["polisher"].polish.assert_called_once()
+        assert h["polisher"].polish.call_args[0][2] == ""
+        h["paster"].paste_async.assert_not_called()
+
+
+def test_remote_polish_service_without_key_outputs_raw_text() -> None:
+    overrides = {
+        "llm.enabled": True,
+        "llm.api_url": "https://api.example.test/v1",
+        "llm.api_key": "",
+        "llm.model_name": "gpt-test",
+    }
+    with app_harness(overrides) as h:
+        h["app"]._deliver_recognized_text("远程未配置")
+        h["polisher"].polish.assert_not_called()
+        assert h["paster"].paste_async.call_args[0][0] == "远程未配置"
+
+
 def test_clipboard_and_error_paste_results_enqueue_history() -> None:
     with app_harness() as h:
         _drive_segment(h["app"], h["paster"], "copied text", result="clipboard")
@@ -307,3 +537,35 @@ def test_clipboard_and_error_paste_results_enqueue_history() -> None:
 
         records = _enqueued_records(h["history"])
         assert [record.raw_text for record in records] == ["copied text", "failed text"]
+
+
+def test_esc_does_not_end_continuous_session_when_disabled() -> None:
+    with app_harness({"audio.trigger_mode": "continuous", "audio.esc_stops_continuous": False}) as h:
+        app = h["app"]
+        h["recorder"].is_continuous = True
+        app._on_esc_pressed()
+        h["recorder"].stop_continuous.assert_not_called()
+
+
+def test_esc_ends_continuous_session_by_default() -> None:
+    with app_harness({"audio.trigger_mode": "continuous"}) as h:
+        app = h["app"]
+        h["recorder"].is_continuous = True
+        app._on_esc_pressed()
+        h["recorder"].stop_continuous.assert_called_once()
+
+
+def test_model_load_hint_uses_last_measured_duration() -> None:
+    with app_harness() as h:
+        app = h["app"]
+        h["recognizer"].current_model_id = "sensevoice"
+        h["recorder"].is_continuous = False
+
+        app._on_model_load_progress("正在加载 SenseVoice…")
+        assert "约 10–40 秒" in h["floating"].show_model_loading.call_args[0][0]
+        app._load_started_at -= 12.0
+        app._on_model_load_progress("模型已就绪")
+        assert round(h["store"]["stt_load_seconds"]["sensevoice"]) == 12
+
+        app._on_model_load_progress("正在加载 SenseVoice…")
+        assert "上次用时约 12 秒" in h["floating"].show_model_loading.call_args[0][0]
