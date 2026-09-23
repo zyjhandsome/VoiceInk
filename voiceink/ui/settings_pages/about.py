@@ -7,8 +7,10 @@ from voiceink.config import VERSION
 from voiceink.ui import design_tokens as tok
 from voiceink.ui.settings_components import (
     SettingsPage,
-    page_header,
+    ToggleOptionRow,
     footnote,
+    group_divider,
+    page_header,
     settings_group,
     settings_section,
 )
@@ -42,6 +44,41 @@ def build_about_page(win) -> QWidget:
     )
     brand_lay.addWidget(win._about_version_label)
     win._about_info_lay.addWidget(brand_row)
+
+    win._about_info_lay.addWidget(group_divider())
+    update_row = QWidget()
+    update_lay = QHBoxLayout(update_row)
+    update_lay.setContentsMargins(16, 10, 16, 10)
+    update_lay.setSpacing(12)
+    win._about_update_status = QLabel("点击检查是否有新版本")
+    win._about_update_status.setObjectName("aboutUpdateStatus")
+    win._about_update_status.setWordWrap(True)
+    win._about_update_status.setStyleSheet(
+        f"color: {tok.TEXT_SEC}; font-size: {tok.TYPE_BODY_SM}px; background: transparent;"
+    )
+    update_lay.addWidget(win._about_update_status, 1)
+    win._about_update_btn = QPushButton("检查更新")
+    win._about_update_btn.setObjectName("aboutUpdateButton")
+    win._about_update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    win._about_update_btn.setStyleSheet(
+        f"QPushButton#aboutUpdateButton {{"
+        f" color: {tok.TEXT}; background: {tok.SURFACE_PEARL};"
+        f" border: 1px solid {tok.HAIRLINE}; border-radius: {tok.RADIUS_PILL}px;"
+        f" font-size: {tok.TYPE_CAPTION}px; font-weight: 700; padding: 6px 12px;"
+        f"}}"
+        f"QPushButton#aboutUpdateButton:hover {{ background: {tok.CHIP_BG_HOVER}; }}"
+        f"QPushButton#aboutUpdateButton:disabled {{ color: {tok.TEXT_DIM}; }}"
+    )
+    win._about_update_btn.clicked.connect(win._on_about_update_button)
+    update_lay.addWidget(win._about_update_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+    win._about_info_lay.addWidget(update_row)
+
+    win._about_auto_update_row = ToggleOptionRow(
+        "自动检查更新",
+        "每天启动后检查一次，不自动下载",
+    )
+    win._about_auto_update_row.toggled.connect(win._on_about_auto_update_toggled)
+    win._about_info_lay.addWidget(win._about_auto_update_row)
 
     win._about_runtime_wrap = QWidget()
     win._about_runtime_lay = QVBoxLayout(win._about_runtime_wrap)

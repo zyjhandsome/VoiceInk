@@ -71,6 +71,8 @@ class SettingsWindow(QWidget):
     theme_changed = pyqtSignal(str)
     hotkey_capture_started = pyqtSignal()
     hotkey_capture_ended = pyqtSignal()
+    update_check_requested = pyqtSignal()
+    update_install_requested = pyqtSignal()
     runtime_status_changed = pyqtSignal(str)
     closed = pyqtSignal()
     finished = pyqtSignal(int)
@@ -689,6 +691,30 @@ class SettingsWindow(QWidget):
 
         self._refresh_about_hero_status()
 
+    def _on_about_update_button(self) -> None:
+        if self._about_update_btn.text() == "下载并安装":
+            self.update_install_requested.emit()
+            return
+        self.update_check_requested.emit()
+
+    def _on_about_auto_update_toggled(self, checked: bool) -> None:
+        if self._loading:
+            return
+        self._config.set("update.auto_check", bool(checked))
+
+    def set_update_status(self, text: str, *, action: str = "check") -> None:
+        if not hasattr(self, "_about_update_status"):
+            return
+        self._about_update_status.setText(text)
+        if action == "install":
+            self._about_update_btn.setText("下载并安装")
+            self._about_update_btn.setEnabled(True)
+        elif action == "busy":
+            self._about_update_btn.setEnabled(False)
+        else:
+            self._about_update_btn.setText("检查更新")
+            self._about_update_btn.setEnabled(True)
+
     def _config_source_label(self, source: str | None = None) -> str:
         src = source or self._config.get("audio.input_source", INPUT_SOURCE_MICROPHONE)
         return {
@@ -779,6 +805,10 @@ class SettingsWindow(QWidget):
         )
         self._refresh_hotkey_hint()
         self._history_enabled_row.setChecked(self._config.get("history.enabled", True))
+        if hasattr(self, "_about_auto_update_row"):
+            self._about_auto_update_row.setChecked(
+                bool(self._config.get("update.auto_check", True))
+            )
         self._history_retention_days_spin.setValue(
             int(self._config.get("history.retention_days", 90))
         )

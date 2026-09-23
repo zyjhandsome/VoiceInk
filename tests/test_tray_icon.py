@@ -166,12 +166,13 @@ class TestTrayMenuStyleAndGrouping:
         assert not actions[0].isEnabled()
         assert labels[1] == "---"
         assert labels[2] == "打开 VoiceInk"
-        assert labels[3] == "历史"
-        assert labels[4] == "切换模型"
-        assert labels[5] == "开机自启"
-        assert actions[5].isCheckable()
-        assert labels[6] == "---"
-        assert labels[7] == "退出"
+        assert labels[3] == "检查更新"
+        assert labels[4] == "历史"
+        assert labels[5] == "切换模型"
+        assert labels[6] == "开机自启"
+        assert actions[6].isCheckable()
+        assert labels[7] == "---"
+        assert labels[8] == "退出"
 
 
 def test_model_switch_keeps_the_active_name_beside_the_label(tray):

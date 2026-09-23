@@ -87,6 +87,10 @@ DEFAULT_CONFIG = {
     "appearance": {
         "theme_mode": "dark",
     },
+    "update": {
+        "auto_check": True,
+        "last_check_at": 0,
+    },
 }
 
 

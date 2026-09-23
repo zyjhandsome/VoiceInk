@@ -98,6 +98,11 @@ class App(QObject):
         self._live_inflight = ""
         self._hold_paste_sent = False
         self._hold_duration_ms = 0
+        self._pending_release = None
+        self._update_check_state = ""
+        self._update_check_interactive = False
+        self._update_check_worker = None
+        self._update_download_worker = None
         self._is_transcribing = False
         self._segment_queue: list[np.ndarray] = []
         self._continuous_user_stopped = False
@@ -211,6 +216,8 @@ class App(QObject):
         self._tray.model_switched.connect(self._on_tray_model_switch)
         self._tray.menu_about_to_show.connect(self._note_main_before_tray_menu)
         self._tray.menu_closed.connect(self._restore_main_after_tray_menu)
+        self._tray.check_update_requested.connect(self._on_tray_check_update)
+        self._tray.messageClicked.connect(self._on_tray_message_clicked)
 
     def _apply_audio_config(self):
         from voiceink.audio_devices import (
@@ -1076,6 +1083,8 @@ class App(QObject):
             settings.finished.connect(self._on_settings_closed)
             settings.hotkey_capture_started.connect(self._hotkey_mgr.pause)
             settings.hotkey_capture_ended.connect(self._hotkey_mgr.resume)
+            settings.update_check_requested.connect(self._on_about_check_update)
+            settings.update_install_requested.connect(self._on_update_install_requested)
             self._main.installEventFilter(self)
         if page:
             self._main.show_page(page)
@@ -1087,6 +1096,7 @@ class App(QObject):
         self._main.show()
         self._main.raise_()
         self._main.activateWindow()
+        self._sync_about_update_status()
 
     def _note_main_before_tray_menu(self) -> None:
         main = self._main
@@ -1282,6 +1292,7 @@ class App(QObject):
     def start(self):
         self._hotkey_mgr.start()
         self._enqueue_history_cleanup()
+        QTimer.singleShot(5000, self._maybe_auto_check_for_update)
         if not self._config.get("first_run_welcome_seen", True):
             # 等模型加载完成后再弹欢迎框，避免挡住「模型加载中」状态
             self._recognizer.ready.connect(self._show_first_run_welcome_once)
@@ -1289,6 +1300,146 @@ class App(QObject):
         elif not self._config.get("history.onboarded", False):
             # 无欢迎框时，历史询问仍等模型就绪后再弹。
             self._recognizer.ready.connect(self._show_history_onboarding_once)
+
+    def _settings_widget(self):
+        if self._main is not None:
+            return getattr(self._main, "_settings", None)
+        return None
+
+    def _maybe_auto_check_for_update(self) -> None:
+        from voiceink.updater import should_auto_check
+
+        enabled = bool(self._config.get("update.auto_check", True))
+        last = float(self._config.get("update.last_check_at", 0) or 0)
+        if should_auto_check(enabled=enabled, last_check_at=last, now=time.time()):
+            self._start_update_check(interactive=False)
+
+    def _on_tray_check_update(self) -> None:
+        self._show_main_window("about")
+        self._start_update_check(interactive=True)
+
+    def _on_about_check_update(self) -> None:
+        self._start_update_check(interactive=True)
+
+    def _on_tray_message_clicked(self) -> None:
+        if getattr(self._tray, "notice_kind", "") != "update":
+            return
+        self._show_main_window("about")
+
+    def _start_update_check(self, *, interactive: bool) -> None:
+        from voiceink.updater import UpdateCheckWorker
+        from voiceink.version import __version__
+
+        worker = self._update_check_worker
+        if worker is not None and worker.isRunning():
+            self._update_check_interactive = self._update_check_interactive or interactive
+            if interactive:
+                self._update_check_state = "checking"
+                self._sync_about_update_status()
+            return
+        self._update_check_interactive = interactive
+        self._update_check_state = "checking"
+        if interactive:
+            self._sync_about_update_status()
+        worker = UpdateCheckWorker(__version__, self)
+        worker.result_ready.connect(self._on_update_check_result)
+        worker.failed.connect(self._on_update_check_failed)
+        self._update_check_worker = worker
+        worker.start()
+
+    def _remember_update_check(self) -> None:
+        self._config.set("update.last_check_at", time.time())
+
+    def _on_update_check_result(self, info) -> None:
+        self._remember_update_check()
+        self._pending_release = info
+        if info is None:
+            self._update_check_state = "current"
+            self._sync_about_update_status()
+            return
+        self._update_check_state = "available"
+        self._sync_about_update_status()
+        if not self._update_check_interactive:
+            self._tray.show_update_notice(f"{info.version} 可以安装")
+
+    def _on_update_check_failed(self, _message: str) -> None:
+        self._remember_update_check()
+        self._update_check_state = "error"
+        if self._update_check_interactive:
+            self._sync_about_update_status()
+
+    def _sync_about_update_status(self) -> None:
+        settings = self._settings_widget()
+        if settings is None or self._update_check_state == "downloading":
+            return
+        state = self._update_check_state
+        if state == "available" and self._pending_release is not None:
+            settings.set_update_status(
+                f"发现 {self._pending_release.version}",
+                action="install",
+            )
+        elif state == "current":
+            settings.set_update_status("已是最新版本", action="check")
+        elif state == "error":
+            settings.set_update_status("检查失败，请稍后再试", action="check")
+        elif state == "checking":
+            settings.set_update_status("正在检查…", action="busy")
+
+    def _on_update_install_requested(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        from voiceink.updater import UpdateDownloadWorker
+
+        release = self._pending_release
+        if release is None:
+            return
+        worker = self._update_download_worker
+        if worker is not None and worker.isRunning():
+            return
+        dest = Path(tempfile.gettempdir()) / "VoiceInk" / release.asset_name
+        self._update_check_state = "downloading"
+        settings = self._settings_widget()
+        if settings is not None:
+            settings.set_update_status("正在下载…", action="busy")
+        worker = UpdateDownloadWorker(release.asset_url, dest, self)
+        worker.progress.connect(self._on_update_download_progress)
+        worker.finished_path.connect(self._on_update_downloaded)
+        worker.failed.connect(self._on_update_download_failed)
+        self._update_download_worker = worker
+        worker.start()
+
+    def _on_update_download_progress(self, got: int, total: int) -> None:
+        settings = self._settings_widget()
+        if settings is None:
+            return
+        got_mb = got / (1024 * 1024)
+        if total:
+            total_mb = total / (1024 * 1024)
+            text = f"正在下载 {got_mb:.0f} / {total_mb:.0f} MB"
+        else:
+            text = f"正在下载 {got_mb:.0f} MB"
+        settings.set_update_status(text, action="busy")
+
+    def _on_update_download_failed(self, message: str) -> None:
+        self._update_check_state = "available"
+        settings = self._settings_widget()
+        if settings is not None:
+            settings.set_update_status(message, action="install")
+
+    def _on_update_downloaded(self, path: str) -> None:
+        from voiceink.updater import launch_installer
+
+        try:
+            launch_installer(path)
+        except Exception as exc:
+            log.warning("无法启动安装包: %s", exc)
+            self._update_check_state = "available"
+            settings = self._settings_widget()
+            if settings is not None:
+                settings.set_update_status("下载完成，但无法启动安装包", action="install")
+            return
+        self._quit()
 
     def _show_first_run_welcome_once(self):
         if self._config.get("first_run_welcome_seen", True):

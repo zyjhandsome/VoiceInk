@@ -335,6 +335,7 @@ class _UpwardContextMenu(QMenu):
 
 class TrayIcon(QSystemTrayIcon):
     open_settings = pyqtSignal()
+    check_update_requested = pyqtSignal()
     wake_island = pyqtSignal()
     history_requested = pyqtSignal()
     quit_app = pyqtSignal()
@@ -360,6 +361,7 @@ class TrayIcon(QSystemTrayIcon):
         self._menu = None
         self._menu_is_open = False
         self._wake_after_menu = False
+        self._notice_kind = ""
         self._setup_menu()
         self.activated.connect(self._on_activated)
 
@@ -432,6 +434,9 @@ class TrayIcon(QSystemTrayIcon):
         settings_action = menu.addAction("打开 VoiceInk")
         settings_action.triggered.connect(self.open_settings.emit)
 
+        update_action = menu.addAction("检查更新")
+        update_action.triggered.connect(self.check_update_requested.emit)
+
         history_action = menu.addAction("历史")
         history_action.triggered.connect(self.history_requested.emit)
 
@@ -452,6 +457,24 @@ class TrayIcon(QSystemTrayIcon):
         menu.aboutToShow.connect(self._on_menu_about_to_show)
         menu.aboutToHide.connect(self._on_menu_about_to_hide)
         self.setContextMenu(menu)
+
+    def show_update_notice(self, body: str) -> None:
+        """Tray balloon for a new version. Other notices clear this kind."""
+        super().showMessage(
+            "VoiceInk",
+            body,
+            QSystemTrayIcon.MessageIcon.Information,
+            8000,
+        )
+        self._notice_kind = "update"
+
+    def showMessage(self, title, message, icon=QSystemTrayIcon.MessageIcon.Information, msecs=10000):
+        self._notice_kind = ""
+        super().showMessage(title, message, icon, msecs)
+
+    @property
+    def notice_kind(self) -> str:
+        return self._notice_kind
 
     def update_models(self, downloaded_models: list[dict], active_id: str):
         if self._model_group is not None:
